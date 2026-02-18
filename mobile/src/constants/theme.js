@@ -1,180 +1,112 @@
 /**
- * ScanPang 다크 테마 상수
- * - 앱 전체에서 일관된 디자인을 유지하기 위한 테마 정의
+ * ScanPang 디자인 시스템
+ * - 홈: 화이트 클린 UI (토스/카카오뱅크 레퍼런스)
+ * - 카메라/바텀시트: 다크 테마 유지
  */
 
-// 메인 컬러 팔레트
+// ===== 컬러 팔레트 =====
+export const Colors = {
+  // 배경
+  bgWhite: '#FFFFFF',
+  bgGray: '#F8F9FA',
+  bgBlueGradientStart: '#2563EB',
+  bgBlueGradientEnd: '#4F46E5',
+
+  // 텍스트
+  textPrimary: '#111827',
+  textSecondary: '#6B7280',
+  textTertiary: '#9CA3AF',
+  textWhite: '#FFFFFF',
+
+  // 브랜드
+  primaryBlue: '#2563EB',
+  primaryBlueLight: '#EFF6FF',
+  accentAmber: '#F59E0B',
+  accentAmberLight: '#FFFBEB',
+  successGreen: '#10B981',
+  liveRed: '#EF4444',
+
+  // 카드/보더
+  borderLight: '#F3F4F6',
+  borderDefault: '#E5E7EB',
+
+  // 다크 (카메라 화면 / 바텀시트용)
+  darkBg: '#1A1F2E',
+  darkCard: 'rgba(255,255,255,0.08)',
+  darkBorder: 'rgba(255,255,255,0.12)',
+  darkTextPrimary: '#FFFFFF',
+  darkTextSecondary: '#B0B0B0',
+  darkTextMuted: '#616161',
+};
+
+// 기존 호환용 (다크 테마 - 카메라 화면에서 사용)
 export const COLORS = {
-  // 배경 색상
-  background: '#0A0E27',           // 메인 배경 (딥 네이비)
-  cardBackground: 'rgba(255,255,255,0.08)', // 카드 배경 (반투명 화이트)
-  cardBackgroundSolid: '#141833',  // 카드 배경 (불투명 대체용)
-  surface: 'rgba(255,255,255,0.04)',       // 서피스 배경
-
-  // 액센트 색상
-  blue: '#4A90D9',     // 메인 액센트 (블루)
-  orange: '#FF8C00',   // 보조 액센트 (오렌지)
-  green: '#00C853',    // 성공/활성 상태 (그린)
-  red: '#FF5252',      // 에러/위험 상태 (레드)
-
-  // 텍스트 색상
-  textPrimary: '#FFFFFF',   // 주요 텍스트 (화이트)
-  textSecondary: '#B0B0B0', // 보조 텍스트 (WCAG AA 대비율 개선)
-  textMuted: '#616161',     // 비활성 텍스트
-
-  // 보더 및 구분선
-  border: 'rgba(255,255,255,0.12)',
+  background: Colors.darkBg,
+  cardBackground: Colors.darkCard,
+  surface: 'rgba(255,255,255,0.04)',
+  blue: Colors.primaryBlue,
+  orange: Colors.accentAmber,
+  green: Colors.successGreen,
+  red: Colors.liveRed,
+  textPrimary: Colors.darkTextPrimary,
+  textSecondary: Colors.darkTextSecondary,
+  textMuted: Colors.darkTextMuted,
+  border: Colors.darkBorder,
   divider: 'rgba(255,255,255,0.06)',
-
-  // 상태 색상
-  live: '#FF5252',     // 라이브 상태 표시
-  online: '#00C853',   // 온라인 표시
-  offline: '#9E9E9E',  // 오프라인 표시
-
-  // 글라스 효과 색상
-  glassHeavy: 'rgba(255,255,255,0.12)',
-  glassBorder: 'rgba(255,255,255,0.18)',
-
-  // 틴트 색상
-  blueTint: 'rgba(74,144,217,0.15)',
-  orangeTint: 'rgba(255,140,0,0.15)',
-  greenTint: 'rgba(0,200,83,0.15)',
-  redTint: 'rgba(255,82,82,0.15)',
+  live: Colors.liveRed,
 };
 
-// 타이포그래피 스타일
+// ===== 그림자 =====
+export const CardShadow = {
+  shadowColor: '#000',
+  shadowOffset: { width: 0, height: 2 },
+  shadowOpacity: 0.06,
+  shadowRadius: 8,
+  elevation: 3,
+};
+
+export const CardShadowMedium = {
+  shadowColor: '#000',
+  shadowOffset: { width: 0, height: 4 },
+  shadowOpacity: 0.1,
+  shadowRadius: 12,
+  elevation: 5,
+};
+
+// ===== 타이포그래피 =====
 export const TYPOGRAPHY = {
-  // 제목 스타일
-  h1: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: COLORS.textPrimary,
-    letterSpacing: -0.5,
-  },
-  h2: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: COLORS.textPrimary,
-    letterSpacing: -0.3,
-  },
-  h3: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: COLORS.textPrimary,
-  },
-  // 본문 스타일
-  body: {
-    fontSize: 15,
-    fontWeight: '400',
-    color: COLORS.textPrimary,
-    lineHeight: 22,
-  },
-  bodySmall: {
-    fontSize: 13,
-    fontWeight: '400',
-    color: COLORS.textSecondary,
-    lineHeight: 18,
-  },
-  // 캡션 스타일
-  caption: {
-    fontSize: 11,
-    fontWeight: '500',
-    color: COLORS.textSecondary,
-    letterSpacing: 0.3,
-  },
-  // 버튼 텍스트
-  button: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: COLORS.textPrimary,
-  },
+  h1: { fontSize: 28, fontWeight: '700', color: Colors.textPrimary, letterSpacing: -0.5 },
+  h2: { fontSize: 22, fontWeight: '700', color: Colors.textPrimary, letterSpacing: -0.3 },
+  h3: { fontSize: 18, fontWeight: '600', color: Colors.textPrimary },
+  body: { fontSize: 15, fontWeight: '400', color: Colors.textPrimary, lineHeight: 22 },
+  bodySmall: { fontSize: 13, fontWeight: '400', color: Colors.textSecondary, lineHeight: 18 },
+  caption: { fontSize: 11, fontWeight: '500', color: Colors.textSecondary, letterSpacing: 0.3 },
+  button: { fontSize: 16, fontWeight: '600', color: Colors.textPrimary },
 };
 
-// 간격 (spacing) 상수
+// ===== 간격 =====
 export const SPACING = {
-  xs: 4,
-  sm: 8,
-  md: 12,
-  lg: 16,
-  xl: 24,
-  xxl: 32,
+  xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32,
 };
 
-// 애니메이션 상수
-export const ANIMATION = {
-  duration: {
-    fast: 150,
-    normal: 300,
-    slow: 500,
-  },
-  spring: {
-    default: { friction: 8, tension: 100 },
-    gentle: { friction: 10, tension: 65 },
-    bouncy: { friction: 4, tension: 120 },
-  },
-  stagger: {
-    fast: 60,
-    normal: 80,
-    slow: 120,
-  },
-};
-
-// 터치 상수
+// ===== 터치 =====
 export const TOUCH = {
   minSize: 44,
   hitSlop: { top: 8, bottom: 8, left: 8, right: 8 },
 };
 
-// 카드 스타일 기본값
+// 기존 호환
 export const CARD_STYLE = {
-  backgroundColor: COLORS.cardBackground,
+  backgroundColor: Colors.bgWhite,
   borderRadius: 16,
   padding: SPACING.lg,
   borderWidth: 1,
-  borderColor: COLORS.border,
+  borderColor: Colors.borderLight,
 };
 
-// 글라스 카드 스타일
-export const CARD_STYLE_GLASS = {
-  backgroundColor: COLORS.glassHeavy,
-  borderRadius: 16,
-  padding: SPACING.lg,
-  borderWidth: 1,
-  borderColor: COLORS.glassBorder,
-};
-
-// 그림자 스타일 (Android + iOS)
 export const SHADOW = {
-  light: {
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  medium: {
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  heavy: {
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.35,
-    shadowRadius: 16,
-    elevation: 12,
-  },
+  light: CardShadow,
+  medium: CardShadowMedium,
 };
 
-export default {
-  COLORS,
-  TYPOGRAPHY,
-  SPACING,
-  ANIMATION,
-  TOUCH,
-  CARD_STYLE,
-  CARD_STYLE_GLASS,
-  SHADOW,
-};
+export default { Colors, COLORS, TYPOGRAPHY, SPACING, TOUCH, CARD_STYLE, SHADOW };

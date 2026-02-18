@@ -1,7 +1,7 @@
 /**
- * ScanPang - 앱 엔트리 포인트
- * - NavigationContainer + Stack Navigator 설정
- * - HomeScreen, ScanScreen 라우트 등록
+ * ScanPang - 앱 엔트리 포인트 (리디자인)
+ * - Home → ScanCamera 통합 플로우
+ * - 화이트 홈 + 다크 카메라 테마
  */
 
 // react-native-gesture-handler는 반드시 최상단에서 import
@@ -14,16 +14,14 @@ import { createStackNavigator } from '@react-navigation/stack';
 
 // 화면 컴포넌트
 import HomeScreen from './src/screens/HomeScreen';
-import ScanScreen from './src/screens/ScanScreen';
+import ScanCameraScreen from './src/screens/ScanCameraScreen';
 
-// 테마 상수
-import { COLORS } from './src/constants/theme';
+import { Colors } from './src/constants/theme';
 
-// Stack Navigator 생성
 const Stack = createStackNavigator();
 
 /**
- * ErrorBoundary - 런타임 에러 발생 시 에러 내용을 화면에 표시
+ * ErrorBoundary - 런타임 에러 시 사용자 친화적 메시지
  */
 class ErrorBoundary extends React.Component {
   state = { hasError: false, error: null };
@@ -36,13 +34,11 @@ class ErrorBoundary extends React.Component {
     if (this.state.hasError) {
       return (
         <View style={errorStyles.container}>
-          <Text style={errorStyles.title}>앱 에러 발생</Text>
+          <Text style={errorStyles.title}>오류가 발생했습니다</Text>
+          <Text style={errorStyles.message}>앱을 다시 시작해주세요.</Text>
           <ScrollView style={errorStyles.scroll}>
-            <Text style={errorStyles.message}>
-              {this.state.error?.toString()}
-            </Text>
             <Text style={errorStyles.stack}>
-              {this.state.error?.stack}
+              {this.state.error?.toString()}
             </Text>
           </ScrollView>
         </View>
@@ -53,25 +49,25 @@ class ErrorBoundary extends React.Component {
 }
 
 const errorStyles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0A0E27', padding: 24, paddingTop: 60 },
-  title: { fontSize: 20, fontWeight: '700', color: '#FF5252', marginBottom: 16 },
-  scroll: { flex: 1 },
-  message: { fontSize: 14, color: '#FFFFFF', marginBottom: 12 },
-  stack: { fontSize: 11, color: '#9E9E9E', lineHeight: 18 },
+  container: { flex: 1, backgroundColor: '#FFF', padding: 24, paddingTop: 60, alignItems: 'center', justifyContent: 'center' },
+  title: { fontSize: 20, fontWeight: '700', color: Colors.textPrimary, marginBottom: 8 },
+  message: { fontSize: 15, color: Colors.textSecondary, marginBottom: 24 },
+  scroll: { maxHeight: 200 },
+  stack: { fontSize: 11, color: Colors.textTertiary, lineHeight: 18 },
 });
 
 /**
- * 네비게이션 다크 테마 설정
+ * 네비게이션 라이트 테마
  */
 const navigationTheme = {
-  dark: true,
+  dark: false,
   colors: {
-    primary: COLORS.blue,
-    background: COLORS.background,
-    card: COLORS.background,
-    text: COLORS.textPrimary,
-    border: COLORS.border,
-    notification: COLORS.orange,
+    primary: Colors.primaryBlue,
+    background: Colors.bgWhite,
+    card: Colors.bgWhite,
+    text: Colors.textPrimary,
+    border: Colors.borderLight,
+    notification: Colors.accentAmber,
   },
 };
 
@@ -79,24 +75,11 @@ export default function App() {
   return (
     <ErrorBoundary>
       <NavigationContainer theme={navigationTheme}>
-        <StatusBar
-          barStyle="light-content"
-          backgroundColor={COLORS.background}
-          translucent={false}
-        />
         <Stack.Navigator
           initialRouteName="Home"
           screenOptions={{
             headerShown: false,
-            cardStyle: {
-              backgroundColor: COLORS.background,
-            },
             gestureEnabled: true,
-            cardStyleInterpolator: ({ current: { progress } }) => ({
-              cardStyle: {
-                opacity: progress,
-              },
-            }),
           }}
         >
           <Stack.Screen
@@ -105,9 +88,15 @@ export default function App() {
             options={{ title: 'ScanPang' }}
           />
           <Stack.Screen
-            name="Scan"
-            component={ScanScreen}
-            options={{ title: '스캔', gestureEnabled: true }}
+            name="ScanCamera"
+            component={ScanCameraScreen}
+            options={{
+              title: '스캔',
+              gestureEnabled: true,
+              cardStyleInterpolator: ({ current: { progress } }) => ({
+                cardStyle: { opacity: progress },
+              }),
+            }}
           />
         </Stack.Navigator>
       </NavigationContainer>
