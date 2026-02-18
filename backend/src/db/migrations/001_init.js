@@ -14,15 +14,18 @@ const { Pool } = require('pg');
 async function migrate() {
   console.log('[마이그레이션] 시작...');
 
-  // DB 연결 (개별 파라미터 - 비밀번호 특수문자 대응)
-  const pool = new Pool({
-    host: process.env.DB_HOST,
-    port: parseInt(process.env.DB_PORT, 10) || 5432,
-    database: process.env.DB_NAME,
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-    ssl: { rejectUnauthorized: false },
-  });
+  // DB 연결 (DATABASE_URL 우선, 없으면 개별 파라미터)
+  const poolConfig = process.env.DATABASE_URL
+    ? { connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } }
+    : {
+        host: process.env.DB_HOST,
+        port: parseInt(process.env.DB_PORT, 10) || 5432,
+        database: process.env.DB_NAME,
+        user: process.env.DB_USER,
+        password: process.env.DB_PASSWORD,
+        ssl: { rejectUnauthorized: false },
+      };
+  const pool = new Pool(poolConfig);
 
   try {
     // shared/schema.sql 파일 읽기
@@ -55,12 +58,16 @@ async function migrate() {
     });
   } catch (err) {
     console.error('[마이그레이션] 에러:', err.message);
-    process.exit(1);
+    throw err;
   } finally {
     await pool.end();
     console.log('[마이그레이션] DB 연결 종료');
   }
 }
 
+module.exports = migrate;
+
 // 직접 실행 시
-migrate();
+if (require.main === module) {
+  migrate().catch(() => process.exit(1));
+}

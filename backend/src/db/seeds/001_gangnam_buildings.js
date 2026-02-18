@@ -14,14 +14,17 @@ const { Pool } = require('pg');
 async function seed() {
   console.log('[시드] 강남/역삼 건물 데이터 삽입 시작...');
 
-  const pool = new Pool({
-    host: process.env.DB_HOST,
-    port: parseInt(process.env.DB_PORT, 10) || 5432,
-    database: process.env.DB_NAME,
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-    ssl: { rejectUnauthorized: false },
-  });
+  const poolConfig = process.env.DATABASE_URL
+    ? { connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } }
+    : {
+        host: process.env.DB_HOST,
+        port: parseInt(process.env.DB_PORT, 10) || 5432,
+        database: process.env.DB_NAME,
+        user: process.env.DB_USER,
+        password: process.env.DB_PASSWORD,
+        ssl: { rejectUnauthorized: false },
+      };
+  const pool = new Pool(poolConfig);
 
   const client = await pool.connect();
 
@@ -434,7 +437,7 @@ async function seed() {
   } catch (err) {
     await client.query('ROLLBACK');
     console.error('[시드] 에러 (롤백됨):', err.message);
-    process.exit(1);
+    throw err;
   } finally {
     client.release();
     await pool.end();
@@ -442,5 +445,9 @@ async function seed() {
   }
 }
 
+module.exports = seed;
+
 // 직접 실행 시
-seed();
+if (require.main === module) {
+  seed().catch(() => process.exit(1));
+}
