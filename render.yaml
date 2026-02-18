@@ -14,7 +14,6 @@ services:
     name: scanpang-backend
     runtime: node
     plan: free
-    region: singapore  # 한국에서 가장 가까운 Render 리전
     rootDir: backend
     buildCommand: npm install
     startCommand: npm start
