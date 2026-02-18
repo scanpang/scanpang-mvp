@@ -5,7 +5,7 @@
 CREATE EXTENSION IF NOT EXISTS postgis;
 
 -- 건물 테이블
-CREATE TABLE buildings (
+CREATE TABLE IF NOT EXISTS buildings (
     id SERIAL PRIMARY KEY,
     name VARCHAR(200) NOT NULL,              -- 건물명
     address VARCHAR(500) NOT NULL,           -- 주소
@@ -24,7 +24,7 @@ CREATE TABLE buildings (
 );
 
 -- 층별 정보 테이블
-CREATE TABLE floors (
+CREATE TABLE IF NOT EXISTS floors (
     id SERIAL PRIMARY KEY,
     building_id INTEGER REFERENCES buildings(id),
     floor_number VARCHAR(10) NOT NULL,       -- 'B2', 'B1', '1F', '2F', 'RF' 등
@@ -39,7 +39,7 @@ CREATE TABLE floors (
 );
 
 -- 편의시설 테이블
-CREATE TABLE facilities (
+CREATE TABLE IF NOT EXISTS facilities (
     id SERIAL PRIMARY KEY,
     building_id INTEGER REFERENCES buildings(id),
     facility_type VARCHAR(50) NOT NULL,      -- 'ATM', '편의점', '와이파이', '냉난방', '주차장' 등
@@ -49,7 +49,7 @@ CREATE TABLE facilities (
 );
 
 -- 건물 통계 테이블
-CREATE TABLE building_stats (
+CREATE TABLE IF NOT EXISTS building_stats (
     id SERIAL PRIMARY KEY,
     building_id INTEGER REFERENCES buildings(id),
     stat_type VARCHAR(50) NOT NULL,          -- 'total_floors', 'occupancy', 'tenants', 'operating', 'residents', 'parking_capacity', 'congestion'
@@ -59,7 +59,7 @@ CREATE TABLE building_stats (
 );
 
 -- LIVE 피드 테이블 (더미 데이터)
-CREATE TABLE live_feeds (
+CREATE TABLE IF NOT EXISTS live_feeds (
     id SERIAL PRIMARY KEY,
     building_id INTEGER REFERENCES buildings(id),
     feed_type VARCHAR(50) NOT NULL,          -- 'event', 'congestion', 'promotion', 'update'
@@ -73,7 +73,7 @@ CREATE TABLE live_feeds (
 );
 
 -- 행동 로그 테이블
-CREATE TABLE scan_logs (
+CREATE TABLE IF NOT EXISTS scan_logs (
     id SERIAL PRIMARY KEY,
     session_id VARCHAR(100) NOT NULL,
     building_id INTEGER REFERENCES buildings(id),
@@ -88,7 +88,7 @@ CREATE TABLE scan_logs (
 );
 
 -- 인덱스
-CREATE INDEX idx_buildings_location ON buildings USING GIST(location);
-CREATE INDEX idx_floors_building ON floors(building_id, floor_order);
-CREATE INDEX idx_scan_logs_building ON scan_logs(building_id, created_at);
-CREATE INDEX idx_scan_logs_session ON scan_logs(session_id);
+CREATE INDEX IF NOT EXISTS idx_buildings_location ON buildings USING GIST(location);
+CREATE INDEX IF NOT EXISTS idx_floors_building ON floors(building_id, floor_order);
+CREATE INDEX IF NOT EXISTS idx_scan_logs_building ON scan_logs(building_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_scan_logs_session ON scan_logs(session_id);

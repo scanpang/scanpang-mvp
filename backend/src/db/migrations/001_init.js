@@ -1,6 +1,7 @@
 /**
  * 마이그레이션: 초기 스키마 생성
- * - shared/schema.sql을 읽어서 Supabase DB에 실행
+ * - shared/schema.sql을 읽어서 DB에 실행
+ * - 이미 존재하는 테이블/인덱스는 스킵 (IF NOT EXISTS)
  * - 실행: npm run migrate
  */
 const fs = require('fs');
@@ -57,8 +58,13 @@ async function migrate() {
       console.log('  -', row.table_name);
     });
   } catch (err) {
-    console.error('[마이그레이션] 에러:', err.message);
-    throw err;
+    // 'already exists' 에러는 스킵 (이미 마이그레이션 완료된 상태)
+    if (err.message && err.message.includes('already exists')) {
+      console.log('[마이그레이션] 테이블이 이미 존재합니다. 스킵합니다:', err.message);
+    } else {
+      console.error('[마이그레이션] 에러:', err.message);
+      throw err;
+    }
   } finally {
     await pool.end();
     console.log('[마이그레이션] DB 연결 종료');
@@ -69,5 +75,7 @@ module.exports = migrate;
 
 // 직접 실행 시
 if (require.main === module) {
-  migrate().catch(() => process.exit(1));
+  migrate()
+    .then(() => process.exit(0))
+    .catch(() => process.exit(1));
 }

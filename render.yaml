@@ -16,7 +16,7 @@ services:
     plan: free
     rootDir: backend
     buildCommand: npm install
-    startCommand: node src/db/migrations/001_init.js && node src/db/seeds/001_gangnam_buildings.js && npm start
+    startCommand: node src/db/migrations/001_init.js ; node src/db/seeds/001_gangnam_buildings.js ; node src/db/seeds/002_hapdong_building.js ; npm start
     healthCheckPath: /health
     envVars:
       - key: NODE_ENV

@@ -2,6 +2,7 @@
  * 시드 데이터: 합동빌딩 (현장 테스트용)
  * - 서울 강남구 역삼로 217
  * - 좌표: 37.496789, 127.040776
+ * - UPSERT 패턴: 중복 실행해도 에러 없음
  */
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '..', '..', '..', '.env') });
@@ -10,21 +11,34 @@ const { Pool } = require('pg');
 async function seed() {
   console.log('[시드] 합동빌딩 데이터 삽입 시작...');
 
-  const pool = new Pool({
-    host: process.env.DB_HOST,
-    port: parseInt(process.env.DB_PORT, 10) || 5432,
-    database: process.env.DB_NAME,
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-    ssl: { rejectUnauthorized: false },
-  });
-
+  const poolConfig = process.env.DATABASE_URL
+    ? { connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } }
+    : {
+        host: process.env.DB_HOST,
+        port: parseInt(process.env.DB_PORT, 10) || 5432,
+        database: process.env.DB_NAME,
+        user: process.env.DB_USER,
+        password: process.env.DB_PASSWORD,
+        ssl: { rejectUnauthorized: false },
+      };
+  const pool = new Pool(poolConfig);
   const client = await pool.connect();
 
   try {
     await client.query('BEGIN');
 
-    // 1. 합동빌딩 삽입
+    // buildings_name_address_unique 제약이 없으면 추가
+    await client.query(`
+      DO $$ BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_constraint WHERE conname = 'buildings_name_address_unique'
+        ) THEN
+          ALTER TABLE buildings ADD CONSTRAINT buildings_name_address_unique UNIQUE (name, address);
+        END IF;
+      END $$;
+    `);
+
+    // 1. 합동빌딩 UPSERT
     const bRes = await client.query(`
       INSERT INTO buildings (name, address, location, total_floors, basement_floors, building_use, occupancy_rate, total_tenants, operating_tenants, parking_info, completion_year)
       VALUES (
@@ -33,10 +47,17 @@ async function seed() {
         ST_SetSRID(ST_MakePoint(127.040776, 37.496789), 4326),
         15, 3, '오피스/상업', 85.00, 28, 22, '지하 B1-B3 (150대)', 1992
       )
+      ON CONFLICT (name, address) DO UPDATE SET updated_at = NOW()
       RETURNING id
     `);
     const buildingId = bRes.rows[0].id;
     console.log('[시드] 합동빌딩 ID:', buildingId);
+
+    // 기존 하위 데이터 삭제 후 재삽입 (idempotent)
+    await client.query('DELETE FROM live_feeds WHERE building_id = $1', [buildingId]);
+    await client.query('DELETE FROM building_stats WHERE building_id = $1', [buildingId]);
+    await client.query('DELETE FROM facilities WHERE building_id = $1', [buildingId]);
+    await client.query('DELETE FROM floors WHERE building_id = $1', [buildingId]);
 
     // 2. 층별 정보 (18개 층)
     const floors = [
@@ -132,4 +153,11 @@ async function seed() {
   }
 }
 
-seed();
+module.exports = seed;
+
+// 직접 실행 시
+if (require.main === module) {
+  seed()
+    .then(() => process.exit(0))
+    .catch(() => process.exit(1));
+}
