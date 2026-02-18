@@ -1,0 +1,24 @@
+node_modules/
+.env
+*.env.local
+.env.production
+__pycache__/
+*.pyc
+.expo/
+dist/
+build/
+.DS_Store
+Thumbs.db
+
+# EAS Build
+mobile/android/
+mobile/ios/
+*.apk
+*.aab
+google-services.json
+
+# Logs
+*.log
+
+# IDE / Tool
+.claude/

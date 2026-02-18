@@ -1,0 +1,52 @@
+# ScanPang MVP - Render.com Blueprint
+# https://render.com/docs/blueprint-spec
+
+databases:
+  - name: scanpang-db
+    plan: free
+    databaseName: scanpang_mvp
+    user: scanpang
+    postgresMajorVersion: "16"
+    ipAllowList: []  # Render 내부 서비스만 접근
+
+services:
+  - type: web
+    name: scanpang-backend
+    runtime: node
+    plan: free
+    region: singapore  # 한국에서 가장 가까운 Render 리전
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: scanpang-db
+          property: connectionString
+      - key: DB_HOST
+        fromDatabase:
+          name: scanpang-db
+          property: host
+      - key: DB_PORT
+        fromDatabase:
+          name: scanpang-db
+          property: port
+      - key: DB_NAME
+        fromDatabase:
+          name: scanpang-db
+          property: database
+      - key: DB_USER
+        fromDatabase:
+          name: scanpang-db
+          property: user
+      - key: DB_PASSWORD
+        fromDatabase:
+          name: scanpang-db
+          property: password
+      - key: API_KEY
+        generateValue: true  # 자동 생성되는 API 키
+      - key: CORS_ORIGIN
+        value: "*"
