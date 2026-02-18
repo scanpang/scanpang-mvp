@@ -6,20 +6,8 @@
 
 import axios from 'axios';
 
-// 환경 변수에서 API URL 가져오기 (react-native-dotenv)
-// 빌드 환경에 따라 폴백 URL 사용
-let API_BASE_URL = 'http://localhost:3000/api';
-
-try {
-  // @env 모듈에서 환경 변수 불러오기 시도
-  const env = require('@env');
-  if (env.API_BASE_URL) {
-    API_BASE_URL = env.API_BASE_URL;
-  }
-} catch (e) {
-  // .env 파일이 없는 경우 기본 URL 사용
-  console.warn('[API] .env 파일을 찾을 수 없습니다. 기본 URL을 사용합니다:', API_BASE_URL);
-}
+// API Base URL
+const API_BASE_URL = 'https://scanpang-backend.onrender.com/api';
 
 // Axios 인스턴스 생성
 const apiClient = axios.create({
