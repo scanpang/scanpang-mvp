@@ -128,8 +128,8 @@ const QuickInfoTags = ({ amenities = [] }) => {
   return (
     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tagsScroll} contentContainerStyle={styles.tagsContent}>
       {amenities.map((item, i) => {
-        const name = typeof item === 'string' ? item.split(' ')[0] : item.name;
-        const detail = typeof item === 'string' ? item.split(' ').slice(1).join(' ') : item.detail;
+        const name = typeof item === 'string' ? item.split(' ')[0] : (item.name || item.type || '');
+        const detail = typeof item === 'string' ? item.split(' ').slice(1).join(' ') : (item.detail || item.statusText || item.locationInfo || '');
         return (
           <View key={i} style={styles.tagPill}>
             <View style={[styles.tagDot, { backgroundColor: Colors.successGreen }]} />
@@ -144,13 +144,16 @@ const QuickInfoTags = ({ amenities = [] }) => {
 
 // ===== 바텀시트: 건물 스탯 =====
 const BuildingStats = ({ building }) => {
-  const tenantCount = building.floors
-    ? building.floors.reduce((s, f) => s + (f.tenants?.length || 0), 0) : 0;
+  const floorCount = building.floors?.length || 0;
+  const occupiedCount = building.floors ? building.floors.filter(f => !f.isVacant && !f.is_vacant).length : 0;
+  const occupancyRate = building.occupancyRate || (floorCount > 0 ? Math.round((occupiedCount / floorCount) * 100) : 85);
+  const tenantCount = building.totalTenants || floorCount;
+  const operatingCount = building.operatingTenants || occupiedCount;
   const stats = [
-    { icon: 'B', label: '총 층수', value: `${building.totalFloors || 0}층`, color: Colors.primaryBlue },
-    { icon: '%', label: '입주율', value: `${building.stats?.occupancyRate || 85}%`, color: Colors.successGreen },
+    { icon: 'B', label: '총 층수', value: `${building.totalFloors || floorCount}층`, color: Colors.primaryBlue },
+    { icon: '%', label: '입주율', value: `${occupancyRate}%`, color: Colors.successGreen },
     { icon: 'T', label: '테넌트', value: `${tenantCount}개`, color: Colors.accentAmber },
-    { icon: 'ON', label: '영업중', value: `${building.stats?.openNow || Math.round(tenantCount * 0.7)}개`, color: Colors.successGreen },
+    { icon: 'ON', label: '영업중', value: `${operatingCount}개`, color: Colors.successGreen },
   ];
 
   return (
@@ -228,19 +231,22 @@ const LiveFeed = ({ feeds = [] }) => {
         </View>
         <Text style={styles.liveTitle}>지금 이 순간</Text>
       </View>
-      {feeds.filter(f => f.isLive).slice(0, 3).map((feed) => (
-        <View key={feed.id} style={styles.liveFeedItem}>
-          <View style={[styles.liveFeedIcon, { backgroundColor: `${FEED_COLORS[feed.type] || Colors.primaryBlue}20` }]}>
-            <Text style={[styles.liveFeedIconText, { color: FEED_COLORS[feed.type] || Colors.primaryBlue }]}>
-              {feed.type === 'event' ? 'EVT' : feed.type === 'promo' || feed.type === 'promotion' ? 'SAL' : 'NEW'}
-            </Text>
+      {feeds.slice(0, 3).map((feed) => {
+        const feedType = feed.type || feed.feedType || 'news';
+        return (
+          <View key={feed.id} style={styles.liveFeedItem}>
+            <View style={[styles.liveFeedIcon, { backgroundColor: `${FEED_COLORS[feedType] || Colors.primaryBlue}20` }]}>
+              <Text style={[styles.liveFeedIconText, { color: FEED_COLORS[feedType] || Colors.primaryBlue }]}>
+                {feedType === 'event' ? 'EVT' : feedType === 'promo' || feedType === 'promotion' ? 'SAL' : 'NEW'}
+              </Text>
+            </View>
+            <View style={styles.liveFeedContent}>
+              <Text style={styles.liveFeedTitle} numberOfLines={1}>{feed.title}</Text>
+              {feed.description && <Text style={styles.liveFeedDesc} numberOfLines={1}>{feed.description}</Text>}
+            </View>
           </View>
-          <View style={styles.liveFeedContent}>
-            <Text style={styles.liveFeedTitle} numberOfLines={1}>{feed.title}</Text>
-            {feed.description && <Text style={styles.liveFeedDesc} numberOfLines={1}>{feed.description}</Text>}
-          </View>
-        </View>
-      ))}
+        );
+      })}
     </View>
   );
 };
@@ -427,7 +433,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
         {selectedBuilding ? (
           <ScrollView style={styles.bsScroll} showsVerticalScrollIndicator={false} nestedScrollEnabled>
             <BuildingHeader building={selectedBuilding} onClose={handleCloseSheet} />
-            <QuickInfoTags amenities={selectedBuilding.amenities || []} />
+            <QuickInfoTags amenities={selectedBuilding.facilities || selectedBuilding.amenities || []} />
             <BuildingStats building={selectedBuilding} />
             <FloorList
               floors={buildingDetail?.floors || selectedBuilding?.floors || []}
@@ -436,7 +442,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
                 setPoints(p => p + (floor.rewardPoints || 50));
               }}
             />
-            <LiveFeed feeds={getLiveFeedsByBuilding(selectedBuilding.id)} />
+            <LiveFeed feeds={buildingDetail?.liveFeeds || getLiveFeedsByBuilding(selectedBuilding.id)} />
             <View style={{ height: 40 }} />
           </ScrollView>
         ) : (

@@ -45,7 +45,7 @@ const HomeScreen = ({ navigation }) => {
   const { buildings, loading } = useNearbyBuildings({
     latitude: userLocation?.lat,
     longitude: userLocation?.lng,
-    heading: 0,
+    heading: null,
     radius: 500,
     enabled: !!userLocation,
   });

@@ -37,12 +37,16 @@ export const getUserFriendlyError = (error) => {
   return ERROR_MESSAGES[status] || ERROR_MESSAGES.default;
 };
 
+// API 인증 키
+const API_KEY = 'scanpang-dev-key-2024';
+
 // Axios 인스턴스 생성
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
   timeout: 10000,
   headers: {
     'Content-Type': 'application/json',
+    'x-api-key': API_KEY,
   },
 });
 
