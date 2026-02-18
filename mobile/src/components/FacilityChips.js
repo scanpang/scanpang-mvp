@@ -1,7 +1,7 @@
 /**
  * FacilityChips - 편의시설 칩 목록 (가로 스크롤)
- * - 각 칩: 아이콘 + 시설명 + 위치/상태
- * - 둥근 모서리, 반투명 배경
+ * - 이모지 → 컬러 텍스트 아이콘 (디바이스 간 일관성)
+ * - pill 형태 (borderRadius 20)
  */
 
 import React from 'react';
@@ -14,65 +14,56 @@ import {
 import { COLORS, SPACING } from '../constants/theme';
 
 /**
- * 편의시설 타입별 아이콘 매핑 (유니코드 이모지)
+ * 편의시설 타입별 텍스트 아이콘 + 색상 매핑
  */
 const FACILITY_ICONS = {
-  'ATM': '🏧',
-  '주차장': '🅿️',
-  '편의점': '🏪',
-  '카페': '☕',
-  '회의실': '🏢',
-  '구내식당': '🍽️',
-  '피트니스': '💪',
-  '은행': '🏦',
-  '영화관': '🎬',
-  '수족관': '🐠',
-  '서점': '📚',
-  '푸드코트': '🍜',
-  '전망대': '🔭',
-  '호텔': '🏨',
-  '쇼핑몰': '🛍️',
-  '오피스': '🏢',
-  '레지던스': '🏠',
-  '식품관': '🥗',
-  'VIP라운지': '👑',
-  '문화센터': '🎭',
-  '와이파이': '📶',
+  'ATM':       { icon: 'ATM', color: '#4CAF50' },
+  '주차장':    { icon: 'P',   color: '#2196F3' },
+  '편의점':    { icon: 'CVS', color: '#FF9800' },
+  '카페':      { icon: 'C',   color: '#795548' },
+  '회의실':    { icon: 'MT',  color: '#607D8B' },
+  '구내식당':  { icon: 'F',   color: '#FF5722' },
+  '피트니스':  { icon: 'GYM', color: '#E91E63' },
+  '은행':      { icon: 'BK',  color: '#3F51B5' },
+  '영화관':    { icon: 'MOV', color: '#9C27B0' },
+  '수족관':    { icon: 'AQ',  color: '#00BCD4' },
+  '서점':      { icon: 'BK',  color: '#8BC34A' },
+  '푸드코트':  { icon: 'FC',  color: '#FF5722' },
+  '전망대':    { icon: 'VW',  color: '#03A9F4' },
+  '호텔':      { icon: 'H',   color: '#FF9800' },
+  '쇼핑몰':    { icon: 'SH',  color: '#E91E63' },
+  '오피스':    { icon: 'OF',  color: '#607D8B' },
+  '레지던스':  { icon: 'RS',  color: '#795548' },
+  '식품관':    { icon: 'GR',  color: '#4CAF50' },
+  'VIP라운지': { icon: 'VIP', color: '#FFC107' },
+  '문화센터':  { icon: 'CC',  color: '#9C27B0' },
+  '와이파이':  { icon: 'WiFi', color: '#2196F3' },
 };
 
 /**
- * 편의시설명에서 아이콘 반환
- * @param {string} name - 시설명
- * @returns {string} 아이콘 문자
+ * 편의시설명에서 텍스트 아이콘 + 색상 반환
  */
 const getFacilityIcon = (name) => {
-  // 정확한 매칭 우선
   if (FACILITY_ICONS[name]) return FACILITY_ICONS[name];
 
-  // 부분 매칭 (시설명에 키워드가 포함된 경우)
-  for (const [key, icon] of Object.entries(FACILITY_ICONS)) {
-    if (name.includes(key)) return icon;
+  for (const [key, config] of Object.entries(FACILITY_ICONS)) {
+    if (name.includes(key)) return config;
   }
 
-  // 기본 아이콘
-  return '📍';
+  return { icon: '#', color: COLORS.textSecondary };
 };
 
 /**
  * 편의시설 데이터를 구조화된 형태로 파싱
- * - 문자열: "ATM 1F로비" → { name: "ATM", detail: "1F로비" }
- * - 객체: { name, detail, icon } 그대로 사용
  */
 const parseFacility = (facility) => {
   if (typeof facility === 'string') {
-    // 공백으로 분리하여 이름과 상세 정보 추출
     const parts = facility.split(' ');
     return {
       name: parts[0],
       detail: parts.slice(1).join(' ') || null,
     };
   }
-  // 객체인 경우 그대로 반환
   return facility;
 };
 
@@ -88,12 +79,12 @@ const FacilityChips = ({ facilities = [] }) => {
     >
       {facilities.map((facility, index) => {
         const parsed = parseFacility(facility);
-        const icon = parsed.icon || getFacilityIcon(parsed.name);
+        const { icon, color } = getFacilityIcon(parsed.name);
 
         return (
           <View key={index} style={styles.chip}>
-            {/* 아이콘 */}
-            <Text style={styles.chipIcon}>{icon}</Text>
+            {/* 텍스트 아이콘 */}
+            <Text style={[styles.chipIcon, { color }]}>{icon}</Text>
 
             {/* 시설명 */}
             <Text style={styles.chipName}>{parsed.name}</Text>
@@ -119,22 +110,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: 1,
   },
 
-  // 개별 칩
+  // 개별 칩 (pill 형태)
   chip: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: 'rgba(255, 255, 255, 0.06)',
     paddingHorizontal: SPACING.sm + 2,
     paddingVertical: SPACING.xs + 1,
-    borderRadius: 12,
+    borderRadius: 20,
     borderWidth: 1,
     borderColor: COLORS.border,
     gap: SPACING.xs,
   },
 
-  // 아이콘
+  // 텍스트 아이콘
   chipIcon: {
-    fontSize: 12,
+    fontSize: 10,
+    fontWeight: '800',
   },
 
   // 시설명

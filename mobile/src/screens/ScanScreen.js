@@ -8,7 +8,7 @@
  * - 하단: 건물 정보 카드 (기본 펼침)
  */
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -24,8 +24,9 @@ import {
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Location from 'expo-location';
 import { Magnetometer } from 'expo-sensors';
+import * as Haptics from 'expo-haptics';
 
-import { COLORS, TYPOGRAPHY, SPACING, CARD_STYLE } from '../constants/theme';
+import { COLORS, TYPOGRAPHY, SPACING, CARD_STYLE, TOUCH } from '../constants/theme';
 import { DUMMY_POINTS, getLiveFeedsByBuilding } from '../constants/dummyData';
 import { postScanLog } from '../services/api';
 import BuildingCard from '../components/BuildingCard';
@@ -114,9 +115,29 @@ const ScanScreen = ({ route, navigation }) => {
   const locationSubscriptionRef = useRef(null);
   const magnetometerSubscriptionRef = useRef(null);
   const isMountedRef = useRef(true);
+  const lastHeadingRef = useRef(0);
 
-  const modeName = mode === 'xray' ? '투시 모드' : '일반 모드';
-  const modeColor = mode === 'xray' ? COLORS.orange : COLORS.blue;
+  // useMemo: modeName, modeColor
+  const modeName = useMemo(() => mode === 'xray' ? '투시 모드' : '일반 모드', [mode]);
+  const modeColor = useMemo(() => mode === 'xray' ? COLORS.orange : COLORS.blue, [mode]);
+
+  // useMemo: locationInfo
+  const locationInfo = useMemo(() => {
+    switch (gpsStatus) {
+      case 'searching': return { text: '위치 확인중...', color: COLORS.orange };
+      case 'active': return { text: 'GPS 활성', color: COLORS.green };
+      case 'error': return { text: '위치 오류', color: COLORS.red };
+      default: return { text: '', color: COLORS.textSecondary };
+    }
+  }, [gpsStatus]);
+
+  // useMemo: pinPositions
+  const pinPositions = useMemo(
+    () => calculatePinPositions(
+      nearbyBuildings, selectedBuildingId, SCREEN_WIDTH - 32, SCREEN_HEIGHT * 0.55
+    ),
+    [nearbyBuildings, selectedBuildingId]
+  );
 
   // 카메라 권한
   useEffect(() => {
@@ -165,11 +186,17 @@ const ScanScreen = ({ route, navigation }) => {
     };
   }, []);
 
-  // 나침반
+  // 나침반 (500ms 간격 + 5도 threshold로 re-render 감소)
   useEffect(() => {
-    Magnetometer.setUpdateInterval(200);
+    Magnetometer.setUpdateInterval(500);
     const sub = Magnetometer.addListener((data) => {
-      if (isMountedRef.current && data) setHeading(computeHeading(data.x, data.y));
+      if (isMountedRef.current && data) {
+        const newHeading = computeHeading(data.x, data.y);
+        if (Math.abs(newHeading - lastHeadingRef.current) >= 5) {
+          lastHeadingRef.current = newHeading;
+          setHeading(newHeading);
+        }
+      }
     });
     magnetometerSubscriptionRef.current = sub;
     return () => magnetometerSubscriptionRef.current?.remove();
@@ -186,12 +213,14 @@ const ScanScreen = ({ route, navigation }) => {
 
   const handleBuildingSelect = useCallback((building) => {
     if (!building) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setSelectedBuildingId(building.id);
     setShowFloorOverlay(false);
     sendScanLog('pin_tapped', building.id, userLocation?.lat, userLocation?.lng, heading);
   }, [userLocation, heading]);
 
   const toggleFloorOverlay = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setShowFloorOverlay((prev) => !prev);
   }, []);
 
@@ -212,27 +241,12 @@ const ScanScreen = ({ route, navigation }) => {
     }
   }, [mode]);
 
-  const getLocationInfo = () => {
-    switch (gpsStatus) {
-      case 'searching': return { text: '위치 확인중...', color: COLORS.orange };
-      case 'active': return { text: 'GPS 활성', color: COLORS.green };
-      case 'error': return { text: '위치 오류', color: COLORS.red };
-      default: return { text: '', color: COLORS.textSecondary };
-    }
-  };
-  const locationInfo = getLocationInfo();
-
-  // 핀 위치 계산 (겹침 방지)
-  const pinPositions = calculatePinPositions(
-    nearbyBuildings, selectedBuildingId, SCREEN_WIDTH - 32, SCREEN_HEIGHT * 0.55
-  );
-
   // ===== 카메라 뷰 렌더링 =====
   const renderCameraArea = () => {
     if (cameraPermissionDenied) {
       return (
         <View style={styles.permissionContainer}>
-          <Text style={styles.permissionIcon}>📷</Text>
+          <Text style={styles.permissionIcon}>CAM</Text>
           <Text style={styles.permissionTitle}>카메라 권한 필요</Text>
           <Text style={styles.permissionDesc}>
             건물을 스캔하려면 카메라 접근 권한이 필요합니다.
@@ -255,7 +269,7 @@ const ScanScreen = ({ route, navigation }) => {
 
     return (
       <CameraView style={styles.cameraView} facing="back">
-        {/* Bug #3: 건물 감지되면 가이드 텍스트 변경 */}
+        {/* 건물 감지되면 가이드 텍스트 변경 */}
         {nearbyBuildings.length === 0 && gpsStatus !== 'searching' && (
           <View style={styles.guideOverlay}>
             <Text style={styles.cameraGuideText}>건물을 향해 카메라를 비추세요</Text>
@@ -267,13 +281,14 @@ const ScanScreen = ({ route, navigation }) => {
           </View>
         )}
 
-        {/* 건물 핀 오버레이 - Bug #6: 겹침 방지 적용 */}
-        {pinPositions.map(({ building, x, y }) => (
+        {/* 건물 핀 오버레이 - 겹침 방지 적용 */}
+        {pinPositions.map(({ building, x, y }, index) => (
           <BuildingPin
             key={building.id}
             building={building}
             isSelected={selectedBuildingId === building.id}
             onPress={() => handleBuildingSelect(building)}
+            index={index}
             style={{
               position: 'absolute',
               top: y,
@@ -288,6 +303,7 @@ const ScanScreen = ({ route, navigation }) => {
             style={styles.floorToggleBtn}
             onPress={toggleFloorOverlay}
             activeOpacity={0.7}
+            hitSlop={TOUCH.hitSlop}
           >
             <Text style={styles.floorToggleBtnText}>
               {showFloorOverlay ? '✕' : '층별 보기'}
@@ -295,12 +311,15 @@ const ScanScreen = ({ route, navigation }) => {
           </TouchableOpacity>
         )}
 
-        {/* Bug #5: 층별 오버레이 (바텀시트 스타일, 최대 50% 높이) */}
+        {/* 층별 오버레이 */}
         <FloorOverlay
           floors={buildingDetail?.floors || selectedBuilding?.floors || []}
           loading={detailLoading}
           onFloorTap={(floor) => console.log('층 탭:', floor)}
-          onRewardTap={(floor) => setPoints((prev) => prev + (floor.rewardPoints || 50))}
+          onRewardTap={(floor) => {
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            setPoints((prev) => prev + (floor.rewardPoints || 50));
+          }}
           visible={showFloorOverlay}
         />
       </CameraView>
@@ -313,7 +332,11 @@ const ScanScreen = ({ route, navigation }) => {
 
       {/* 상단 바 */}
       <View style={styles.topBar}>
-        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => navigation.goBack()}
+          hitSlop={TOUCH.hitSlop}
+        >
           <Text style={styles.backButtonText}>{'‹'}</Text>
         </TouchableOpacity>
 
@@ -347,13 +370,15 @@ const ScanScreen = ({ route, navigation }) => {
 
       {/* 하단 건물 정보 영역 */}
       <View style={styles.bottomSection}>
-        {/* 건물 선택 탭 */}
+        {/* 건물 선택 탭 (snap 스크롤) */}
         {nearbyBuildings.length > 0 && (
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
             style={styles.buildingTabs}
             contentContainerStyle={styles.buildingTabsContent}
+            snapToAlignment="start"
+            decelerationRate="fast"
           >
             {nearbyBuildings.map((building) => (
               <TouchableOpacity
@@ -382,9 +407,10 @@ const ScanScreen = ({ route, navigation }) => {
           </ScrollView>
         )}
 
-        {/* 건물 카드 (기본 펼침) */}
+        {/* 건물 카드 (key로 건물 전환 시 애니메이션 트리거) */}
         {selectedBuilding ? (
           <BuildingCard
+            key={selectedBuilding.id}
             building={selectedBuilding}
             liveFeeds={getLiveFeedsByBuilding(selectedBuilding.id)}
             initialExpanded={true}
@@ -417,7 +443,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.background,
   },
   backButton: {
-    width: 36, height: 36, borderRadius: 12,
+    width: TOUCH.minSize, height: TOUCH.minSize, borderRadius: 12,
     backgroundColor: COLORS.cardBackground,
     justifyContent: 'center', alignItems: 'center',
     marginRight: SPACING.sm,
@@ -452,27 +478,28 @@ const styles = StyleSheet.create({
   },
   cameraView: { flex: 1 },
 
-  // 가이드 오버레이
+  // 가이드 오버레이 (가독성 개선)
   guideOverlay: {
     position: 'absolute', bottom: 60, left: 0, right: 0,
     alignItems: 'center',
   },
   cameraGuideText: {
     ...TYPOGRAPHY.bodySmall,
-    color: 'rgba(255,255,255,0.6)',
-    backgroundColor: 'rgba(10,14,39,0.5)',
+    color: 'rgba(255,255,255,0.9)',
+    backgroundColor: 'rgba(10,14,39,0.75)',
     paddingHorizontal: SPACING.lg, paddingVertical: SPACING.sm,
     borderRadius: 16, overflow: 'hidden',
   },
 
-  // 층별 보기 버튼
+  // 층별 보기 버튼 (터치 타겟 확대)
   floorToggleBtn: {
     position: 'absolute', bottom: SPACING.lg, right: SPACING.lg,
     backgroundColor: 'rgba(74,144,217,0.85)',
-    paddingHorizontal: SPACING.md + 2, paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.lg, paddingVertical: SPACING.md,
     borderRadius: 12, zIndex: 10,
+    minHeight: TOUCH.minSize, justifyContent: 'center',
   },
-  floorToggleBtnText: { fontSize: 12, fontWeight: '700', color: COLORS.textPrimary },
+  floorToggleBtnText: { fontSize: 13, fontWeight: '700', color: COLORS.textPrimary },
 
   // 카메라 로딩
   cameraLoadingContainer: {
@@ -486,24 +513,26 @@ const styles = StyleSheet.create({
     flex: 1, backgroundColor: '#0D1230',
     justifyContent: 'center', alignItems: 'center', padding: SPACING.xl,
   },
-  permissionIcon: { fontSize: 48, marginBottom: SPACING.lg },
+  permissionIcon: { fontSize: 20, fontWeight: '800', color: COLORS.textMuted, marginBottom: SPACING.lg },
   permissionTitle: { ...TYPOGRAPHY.h3, color: COLORS.textPrimary, marginBottom: SPACING.sm },
   permissionDesc: { ...TYPOGRAPHY.bodySmall, color: COLORS.textSecondary, textAlign: 'center', marginBottom: SPACING.xl },
   permissionButton: {
     backgroundColor: COLORS.blue,
     paddingHorizontal: SPACING.xl, paddingVertical: SPACING.md, borderRadius: 12,
+    minHeight: TOUCH.minSize, justifyContent: 'center',
   },
   permissionButtonText: { ...TYPOGRAPHY.button, color: COLORS.textPrimary, fontSize: 14 },
 
   // 하단 섹션
   bottomSection: { flex: 1, paddingBottom: SPACING.sm },
-  buildingTabs: { maxHeight: 40, marginBottom: SPACING.sm },
+  buildingTabs: { maxHeight: 44, marginBottom: SPACING.sm },
   buildingTabsContent: { paddingHorizontal: SPACING.lg, gap: SPACING.sm },
   buildingTab: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: SPACING.md, paddingVertical: SPACING.xs + 2,
     borderRadius: 10, backgroundColor: COLORS.cardBackground,
     borderWidth: 1, borderColor: 'transparent',
+    minHeight: TOUCH.minSize,
   },
   buildingTabActive: { borderColor: COLORS.blue, backgroundColor: 'rgba(74,144,217,0.1)' },
   buildingTabText: { fontSize: 13, fontWeight: '500', color: COLORS.textSecondary, marginRight: SPACING.xs },

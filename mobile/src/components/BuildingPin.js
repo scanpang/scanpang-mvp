@@ -2,7 +2,8 @@
  * BuildingPin - 카메라 뷰 위에 표시되는 건물 이름 태그
  * - 건물명 + 거리(m) 표시
  * - 선택/미선택 상태에 따른 스타일 변경
- * - 탭 시 onPress 콜백 호출
+ * - 입장 stagger 애니메이션 (index * 80ms)
+ * - 선택 시 glow shadow 효과
  */
 
 import React, { useRef, useEffect } from 'react';
@@ -13,19 +14,35 @@ import {
   Animated,
   View,
 } from 'react-native';
-import { COLORS, SPACING } from '../constants/theme';
+import { COLORS, SPACING, ANIMATION, TOUCH } from '../constants/theme';
 import { formatDistance } from '../utils/coordinate';
 
-const BuildingPin = ({ building, isSelected = false, onPress, style }) => {
-  // 선택 시 스케일 애니메이션
-  // Bug #7: 선택된 건물 강조 - 비선택은 더 투명하게
-  const scaleAnim = useRef(new Animated.Value(isSelected ? 1.1 : 0.9)).current;
-  const opacityAnim = useRef(new Animated.Value(isSelected ? 1 : 0.55)).current;
+const BuildingPin = ({ building, isSelected = false, onPress, style, index = 0 }) => {
+  // 선택 시 스케일 애니메이션 (1.2/0.85)
+  const scaleAnim = useRef(new Animated.Value(0)).current;
+  const opacityAnim = useRef(new Animated.Value(0)).current;
+  const entranceAnim = useRef(new Animated.Value(0)).current;
+
+  // 입장 stagger 애니메이션
+  useEffect(() => {
+    const delay = index * ANIMATION.stagger.normal;
+    const timer = setTimeout(() => {
+      Animated.parallel([
+        Animated.spring(entranceAnim, {
+          toValue: 1,
+          friction: 8,
+          tension: 80,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }, delay);
+    return () => clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     Animated.parallel([
       Animated.spring(scaleAnim, {
-        toValue: isSelected ? 1.1 : 0.9,
+        toValue: isSelected ? 1.2 : 0.85,
         friction: 8,
         tension: 100,
         useNativeDriver: true,
@@ -40,14 +57,17 @@ const BuildingPin = ({ building, isSelected = false, onPress, style }) => {
 
   if (!building) return null;
 
+  const combinedScale = Animated.multiply(entranceAnim, scaleAnim);
+
   return (
     <Animated.View
       style={[
         styles.wrapper,
         {
-          transform: [{ scale: scaleAnim }],
-          opacity: opacityAnim,
+          transform: [{ scale: combinedScale }],
+          opacity: Animated.multiply(entranceAnim, opacityAnim),
         },
+        isSelected && styles.wrapperGlow,
         style,
       ]}
     >
@@ -57,7 +77,8 @@ const BuildingPin = ({ building, isSelected = false, onPress, style }) => {
           isSelected ? styles.containerSelected : styles.containerDefault,
         ]}
         onPress={() => onPress && onPress(building)}
-        activeOpacity={0.8}
+        activeOpacity={0.7}
+        hitSlop={TOUCH.hitSlop}
       >
         {/* 건물명 */}
         <Text
@@ -96,6 +117,13 @@ const BuildingPin = ({ building, isSelected = false, onPress, style }) => {
 const styles = StyleSheet.create({
   wrapper: {
     alignItems: 'center',
+  },
+  wrapperGlow: {
+    shadowColor: COLORS.blue,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.6,
+    shadowRadius: 12,
+    elevation: 8,
   },
 
   // 컨테이너 기본 스타일

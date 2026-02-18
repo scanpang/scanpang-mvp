@@ -4,9 +4,10 @@
  * - FacilityChips, StatsRow, LiveSection 컴포넌트 통합
  * - 접기/펼치기 애니메이션 (미니 모드 <-> 전체 펼침)
  * - ScrollView로 스크롤 가능
+ * - 로딩 skeleton 지원
  */
 
-import React, { useRef, useState, useEffect, useCallback } from 'react';
+import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -60,6 +61,50 @@ const buildStatsData = (building) => {
 };
 
 /**
+ * 로딩 Skeleton 컴포넌트
+ */
+const SkeletonBlock = ({ width, height, style }) => {
+  const pulseAnim = useRef(new Animated.Value(0.3)).current;
+
+  useEffect(() => {
+    const animation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 0.6, duration: 800, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 0.3, duration: 800, useNativeDriver: true }),
+      ])
+    );
+    animation.start();
+    return () => animation.stop();
+  }, []);
+
+  return (
+    <Animated.View
+      style={[
+        {
+          width, height,
+          backgroundColor: 'rgba(255,255,255,0.08)',
+          borderRadius: 8,
+          opacity: pulseAnim,
+        },
+        style,
+      ]}
+    />
+  );
+};
+
+const LoadingSkeleton = () => (
+  <View style={styles.skeletonContainer}>
+    <SkeletonBlock width="60%" height={18} />
+    <SkeletonBlock width="40%" height={12} style={{ marginTop: 8 }} />
+    <View style={{ flexDirection: 'row', gap: 8, marginTop: 16 }}>
+      <SkeletonBlock width={60} height={28} />
+      <SkeletonBlock width={60} height={28} />
+      <SkeletonBlock width={60} height={28} />
+    </View>
+  </View>
+);
+
+/**
  * 뷰 모드 토글 버튼
  */
 const ViewModeToggle = ({ mode, onToggle }) => (
@@ -103,6 +148,7 @@ const BuildingCard = ({
   liveFeeds = [],
   onViewModeChange,
   initialExpanded = false,
+  loading = false,
 }) => {
   // 접기/펼치기 상태
   const [expanded, setExpanded] = useState(initialExpanded);
@@ -120,8 +166,8 @@ const BuildingCard = ({
     .filter((feed) => feed.isLive)
     .slice(0, 5);
 
-  // 통계 데이터 생성
-  const statsData = buildStatsData(building);
+  // 통계 데이터 생성 (useMemo)
+  const statsData = useMemo(() => buildStatsData(building), [building]);
 
   /**
    * 카드 등장 애니메이션
@@ -172,6 +218,9 @@ const BuildingCard = ({
     setViewMode(mode);
     onViewModeChange && onViewModeChange(mode);
   }, [onViewModeChange]);
+
+  // 로딩 skeleton
+  if (loading) return <LoadingSkeleton />;
 
   // 건물 데이터가 없으면 렌더링하지 않음
   if (!building) return null;
@@ -224,15 +273,17 @@ const BuildingCard = ({
               </Text>
             </View>
 
-            {/* 접기/펼치기 화살표 */}
-            <Animated.Text
-              style={[
-                styles.expandArrow,
-                { transform: [{ rotate: arrowRotation }] },
-              ]}
-            >
-              ▼
-            </Animated.Text>
+            {/* 접기/펼치기 화살표 (32px 원형 배경) */}
+            <View style={styles.expandArrowContainer}>
+              <Animated.Text
+                style={[
+                  styles.expandArrow,
+                  { transform: [{ rotate: arrowRotation }] },
+                ]}
+              >
+                ▼
+              </Animated.Text>
+            </View>
           </View>
         </TouchableOpacity>
 
@@ -296,6 +347,13 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
 
+  // 로딩 Skeleton
+  skeletonContainer: {
+    ...CARD_STYLE,
+    marginHorizontal: SPACING.lg,
+    padding: SPACING.lg,
+  },
+
   // ===== 헤더 (미니 모드에서도 표시) =====
   header: {
     flexDirection: 'row',
@@ -335,9 +393,17 @@ const styles = StyleSheet.create({
     color: COLORS.blue,
   },
 
-  // 접기/펼치기 화살표
+  // 접기/펼치기 화살표 (32px 원형 배경 컨테이너)
+  expandArrowContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   expandArrow: {
-    fontSize: 10,
+    fontSize: 12,
     color: COLORS.textMuted,
   },
 

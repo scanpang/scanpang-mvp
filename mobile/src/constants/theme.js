@@ -19,7 +19,7 @@ export const COLORS = {
 
   // 텍스트 색상
   textPrimary: '#FFFFFF',   // 주요 텍스트 (화이트)
-  textSecondary: '#9E9E9E', // 보조 텍스트 (그레이)
+  textSecondary: '#B0B0B0', // 보조 텍스트 (WCAG AA 대비율 개선)
   textMuted: '#616161',     // 비활성 텍스트
 
   // 보더 및 구분선
@@ -30,6 +30,16 @@ export const COLORS = {
   live: '#FF5252',     // 라이브 상태 표시
   online: '#00C853',   // 온라인 표시
   offline: '#9E9E9E',  // 오프라인 표시
+
+  // 글라스 효과 색상
+  glassHeavy: 'rgba(255,255,255,0.12)',
+  glassBorder: 'rgba(255,255,255,0.18)',
+
+  // 틴트 색상
+  blueTint: 'rgba(74,144,217,0.15)',
+  orangeTint: 'rgba(255,140,0,0.15)',
+  greenTint: 'rgba(0,200,83,0.15)',
+  redTint: 'rgba(255,82,82,0.15)',
 };
 
 // 타이포그래피 스타일
@@ -90,6 +100,31 @@ export const SPACING = {
   xxl: 32,
 };
 
+// 애니메이션 상수
+export const ANIMATION = {
+  duration: {
+    fast: 150,
+    normal: 300,
+    slow: 500,
+  },
+  spring: {
+    default: { friction: 8, tension: 100 },
+    gentle: { friction: 10, tension: 65 },
+    bouncy: { friction: 4, tension: 120 },
+  },
+  stagger: {
+    fast: 60,
+    normal: 80,
+    slow: 120,
+  },
+};
+
+// 터치 상수
+export const TOUCH = {
+  minSize: 44,
+  hitSlop: { top: 8, bottom: 8, left: 8, right: 8 },
+};
+
 // 카드 스타일 기본값
 export const CARD_STYLE = {
   backgroundColor: COLORS.cardBackground,
@@ -97,6 +132,15 @@ export const CARD_STYLE = {
   padding: SPACING.lg,
   borderWidth: 1,
   borderColor: COLORS.border,
+};
+
+// 글라스 카드 스타일
+export const CARD_STYLE_GLASS = {
+  backgroundColor: COLORS.glassHeavy,
+  borderRadius: 16,
+  padding: SPACING.lg,
+  borderWidth: 1,
+  borderColor: COLORS.glassBorder,
 };
 
 // 그림자 스타일 (Android + iOS)
@@ -115,12 +159,22 @@ export const SHADOW = {
     shadowRadius: 8,
     elevation: 6,
   },
+  heavy: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.35,
+    shadowRadius: 16,
+    elevation: 12,
+  },
 };
 
 export default {
   COLORS,
   TYPOGRAPHY,
   SPACING,
+  ANIMATION,
+  TOUCH,
   CARD_STYLE,
+  CARD_STYLE_GLASS,
   SHADOW,
 };

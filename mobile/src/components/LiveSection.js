@@ -1,8 +1,8 @@
 /**
  * LiveSection - "지금 이 순간 LIVE" 섹션
- * - 실시간 피드 목록 표시
- * - 타입별 아이콘 색상 구분
- * - LIVE 뱃지 깜빡임 애니메이션
+ * - LIVE 뱃지 깜빡임 1200ms (간질 위험 방지, 0.42Hz 안전)
+ * - 피드 아이콘 이모지 → 텍스트 아이콘
+ * - minHeight 48
  */
 
 import React, { useRef, useEffect } from 'react';
@@ -13,7 +13,7 @@ import {
   TouchableOpacity,
   Animated,
 } from 'react-native';
-import { COLORS, SPACING } from '../constants/theme';
+import { COLORS, SPACING, TOUCH } from '../constants/theme';
 
 /**
  * 피드 타입별 색상 매핑
@@ -23,23 +23,22 @@ const FEED_TYPE_COLORS = {
   congestion: '#FF9800',
   promotion: '#2196F3',
   update: '#F44336',
-  // 기존 dummyData의 타입도 지원
   promo: '#2196F3',
   alert: '#F44336',
   news: '#4CAF50',
 };
 
 /**
- * 피드 타입별 아이콘 매핑
+ * 피드 타입별 텍스트 아이콘 매핑
  */
 const FEED_TYPE_ICONS = {
-  event: '🎉',
-  congestion: '🚗',
-  promotion: '🏷️',
-  update: '🔔',
-  promo: '🏷️',
-  alert: '⚠️',
-  news: '📰',
+  event: 'EVT',
+  congestion: 'TRF',
+  promotion: 'SAL',
+  update: 'UPD',
+  promo: 'SAL',
+  alert: 'ALT',
+  news: 'NEW',
 };
 
 /**
@@ -72,23 +71,22 @@ const getRelativeTime = (timestamp) => {
 };
 
 /**
- * LIVE 뱃지 - 깜빡임 애니메이션 포함
+ * LIVE 뱃지 - 깜빡임 1200ms (안전한 0.42Hz)
  */
 const LiveBadge = () => {
   const blinkAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
-    // 무한 반복 깜빡임 애니메이션
     const animation = Animated.loop(
       Animated.sequence([
         Animated.timing(blinkAnim, {
           toValue: 0.3,
-          duration: 600,
+          duration: 1200,
           useNativeDriver: true,
         }),
         Animated.timing(blinkAnim, {
           toValue: 1,
-          duration: 600,
+          duration: 1200,
           useNativeDriver: true,
         }),
       ])
@@ -111,14 +109,14 @@ const LiveBadge = () => {
  */
 const FeedItem = ({ feed }) => {
   const typeColor = FEED_TYPE_COLORS[feed.type] || COLORS.blue;
-  const typeIcon = FEED_TYPE_ICONS[feed.type] || '📌';
+  const typeIcon = FEED_TYPE_ICONS[feed.type] || 'PIN';
   const typeLabel = FEED_TYPE_LABELS[feed.type] || feed.type;
 
   return (
     <TouchableOpacity style={styles.feedItem} activeOpacity={0.7}>
-      {/* 아이콘 (타입별 색상 원형 배경) */}
+      {/* 텍스트 아이콘 (타입별 색상 원형 배경) */}
       <View style={[styles.feedIconCircle, { backgroundColor: `${typeColor}20` }]}>
-        <Text style={styles.feedIcon}>{typeIcon}</Text>
+        <Text style={[styles.feedIcon, { color: typeColor }]}>{typeIcon}</Text>
       </View>
 
       {/* 피드 내용 */}
@@ -225,24 +223,26 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
 
-  // 피드 아이템
+  // 피드 아이템 (minHeight 48)
   feedItem: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: SPACING.sm,
     gap: SPACING.sm + 2,
+    minHeight: 48,
   },
 
-  // 아이콘 원형 배경
+  // 텍스트 아이콘 원형 배경
   feedIconCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
   },
   feedIcon: {
-    fontSize: 14,
+    fontSize: 10,
+    fontWeight: '800',
   },
 
   // 피드 내용

@@ -1,8 +1,8 @@
 /**
  * FloorOverlay - 층별 안내 (레퍼런스 기준 우측 반투명 패널)
- * - Bug #4: 로딩 완료 후 스피너 제거
- * - Bug #5: 최대 높이 50%, 바텀시트 스타일
- * - 슬라이드인 애니메이션
+ * - 배경 opacity 0.85, 너비 50%
+ * - 포인트 버튼 fontSize 12, 터치 타겟 확대
+ * - FloorItem stagger 애니메이션 (index * 60ms)
  */
 
 import React, { useRef, useEffect } from 'react';
@@ -16,10 +16,10 @@ import {
   Dimensions,
   ActivityIndicator,
 } from 'react-native';
-import { COLORS, SPACING } from '../constants/theme';
+import { COLORS, SPACING, ANIMATION, TOUCH } from '../constants/theme';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
-const MAX_OVERLAY_HEIGHT = SCREEN_HEIGHT * 0.45; // 최대 45% 높이
+const MAX_OVERLAY_HEIGHT = SCREEN_HEIGHT * 0.45;
 
 const FloorBadge = ({ floor, isVacant, hasReward }) => {
   const badgeColor = isVacant
@@ -38,7 +38,7 @@ const FloorBadge = ({ floor, isVacant, hasReward }) => {
   );
 };
 
-const FloorItem = ({ floorData, onFloorTap, onRewardTap }) => {
+const FloorItem = ({ floorData, onFloorTap, onRewardTap, index = 0, visible = false }) => {
   const floor = floorData.floor || floorData.floorNumber || '';
   const tenants = floorData.tenants || [];
   const tenantName = floorData.tenantName || '';
@@ -50,40 +50,67 @@ const FloorItem = ({ floorData, onFloorTap, onRewardTap }) => {
     ? tenants.slice(0, 2).join(', ') + (tenants.length > 2 ? ` +${tenants.length - 2}` : '')
     : tenantName || usage || '정보 없음';
 
+  // stagger 애니메이션
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(20)).current;
+
+  useEffect(() => {
+    if (visible) {
+      const delay = index * ANIMATION.stagger.fast;
+      const timer = setTimeout(() => {
+        Animated.parallel([
+          Animated.timing(fadeAnim, {
+            toValue: 1, duration: 200, useNativeDriver: true,
+          }),
+          Animated.timing(slideAnim, {
+            toValue: 0, duration: 200, useNativeDriver: true,
+          }),
+        ]).start();
+      }, delay);
+      return () => clearTimeout(timer);
+    } else {
+      fadeAnim.setValue(0);
+      slideAnim.setValue(20);
+    }
+  }, [visible]);
+
   return (
-    <TouchableOpacity
-      style={[
-        styles.floorItem,
-        isVacant && styles.floorItemVacant,
-        hasReward && styles.floorItemReward,
-      ]}
-      onPress={() => onFloorTap && onFloorTap(floorData)}
-      activeOpacity={0.7}
-    >
-      <FloorBadge floor={floor} isVacant={isVacant} hasReward={hasReward} />
-      <View style={styles.floorInfo}>
-        <Text
-          style={[styles.tenantName, isVacant && styles.tenantNameVacant]}
-          numberOfLines={1}
-        >
-          {isVacant ? '공실' : tenantDisplay}
-        </Text>
-      </View>
-      <View style={styles.floorAction}>
-        {hasReward ? (
-          <TouchableOpacity
-            style={styles.rewardBtn}
-            onPress={() => onRewardTap && onRewardTap(floorData)}
+    <Animated.View style={{ opacity: fadeAnim, transform: [{ translateX: slideAnim }] }}>
+      <TouchableOpacity
+        style={[
+          styles.floorItem,
+          isVacant && styles.floorItemVacant,
+          hasReward && styles.floorItemReward,
+        ]}
+        onPress={() => onFloorTap && onFloorTap(floorData)}
+        activeOpacity={0.7}
+      >
+        <FloorBadge floor={floor} isVacant={isVacant} hasReward={hasReward} />
+        <View style={styles.floorInfo}>
+          <Text
+            style={[styles.tenantName, isVacant && styles.tenantNameVacant]}
+            numberOfLines={1}
           >
-            <Text style={styles.rewardBtnText}>포인트</Text>
-          </TouchableOpacity>
-        ) : isVacant ? (
-          <Text style={styles.vacantIcon}>━</Text>
-        ) : (
-          <Text style={styles.arrowIcon}>›</Text>
-        )}
-      </View>
-    </TouchableOpacity>
+            {isVacant ? '공실' : tenantDisplay}
+          </Text>
+        </View>
+        <View style={styles.floorAction}>
+          {hasReward ? (
+            <TouchableOpacity
+              style={styles.rewardBtn}
+              onPress={() => onRewardTap && onRewardTap(floorData)}
+              hitSlop={TOUCH.hitSlop}
+            >
+              <Text style={styles.rewardBtnText}>포인트</Text>
+            </TouchableOpacity>
+          ) : isVacant ? (
+            <Text style={styles.vacantIcon}>━</Text>
+          ) : (
+            <Text style={styles.arrowIcon}>›</Text>
+          )}
+        </View>
+      </TouchableOpacity>
+    </Animated.View>
   );
 };
 
@@ -134,7 +161,7 @@ const FloorOverlay = ({ floors = [], loading = false, onFloorTap, onRewardTap, v
         <Text style={styles.headerCount}>{floors.length}개 층</Text>
       </View>
 
-      {/* Bug #4: 로딩 상태 - 데이터 로드 완료 시 스피너 제거 */}
+      {/* 로딩 상태 */}
       {loading && floors.length === 0 ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="small" color={COLORS.blue} />
@@ -152,6 +179,8 @@ const FloorOverlay = ({ floors = [], loading = false, onFloorTap, onRewardTap, v
               floorData={floorData}
               onFloorTap={onFloorTap}
               onRewardTap={onRewardTap}
+              index={index}
+              visible={visible}
             />
           ))}
         </ScrollView>
@@ -161,16 +190,16 @@ const FloorOverlay = ({ floors = [], loading = false, onFloorTap, onRewardTap, v
 };
 
 const styles = StyleSheet.create({
-  // Bug #5: 최대 높이 제한 + 우측 패널 스타일
+  // 너비 50%, 배경 opacity 0.85
   container: {
     position: 'absolute',
     right: 0,
     top: 0,
     bottom: 0,
-    width: '60%',
+    width: '50%',
     maxWidth: 280,
     maxHeight: MAX_OVERLAY_HEIGHT,
-    backgroundColor: 'rgba(10,14,39,0.92)',
+    backgroundColor: 'rgba(10,14,39,0.85)',
     borderLeftWidth: 1,
     borderBottomLeftRadius: 16,
     borderLeftColor: 'rgba(255,255,255,0.1)',
@@ -200,6 +229,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: 'rgba(255,255,255,0.05)',
     borderRadius: 10, padding: SPACING.sm, gap: SPACING.sm,
+    minHeight: TOUCH.minSize,
   },
   floorItemVacant: { backgroundColor: 'rgba(255,255,255,0.02)', opacity: 0.5 },
   floorItemReward: {
@@ -220,9 +250,11 @@ const styles = StyleSheet.create({
   floorAction: { minWidth: 28, alignItems: 'flex-end' },
   rewardBtn: {
     backgroundColor: 'rgba(255,140,0,0.8)',
-    paddingHorizontal: SPACING.sm, paddingVertical: 3, borderRadius: 8,
+    paddingHorizontal: SPACING.sm + 2, paddingVertical: SPACING.xs, borderRadius: 8,
+    minHeight: 32,
+    justifyContent: 'center',
   },
-  rewardBtnText: { fontSize: 9, fontWeight: '700', color: COLORS.textPrimary },
+  rewardBtnText: { fontSize: 12, fontWeight: '700', color: COLORS.textPrimary },
   vacantIcon: { fontSize: 12, color: COLORS.textMuted },
   arrowIcon: { fontSize: 16, color: COLORS.textMuted, fontWeight: '300' },
 });
