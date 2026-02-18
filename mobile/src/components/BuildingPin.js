@@ -18,19 +18,20 @@ import { formatDistance } from '../utils/coordinate';
 
 const BuildingPin = ({ building, isSelected = false, onPress, style }) => {
   // 선택 시 스케일 애니메이션
-  const scaleAnim = useRef(new Animated.Value(isSelected ? 1.05 : 1)).current;
-  const opacityAnim = useRef(new Animated.Value(isSelected ? 1 : 0.75)).current;
+  // Bug #7: 선택된 건물 강조 - 비선택은 더 투명하게
+  const scaleAnim = useRef(new Animated.Value(isSelected ? 1.1 : 0.9)).current;
+  const opacityAnim = useRef(new Animated.Value(isSelected ? 1 : 0.55)).current;
 
   useEffect(() => {
     Animated.parallel([
       Animated.spring(scaleAnim, {
-        toValue: isSelected ? 1.05 : 1,
+        toValue: isSelected ? 1.1 : 0.9,
         friction: 8,
         tension: 100,
         useNativeDriver: true,
       }),
       Animated.timing(opacityAnim, {
-        toValue: isSelected ? 1 : 0.75,
+        toValue: isSelected ? 1 : 0.55,
         duration: 200,
         useNativeDriver: true,
       }),

@@ -8,6 +8,7 @@ API: 국토교통부_건축물대장정보 서비스
 
 import logging
 import time
+import xml.etree.ElementTree as ET
 from typing import Optional
 
 import pandas as pd
@@ -56,29 +57,49 @@ def fetch_building_ledger(
         try:
             resp = requests.get(BASE_URL, params=params, timeout=30)
             resp.raise_for_status()
-            data = resp.json()
         except requests.exceptions.RequestException as e:
             logger.error(f"API 요청 실패 (페이지 {page_no}): {e}")
             break
-        except ValueError as e:
-            logger.error(f"JSON 파싱 실패 (페이지 {page_no}): {e}")
-            # XML 응답일 수 있음 (공공데이터포털 에러 시)
-            logger.debug(f"응답 본문: {resp.text[:500]}")
-            break
 
-        # 응답 구조 파싱
-        body = data.get("response", {}).get("body", {})
-        total_count = body.get("totalCount", 0)
-        items = body.get("items", {})
-
-        if not items:
-            logger.info(f"페이지 {page_no}: 데이터 없음. 수집 종료.")
-            break
-
-        # items가 dict일 때 item 키로 리스트 추출
-        item_list = items if isinstance(items, list) else items.get("item", [])
-        if isinstance(item_list, dict):
-            item_list = [item_list]
+        # JSON 파싱 시도, 실패 시 XML 파싱
+        content_type = resp.headers.get("content-type", "")
+        try:
+            if "xml" in content_type:
+                raise ValueError("XML response detected")
+            data = resp.json()
+            body = data.get("response", {}).get("body", {})
+            total_count = body.get("totalCount", 0)
+            items = body.get("items", {})
+            if not items:
+                logger.info(f"페이지 {page_no}: 데이터 없음. 수집 종료.")
+                break
+            item_list = items if isinstance(items, list) else items.get("item", [])
+            if isinstance(item_list, dict):
+                item_list = [item_list]
+        except (ValueError, KeyError):
+            # XML 파싱 fallback
+            try:
+                root = ET.fromstring(resp.text)
+                body_el = root.find(".//body")
+                if body_el is None:
+                    logger.error(f"페이지 {page_no}: XML에서 body를 찾을 수 없음")
+                    break
+                total_count_el = body_el.find("totalCount")
+                total_count = int(total_count_el.text) if total_count_el is not None else 0
+                item_elements = root.findall(".//item")
+                if not item_elements:
+                    logger.info(f"페이지 {page_no}: 데이터 없음. 수집 종료.")
+                    break
+                item_list = []
+                for item_el in item_elements:
+                    item_dict = {}
+                    for child in item_el:
+                        item_dict[child.tag] = child.text
+                    item_list.append(item_dict)
+                logger.debug(f"페이지 {page_no}: XML 파싱 성공 ({len(item_list)}건)")
+            except ET.ParseError as e:
+                logger.error(f"XML 파싱 실패 (페이지 {page_no}): {e}")
+                break
 
         all_items.extend(item_list)
         logger.info(f"페이지 {page_no}: {len(item_list)}건 수집 (누적 {len(all_items)}/{total_count})")
