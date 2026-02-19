@@ -13,6 +13,10 @@ const db = require('./db');
 const buildingsRouter = require('./routes/buildings');
 const scanRouter = require('./routes/scan');
 const liveRouter = require('./routes/live');
+const behaviorRouter = require('./routes/behavior');
+const timeRouter = require('./routes/time');
+const flywheelRouter = require('./routes/flywheel');
+const geminiRouter = require('./routes/gemini');
 
 // 미들웨어 임포트
 const { apiKeyAuth } = require('./middleware/auth');
@@ -28,7 +32,7 @@ app.use(helmet());
 // CORS 설정 (모바일 앱 + 개발용)
 app.use(cors({
   origin: process.env.CORS_ORIGIN || '*',
-  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
   allowedHeaders: ['Content-Type', 'x-api-key'],
 }));
 
@@ -60,6 +64,10 @@ app.get('/health', async (req, res) => {
 app.use('/api/buildings', apiKeyAuth, buildingsRouter);
 app.use('/api/scan', apiKeyAuth, scanRouter);
 app.use('/api/live', apiKeyAuth, liveRouter);
+app.use('/api/behavior', apiKeyAuth, behaviorRouter);
+app.use('/api/time', apiKeyAuth, timeRouter);
+app.use('/api/flywheel', apiKeyAuth, flywheelRouter);
+app.use('/api/gemini', apiKeyAuth, geminiRouter);
 
 // ===== 404 핸들러 =====
 app.use((req, res) => {

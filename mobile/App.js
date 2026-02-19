@@ -15,6 +15,8 @@ import { createStackNavigator } from '@react-navigation/stack';
 // 화면 컴포넌트
 import HomeScreen from './src/screens/HomeScreen';
 import ScanCameraScreen from './src/screens/ScanCameraScreen';
+import BehaviorReportScreen from './src/screens/BehaviorReportScreen';
+import FlywheelDashboardScreen from './src/screens/FlywheelDashboardScreen';
 
 import { Colors } from './src/constants/theme';
 
@@ -96,6 +98,22 @@ export default function App() {
               cardStyleInterpolator: ({ current: { progress } }) => ({
                 cardStyle: { opacity: progress },
               }),
+            }}
+          />
+          <Stack.Screen
+            name="BehaviorReport"
+            component={BehaviorReportScreen}
+            options={{
+              title: '행동 리포트',
+              gestureEnabled: true,
+            }}
+          />
+          <Stack.Screen
+            name="FlywheelDashboard"
+            component={FlywheelDashboardScreen}
+            options={{
+              title: 'Flywheel',
+              gestureEnabled: true,
             }}
           />
         </Stack.Navigator>

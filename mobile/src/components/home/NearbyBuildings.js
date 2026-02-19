@@ -18,8 +18,8 @@ const DistanceDot = ({ distance }) => {
   return <View style={[styles.distanceDot, { backgroundColor: color }]} />;
 };
 
-const BuildingPreviewCard = ({ building, onPress }) => (
-  <TouchableOpacity style={styles.card} onPress={() => onPress && onPress(building)} activeOpacity={0.7}>
+const BuildingPreviewCard = ({ building, onPress, onLongPress }) => (
+  <TouchableOpacity style={styles.card} onPress={() => onPress && onPress(building)} onLongPress={() => onLongPress && onLongPress(building)} activeOpacity={0.7}>
     {/* 썸네일 placeholder */}
     <View style={styles.thumbnail}>
       <Text style={styles.thumbnailText}>{building.name?.charAt(0) || 'B'}</Text>
@@ -41,9 +41,9 @@ const SkeletonCard = () => (
   </View>
 );
 
-const NearbyBuildings = ({ buildings = [], loading = false, onBuildingPress }) => {
+const NearbyBuildings = ({ buildings = [], loading = false, onBuildingPress, onBuildingLongPress }) => {
   const renderItem = ({ item }) => (
-    <BuildingPreviewCard building={item} onPress={onBuildingPress} />
+    <BuildingPreviewCard building={item} onPress={onBuildingPress} onLongPress={onBuildingLongPress} />
   );
 
   return (

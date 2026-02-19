@@ -1,396 +1,374 @@
-# ScanPang MVP - Claude Code 멀티 에이전트 프로젝트
+# CLAUDE.md — ScanPang AR Platform
 
 ## 프로젝트 개요
-ScanPang(스캔팡)은 카메라로 건물을 비추면 해당 건물의 층별 정보, 입점 현황, 편의시설 등을 즉시 보여주는 AR 기반 실공간 정보 서비스입니다.
 
-### MVP 핵심 목표
-**"강남·역삼 일대에서 카메라를 비추면 건물을 인식하고, 층별 정보와 건물 프로필을 보여준다"**
+ScanPang은 Vision AI 기반 AR 플랫폼으로, 유저가 카메라로 건물을 비추면 건물 위에 핀/라벨을 AR로 증강 표시하고, 건물 정보를 제공하며, 동시에 유저의 공간 행동데이터를 수집하여 분석 리포트를 생성하는 서비스입니다.
 
-### MVP 대상 지역
-- 강남역·역삼역 반경 500m
-- 주요 오피스/상업 건물 30~50개
+### 핵심 가치
+- **기존 업체 (Placer.ai 등)**: "어디 갔나" (GPS 위치 데이터)
+- **ScanPang**: "뭘 봤나, 얼마나 봤나, 왜 안 들어갔나" (시각적 주목 데이터)
+- 이 데이터는 세계 어디에도 없는 새로운 레이어이며, DOOH/부동산/리테일/도시계획 시장에 동시 판매 가능
+
+### 개발 전략: Option C (하이브리드)
+- **Phase 1 (현재, Claude Code)**: 웹/앱 + 건물 DB + 행동데이터 수집 + Gemini 연동 + 자동 DB 플라이휠
+- **Phase 2 (이후, Unity 개발자)**: AR 렌더링을 ARCore Geospatial API(VPS)로 교체
+- Phase 1의 백엔드/DB/파이프라인은 Phase 2에서 그대로 재사용
+
+### MVP 타겟
+- D.Camp Batch 7 데모
+- 투자자 IR 시연
+- 정부 R&D 중간보고
+- 세 가지를 동시에 만족시켜야 함
 
 ---
 
-## 프로젝트 구조
+## 기술 스택
+
+### Frontend (Mobile)
+- React Native (Expo)
+- react-native-camera / expo-camera
+- expo-location, expo-sensors (나침반, 가속도계, 자이로스코프)
+- react-native-maps
+- Bottom Sheet UI (건물 정보 카드)
+
+### Backend
+- Node.js (Express 또는 Fastify)
+- PostgreSQL + PostGIS (공간 쿼리)
+- Prisma ORM
+- Render 배포 (기존 scanpang-backend 확장)
+
+### AI / Data
+- Google Gemini API (Vision + Live)
+- 건물 인식: GPS + 나침반 + 서버 시각 기반 매칭 (Phase 1) → YOLO + Geospatial VPS (Phase 2)
+- 자동 DB 구축: Gemini Vision으로 카메라 프레임 분석 → 건물 정보 추출 → DB 저장
+
+### 7-Factor 검증 시스템
+1. GPS 좌표 + 거리
+2. 나침반 방위각
+3. 자이로스코프 (기기 기울기)
+4. 가속도계 (이동 상태)
+5. 카메라 각도
+6. **서버 시각** (시간대별 건물 외관 변화 — 네온사인, 조명, 그림자 방향으로 A/B 건물 구분)
+7. Gemini Vision 분석 결과
+
+---
+
+## 시스템 아키텍처
 
 ```
-scanpang-mvp/
-├── CLAUDE.md                # 이 파일 (team-lead 지시서)
-├── backend/                 # API 서버 (Node.js + Express + PostgreSQL + PostGIS)
-│   ├── src/
-│   │   ├── routes/
-│   │   │   ├── buildings.js     # 건물 조회 API
-│   │   │   ├── scan.js          # 스캔(행동 로그) API
-│   │   │   └── live.js          # LIVE 더미 데이터 API
-│   │   ├── models/
-│   │   │   ├── building.js      # 건물 모델
-│   │   │   ├── floor.js         # 층별 정보 모델
-│   │   │   ├── tenant.js        # 입점 업체 모델
-│   │   │   └── scanLog.js       # 행동 로그 모델
-│   │   ├── services/
-│   │   │   ├── geospatial.js    # 좌표 기반 건물 매칭
-│   │   │   └── buildingProfile.js # 건물 프로필 조합
-│   │   ├── middleware/
-│   │   │   └── auth.js          # 간단한 API 키 인증
-│   │   ├── db/
-│   │   │   ├── migrations/      # DB 마이그레이션
-│   │   │   └── seeds/           # 초기 데이터 시드
-│   │   └── app.js               # Express 앱 엔트리
-│   ├── package.json
-│   └── .env.example
-├── mobile/                  # React Native 앱 (Expo)
-│   ├── src/
-│   │   ├── screens/
-│   │   │   ├── HomeScreen.js        # 모드 선택 화면
-│   │   │   └── ScanScreen.js        # 카메라 + 건물 정보 메인 화면
-│   │   ├── components/
-│   │   │   ├── CameraView.js        # AR 카메라 뷰 + 건물 핀 오버레이
-│   │   │   ├── BuildingPin.js       # 건물 이름 태그
-│   │   │   ├── FloorOverlay.js      # 층별 정보 오버레이 (카메라 위)
-│   │   │   ├── BuildingCard.js      # 하단 건물 정보 카드
-│   │   │   ├── FloorList.js         # 층별 입점 현황 리스트
-│   │   │   ├── FacilityChips.js     # 편의시설 칩 (ATM, 편의점 등)
-│   │   │   ├── StatsRow.js          # 건물 지표 (총 층수, 입주율 등)
-│   │   │   ├── LiveSection.js       # "지금 이 순간" LIVE (더미)
-│   │   │   ├── PointBadge.js        # 포인트 표시 (더미)
-│   │   │   └── RewardButton.js      # "포인트 받기" 버튼 (더미)
-│   │   ├── services/
-│   │   │   ├── api.js               # 백엔드 API 클라이언트
-│   │   │   ├── geospatial.js        # Geospatial API 연동
-│   │   │   └── scanLogger.js        # 행동 데이터 로깅
-│   │   ├── hooks/
-│   │   │   ├── useNearbyBuildings.js
-│   │   │   └── useBuildingDetail.js
-│   │   ├── constants/
-│   │   │   ├── dummyData.js         # 더미 데이터 (포인트, LIVE)
-│   │   │   └── theme.js             # UI 테마 (다크 테마)
-│   │   └── utils/
-│   │       └── coordinate.js        # 좌표 계산 유틸
-│   ├── app.json
-│   └── package.json
-├── data-pipeline/           # 건물 DB 구축 파이프라인 (Python)
-│   ├── collectors/
-│   │   ├── building_ledger.py   # 건축물대장 공공API 수집
-│   │   ├── naver_places.py      # 네이버 플레이스 매장 정보
-│   │   └── google_places.py     # Google Places API 매장 정보
-│   ├── processors/
-│   │   ├── merger.py            # 데이터 통합/정제
-│   │   └── geocoder.py          # 주소 → 좌표 변환
-│   ├── loaders/
-│   │   └── db_loader.py         # PostgreSQL 적재
-│   ├── config.py
-│   ├── main.py                  # 파이프라인 실행 엔트리
-│   ├── requirements.txt
-│   └── .env.example
-└── shared/                  # 공통 스키마/타입
-    ├── schema.sql               # DB 스키마 (PostgreSQL + PostGIS)
-    └── types.ts                 # 공통 TypeScript 타입
+┌─────────────────────────────────────────────────────────────────┐
+│                     MOBILE APP (React Native)                    │
+│                                                                  │
+│  ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌──────────────┐ │
+│  │ Camera     │ │ Sensors    │ │ Building   │ │ Behavior     │ │
+│  │ View +     │ │ GPS/Compass│ │ Card UI    │ │ Tracker      │ │
+│  │ AR Overlay │ │ Gyro/Accel │ │ (Bottom    │ │ (자동 수집)  │ │
+│  │            │ │ + 서버시각 │ │  Sheet)    │ │              │ │
+│  └─────┬──────┘ └─────┬──────┘ └─────┬──────┘ └──────┬───────┘ │
+│        │              │              │                │         │
+│  ┌─────┴──────────────┴──────────────┴────────────────┴───────┐ │
+│  │              Building Detection Engine                      │ │
+│  │  GPS+나침반+서버시각 → 반경 건물 조회 → 방향/거리 계산      │ │
+│  │  → 7-Factor 검증 → 건물 확정 → 핀 배치                     │ │
+│  └────────────────────────┬────────────────────────────────────┘ │
+│                           │                                      │
+│  ┌────────────────────────┴────────────────────────────────────┐ │
+│  │              Gemini Live Integration                         │ │
+│  │  카메라 스트림 → 실시간 건물 분석/설명                       │ │
+│  │  음성 인터랙션 → 질문/답변                                   │ │
+│  │  라이브 정보 감지 → DB 자동 강화                             │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+└───────────────────────────┬──────────────────────────────────────┘
+                            │ REST API + WebSocket
+┌───────────────────────────┼──────────────────────────────────────┐
+│                     BACKEND (Node.js / Render)                    │
+│                                                                   │
+│  ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌──────────────┐  │
+│  │ Building   │ │ Behavior   │ │ Gemini     │ │ Flywheel     │  │
+│  │ API        │ │ Data API   │ │ Proxy      │ │ Pipeline     │  │
+│  │ (CRUD +    │ │ (이벤트    │ │ (Vision +  │ │ (소싱→검증   │  │
+│  │  Geo검색)  │ │  스트리밍) │ │  Live)     │ │  →저장)      │  │
+│  └─────┬──────┘ └─────┬──────┘ └─────┬──────┘ └──────┬───────┘  │
+│        │              │              │                │          │
+│  ┌─────┴──────────────┴──────────────┴────────────────┴───────┐  │
+│  │              PostgreSQL + PostGIS                            │  │
+│  │  buildings | behavior_events | building_profiles |           │  │
+│  │  user_sessions | detection_logs | sourced_info              │  │
+│  └─────────────────────────────────────────────────────────────┘  │
+└───────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 에이전트 팀 구성
-
-### @team-lead (메인 - Opus)
-- 전체 아키텍처 관리, 태스크 분배, 의존성 조율
-- DB 스키마 설계 (shared/schema.sql)
-- 코드 리뷰 및 통합
-
-### @backend-dev (Sonnet)
-- Express API 서버 구현
-- PostgreSQL + PostGIS 쿼리
-- 건물 조회, 행동 로그, LIVE 더미 API
-
-### @frontend-dev (Sonnet)
-- React Native(Expo) 모바일 앱
-- 카메라 뷰 + 건물 핀 + 정보 카드 UI
-- 포인트/리워드/LIVE 더미 UI
-
-### @data-pipeline (Sonnet)
-- Python 데이터 수집 스크립트
-- 공공데이터 + 네이버/구글 매장 정보 수집
-- DB 적재
-
----
-
-## DB 스키마 (핵심)
+## DB 스키마
 
 ```sql
--- PostGIS 확장
-CREATE EXTENSION IF NOT EXISTS postgis;
-
--- 건물 테이블
+-- 건물 기본 정보
 CREATE TABLE buildings (
-    id SERIAL PRIMARY KEY,
-    name VARCHAR(200) NOT NULL,              -- 건물명
-    address VARCHAR(500) NOT NULL,           -- 주소
-    location GEOMETRY(Point, 4326) NOT NULL, -- 좌표 (PostGIS)
-    total_floors INTEGER,                    -- 총 층수
-    basement_floors INTEGER DEFAULT 0,       -- 지하 층수
-    building_use VARCHAR(100),               -- 건물 용도 (오피스, 상업, 주거 등)
-    occupancy_rate DECIMAL(5,2),             -- 입주율 (%)
-    total_tenants INTEGER,                   -- 총 입점 업체 수
-    operating_tenants INTEGER,               -- 영업중 업체 수
-    parking_info VARCHAR(200),               -- 주차 정보
-    completion_year INTEGER,                 -- 준공연도
-    thumbnail_url VARCHAR(500),              -- 건물 썸네일
-    created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW()
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name VARCHAR(255) NOT NULL,
+  address TEXT,
+  location GEOGRAPHY(POINT, 4326) NOT NULL,
+  altitude FLOAT,
+  heading_from_north FLOAT, -- 건물 정면 방위각
+  category VARCHAR(100),
+  thumbnail_url TEXT,
+  floor_count INT,
+  neon_sign_hours JSONB, -- 네온사인 점등 시간대 {"on": "18:00", "off": "06:00"}
+  metadata JSONB, -- 기타 확장 정보
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 층별 정보 테이블
-CREATE TABLE floors (
-    id SERIAL PRIMARY KEY,
-    building_id INTEGER REFERENCES buildings(id),
-    floor_number VARCHAR(10) NOT NULL,       -- 'B2', 'B1', '1F', '2F', 'RF' 등
-    floor_order INTEGER NOT NULL,            -- 정렬용 (B2=-2, 1F=1, RF=99)
-    tenant_name VARCHAR(200),                -- 입점 업체명
-    tenant_category VARCHAR(100),            -- 업종 카테고리
-    tenant_icon VARCHAR(50),                 -- 아이콘 코드
-    is_vacant BOOLEAN DEFAULT FALSE,         -- 공실 여부
-    has_reward BOOLEAN DEFAULT FALSE,        -- 리워드 가능 여부 (더미)
-    reward_points INTEGER DEFAULT 0,         -- 리워드 포인트 (더미)
-    created_at TIMESTAMP DEFAULT NOW()
+-- 건물 상세 프로필 (플라이휠로 지속 강화)
+CREATE TABLE building_profiles (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  building_id UUID REFERENCES buildings(id),
+  category VARCHAR(100), -- 업종, 용도
+  description TEXT,
+  business_hours JSONB,
+  contact JSONB,
+  photos JSONB, -- 유저/AI가 수집한 사진들
+  live_info JSONB, -- Gemini가 감지한 실시간 정보
+  confidence_score FLOAT DEFAULT 0, -- 데이터 신뢰도
+  source VARCHAR(50), -- 'public_data', 'user_camera', 'gemini_analysis'
+  last_verified_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 편의시설 테이블
-CREATE TABLE facilities (
-    id SERIAL PRIMARY KEY,
-    building_id INTEGER REFERENCES buildings(id),
-    facility_type VARCHAR(50) NOT NULL,      -- 'ATM', '편의점', '와이파이', '냉난방', '주차장' 등
-    location_info VARCHAR(200),              -- '1F 로비', 'B1-B2' 등
-    is_available BOOLEAN DEFAULT TRUE,       -- 현재 이용가능 여부
-    status_text VARCHAR(100)                 -- '24시간', '무료', '중앙 공급' 등
+-- 행동 데이터 이벤트
+CREATE TABLE behavior_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id UUID NOT NULL,
+  user_id UUID,
+  building_id UUID REFERENCES buildings(id),
+  event_type VARCHAR(50) NOT NULL, -- 'gaze_start', 'gaze_end', 'pin_click', 'card_open', 'card_close', 'zoom_in', 'photo_taken', 'ar_interaction', 'entered_building', 'passed_by'
+  duration_ms INT, -- 해당 이벤트 지속 시간
+  -- 7-Factor 데이터
+  gps_lat FLOAT,
+  gps_lng FLOAT,
+  gps_accuracy FLOAT,
+  compass_heading FLOAT,
+  gyroscope JSONB, -- {alpha, beta, gamma}
+  accelerometer JSONB, -- {x, y, z}
+  camera_angle JSONB, -- {pitch, yaw, roll}
+  server_timestamp TIMESTAMPTZ NOT NULL, -- 서버 시각 (7번째 factor)
+  client_timestamp TIMESTAMPTZ, -- 클라이언트 시각
+  -- 메타데이터
+  device_info JSONB,
+  weather JSONB, -- 날씨 정보 (API 연동)
+  metadata JSONB,
+  created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 건물 통계 테이블 (프로토타입의 원형 지표들)
-CREATE TABLE building_stats (
-    id SERIAL PRIMARY KEY,
-    building_id INTEGER REFERENCES buildings(id),
-    stat_type VARCHAR(50) NOT NULL,          -- 'total_floors', 'occupancy', 'tenants', 'operating', 'residents', 'parking_capacity', 'congestion'
-    stat_value VARCHAR(100) NOT NULL,        -- '12층', '87%', '24개', '18개', '1000+', '100+', '2001'
-    stat_icon VARCHAR(50),                   -- 아이콘 코드
-    display_order INTEGER DEFAULT 0
+-- 유저 세션
+CREATE TABLE user_sessions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID,
+  started_at TIMESTAMPTZ NOT NULL,
+  ended_at TIMESTAMPTZ,
+  start_location GEOGRAPHY(POINT, 4326),
+  gaze_path JSONB, -- [{building_id, duration_ms, timestamp}, ...] 시선 경로
+  buildings_viewed INT DEFAULT 0,
+  buildings_entered INT DEFAULT 0,
+  total_gaze_duration_ms INT DEFAULT 0,
+  device_info JSONB,
+  created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- LIVE 피드 테이블 (더미 데이터)
-CREATE TABLE live_feeds (
-    id SERIAL PRIMARY KEY,
-    building_id INTEGER REFERENCES buildings(id),
-    feed_type VARCHAR(50) NOT NULL,          -- 'event', 'congestion', 'promotion', 'update'
-    title VARCHAR(200) NOT NULL,             -- '4F 카페 오늘의 메뉴 업데이트'
-    description VARCHAR(500),                -- '아메리카노 20% 할인'
-    icon VARCHAR(50),
-    icon_color VARCHAR(20),
-    time_label VARCHAR(50),                  -- '방금', '현재', '5분 전'
-    is_active BOOLEAN DEFAULT TRUE,
-    created_at TIMESTAMP DEFAULT NOW()
+-- Gemini 소싱 정보 (플라이휠 파이프라인)
+CREATE TABLE sourced_info (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  building_id UUID REFERENCES buildings(id),
+  source_type VARCHAR(50), -- 'gemini_vision', 'user_report', 'public_api'
+  raw_data JSONB, -- Gemini 원본 분석 결과
+  extracted_info JSONB, -- 추출된 구조화 정보
+  confidence FLOAT,
+  verified BOOLEAN DEFAULT FALSE,
+  verified_by VARCHAR(50), -- 'auto', 'manual', 'cross_reference'
+  session_id UUID, -- 어떤 유저 세션에서 수집됐는지
+  created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 행동 로그 테이블
-CREATE TABLE scan_logs (
-    id SERIAL PRIMARY KEY,
-    session_id VARCHAR(100) NOT NULL,        -- 앱 세션 ID
-    building_id INTEGER REFERENCES buildings(id),
-    event_type VARCHAR(50) NOT NULL,         -- 'pin_shown', 'pin_tapped', 'card_viewed', 'floor_tapped', 'reward_tapped'
-    duration_ms INTEGER,                     -- 체류 시간 (밀리초)
-    distance_meters DECIMAL(10,2),           -- 건물과의 거리
-    user_lat DECIMAL(10,7),
-    user_lng DECIMAL(10,7),
-    device_heading DECIMAL(5,2),             -- 디바이스 방향
-    metadata JSONB,                          -- 추가 데이터
-    created_at TIMESTAMP DEFAULT NOW()
-);
-
--- 인덱스
+-- 공간 인덱스
 CREATE INDEX idx_buildings_location ON buildings USING GIST(location);
-CREATE INDEX idx_floors_building ON floors(building_id, floor_order);
-CREATE INDEX idx_scan_logs_building ON scan_logs(building_id, created_at);
-CREATE INDEX idx_scan_logs_session ON scan_logs(session_id);
+CREATE INDEX idx_behavior_events_building ON behavior_events(building_id);
+CREATE INDEX idx_behavior_events_session ON behavior_events(session_id);
+CREATE INDEX idx_behavior_events_type ON behavior_events(event_type);
+CREATE INDEX idx_behavior_events_timestamp ON behavior_events(server_timestamp);
 ```
 
 ---
 
-## API 엔드포인트 명세
+## API 엔드포인트
 
-### 1. 주변 건물 조회
+### Building API
 ```
-GET /api/buildings/nearby?lat={lat}&lng={lng}&radius={meters}&heading={degrees}
-```
-- 유저 좌표 + 방향 기반으로 반경 내 건물 목록 반환
-- 응답: 건물 ID, 이름, 좌표, 거리, 방향(좌/우/정면)
-
-### 2. 건물 상세 프로필
-```
-GET /api/buildings/:id/profile
-```
-- 건물 상세 정보 + 층별 정보 + 편의시설 + 통계 + LIVE 피드
-- 프로토타입 하단 카드의 모든 데이터를 한 번에 반환
-
-### 3. 건물 층별 정보
-```
-GET /api/buildings/:id/floors
-```
-- 층별 입점 현황 (프로토타입 카메라 뷰 위 오버레이용)
-
-### 4. 행동 로그 저장
-```
-POST /api/scan/log
-Body: { session_id, building_id, event_type, duration_ms, distance_meters, user_lat, user_lng, device_heading, metadata }
+GET    /api/buildings/nearby?lat=&lng=&radius=&server_time=  -- 반경 내 건물 조회 (서버 시각 포함)
+GET    /api/buildings/:id                                      -- 건물 상세 정보
+GET    /api/buildings/:id/profile                              -- 건물 프로필 (플라이휠 데이터)
+POST   /api/buildings                                          -- 건물 등록 (관리자)
+PATCH  /api/buildings/:id                                      -- 건물 수정
 ```
 
-### 5. LIVE 피드 (더미)
+### Behavior Data API
 ```
-GET /api/buildings/:id/live
+POST   /api/behavior/event                                     -- 단일 이벤트 기록
+POST   /api/behavior/batch                                     -- 배치 이벤트 기록 (오프라인 버퍼)
+POST   /api/behavior/session/start                             -- 세션 시작
+PATCH  /api/behavior/session/:id/end                           -- 세션 종료 + 시선경로 저장
+GET    /api/behavior/report/:buildingId                        -- 건물별 행동 리포트
+GET    /api/behavior/report/area?lat=&lng=&radius=             -- 지역별 행동 리포트
 ```
-- "지금 이 순간" 섹션용 더미 데이터 반환
+
+### Gemini Proxy API
+```
+POST   /api/gemini/analyze-frame                               -- 카메라 프레임 건물 분석
+POST   /api/gemini/live/start                                  -- Gemini Live 세션 시작
+POST   /api/gemini/live/audio                                  -- 음성 메시지 전송
+GET    /api/gemini/live/stream                                 -- SSE 스트림 (실시간 응답)
+```
+
+### Flywheel API
+```
+POST   /api/flywheel/source                                    -- 소싱된 정보 제출
+GET    /api/flywheel/pending                                   -- 검증 대기 정보 목록
+PATCH  /api/flywheel/verify/:id                                -- 정보 검증 처리
+GET    /api/flywheel/stats                                     -- 플라이휠 통계
+```
+
+### Server Time API
+```
+GET    /api/time                                               -- 서버 시각 반환 (7-Factor용)
+GET    /api/time/context?lat=&lng=                             -- 시각 + 위치 기반 컨텍스트 (일출/일몰, 조명 상태)
+```
 
 ---
 
-## 더미 데이터 설계
+## 개발 순서 (우선순위)
 
-### 포인트/리워드 (프론트엔드에서 하드코딩)
-```javascript
-const DUMMY_POINTS = {
-  totalPoints: 1200,
-  rewardBuildings: {
-    // 특정 층을 탭하면 "포인트 받기" 버튼 표시
-    // 탭하면 포인트 +50 애니메이션 (로컬 상태만 변경)
-    pointsPerScan: 50,
-    dailyLimit: 500
-  }
-};
-```
+### Sprint 1: Foundation (Day 1-3)
+1. 프로젝트 초기화 (모노레포 구조)
+2. DB 스키마 생성 + PostGIS 설정
+3. Building API (CRUD + 공간 검색)
+4. 강남역 주변 건물 시드 데이터 (30~50개)
+5. React Native 앱 스켈레톤 + 카메라/GPS 연동
 
-### LIVE 피드 (DB 시드 데이터)
-각 건물당 2~3개의 더미 LIVE 피드:
-- "B1 식당가 점심시간 혼잡 | 대기시간 약 15분 예상"
-- "4F 카페 오늘의 메뉴 업데이트 | 아메리카노 20% 할인"
-- "2F 금융센터(은행) 현재 대기 3팀"
-- "1F 로비 택배 보관함 이용 가능"
+### Sprint 2: Core Detection (Day 4-7)
+1. Building Detection Engine (GPS + 나침반 + 서버시각 매칭)
+2. 7-Factor 검증 로직
+3. AR 오버레이 (2D 핀/라벨 — Phase 1)
+4. 건물 정보 카드 UI (Bottom Sheet)
 
----
+### Sprint 3: Behavior Data (Day 8-10)
+1. Behavior Tracker (자동 이벤트 수집)
+2. 세션 관리 + 시선 경로 기록
+3. 행동 데이터 API + 배치 전송
+4. 기본 행동 리포트 생성
 
-## UI 디자인 가이드 (프로토타입 기준)
+### Sprint 4: Gemini + Flywheel (Day 11-14)
+1. Gemini Vision API 연동 (카메라 프레임 분석)
+2. Gemini Live 연동 (실시간 대화)
+3. 자동 DB 구축 파이프라인 (소싱 → 검증 → 저장)
+4. 플라이휠 통계 대시보드
 
-### 테마
-- 다크 테마 기반 (배경: #0A0E27 계열)
-- 카드 배경: rgba(255,255,255,0.08)
-- 주요 액센트: 블루(#4A90D9), 오렌지(#FF8C00), 그린(#00C853)
-- 텍스트: 화이트(#FFFFFF), 서브텍스트(#9E9E9E)
-
-### 화면 구조 (ScanScreen)
-```
-┌─────────────────────────────┐
-│ < ● 일반모드  ★1,200  ● 위치확인중  ⊞ │  ← 상단 바
-│                                         │
-│     [카메라 뷰 영역]                      │
-│     ┌──────────────────┐                │
-│     │ RF │ 옥상정원   ⛅ │                │  ← 층별 오버레이
-│     │ 12F│ SKY라운지  🍴│                │     (건물 위에 반투명 리스트)
-│     │ 11F│ 스타트업 A사 │                │
-│     │ ...│ ...          │                │
-│     └──────────────────┘                │
-│                           [강남 파이낸스 │  ← 인접 건물 미니 태그
-│                            센터 50m]     │
-├─────────────────────────────┤
-│ 역삼 스퀘어          LIVE 투시  X │  ← 건물명 + 거리
-│ 📍 내 위치에서 120m                │
-│                                    │
-│ ● ATM   ● 편의점   ● 와이파이  ● 냉난방 │  ← 편의시설 칩
-│   1F로비  2F 24시간   무료     중앙공급  │
-│                                    │
-│ [총 층수] [입주율] [테넌트] [영업중]     │  ← 건물 지표 (원형)
-│   12층    87%     24개    18개       │
-│                                    │
-│ ● 지금 이 순간 LIVE                   │  ← LIVE 피드 (더미)
-│ 🔥 4F 카페 오늘의 메뉴 업데이트  방금  │
-│    아메리카노 20% 할인                │
-└─────────────────────────────┘
-```
-
-### 층별 오버레이 규칙
-- 카메라 뷰 위에 반투명 배경으로 표시
-- 각 층: [층 번호 배지] [업체명] [아이콘들]
-- 공실은 회색 처리, 리워드 가능한 층은 오렌지 하이라이트
-- 특정 층 탭 → "▶ 포인트 받기" 버튼 슬라이드 (더미)
-- 한 번에 최대 8~10개 층 표시, 스크롤로 나머지 확인
-
-### 건물 전환
-- 카메라 방향 변경 시 자동 감지 → 다른 건물 핀 활성화
-- 인접 건물 미니 태그 탭 → 해당 건물로 카드 전환
+### Sprint 5: Polish (Day 15-17)
+1. UI/UX 완성도 향상
+2. 데모 시나리오 구축 (강남역 주변)
+3. 행동 리포트 시각화
+4. 성능 최적화 + 버그 수정
 
 ---
 
-## 태스크 실행 순서 및 의존성
+## 코딩 컨벤션
 
-### Phase 1: 기반 구축 (Day 1~3)
-1. **@team-lead**: shared/schema.sql 확정 → 모든 에이전트에 공유
-2. **@backend-dev**: Express 프로젝트 초기화 + DB 마이그레이션 실행
-3. **@data-pipeline**: 강남·역삼 건물 데이터 수집 시작
-4. **@frontend-dev**: Expo 프로젝트 초기화 + 테마/상수 설정
+### 디렉토리 구조
+```
+scanpang/
+├── apps/
+│   ├── mobile/          # React Native (Expo)
+│   │   ├── src/
+│   │   │   ├── screens/
+│   │   │   ├── components/
+│   │   │   ├── services/     # API 호출
+│   │   │   ├── hooks/        # 커스텀 훅
+│   │   │   ├── store/        # 상태 관리
+│   │   │   ├── utils/
+│   │   │   └── types/
+│   │   └── app.json
+│   └── backend/         # Node.js
+│       ├── src/
+│       │   ├── routes/
+│       │   ├── controllers/
+│       │   ├── services/
+│       │   ├── models/
+│       │   ├── middleware/
+│       │   ├── utils/
+│       │   └── types/
+│       ├── prisma/
+│       │   └── schema.prisma
+│       └── package.json
+├── packages/
+│   └── shared/          # 공유 타입, 유틸리티
+├── scripts/
+│   ├── seed-buildings.ts
+│   └── generate-report.ts
+├── docs/
+│   ├── api.md
+│   ├── architecture.md
+│   └── behavior-data-spec.md
+├── CLAUDE.md            # 이 파일
+├── package.json
+└── turbo.json
+```
 
-### Phase 2: 핵심 기능 (Day 4~10)
-5. **@data-pipeline**: 건물 30~50개 DB 적재 완료 → @backend-dev에 알림
-6. **@backend-dev**: 건물 조회 API + 상세 프로필 API 구현
-7. **@backend-dev**: 행동 로그 API + LIVE 더미 API 구현
-8. **@frontend-dev**: HomeScreen(모드 선택) 구현
-9. **@frontend-dev**: ScanScreen 기본 구조 (카메라 뷰 + 하단 카드 레이아웃)
-
-### Phase 3: 연동 + UI 완성 (Day 11~18)
-10. **@frontend-dev**: 카메라 뷰에서 Geospatial API 연동 (건물 특정)
-    → blockedBy: #5 (건물 DB 필요), #6 (API 필요)
-11. **@frontend-dev**: 건물 핀 표시 + 층별 오버레이 구현
-12. **@frontend-dev**: 하단 카드 (편의시설 칩 + 통계 + LIVE) 구현
-13. **@frontend-dev**: 포인트 배지 + 리워드 버튼 (더미) 구현
-14. **@frontend-dev**: 건물 간 전환 로직
-
-### Phase 4: 테스트 + 마무리 (Day 19~25)
-15. **@backend-dev**: API 에러 핸들링 + 성능 최적화
-16. **@frontend-dev**: 행동 로그 전송 연동
-17. **전체**: 강남역 현장 테스트 (실기기)
-18. **@team-lead**: 데모 시나리오 정리
+### 코드 스타일
+- TypeScript strict mode
+- ESLint + Prettier
+- 함수형 컴포넌트 + Hooks
+- API 응답 표준: `{ success: boolean, data?: T, error?: string }`
+- 에러 핸들링: try-catch + 커스텀 에러 클래스
+- 주석은 한국어 OK, 변수/함수명은 영어
 
 ---
 
-## 환경 변수 (.env)
+## 환경 변수
 
-### Backend (.env)
-```
-DATABASE_URL=postgresql://scanpang:password@localhost:5432/scanpang_mvp
+```env
+# Backend
+DATABASE_URL=postgresql://...
+GEMINI_API_KEY=...
 PORT=3000
-NODE_ENV=development
-```
 
-### Data Pipeline (.env)
-```
-# 공공데이터포털 API 키
-DATA_GO_KR_API_KEY=<대표님이 발급>
-
-# 네이버 클라우드 플랫폼
-NAVER_CLIENT_ID=<대표님이 발급>
-NAVER_CLIENT_SECRET=<대표님이 발급>
-
-# Google
-GOOGLE_PLACES_API_KEY=<대표님이 발급>
-
-# DB
-DATABASE_URL=postgresql://scanpang:password@localhost:5432/scanpang_mvp
-```
-
-### Mobile (.env)
-```
-API_BASE_URL=http://localhost:3000/api
-GOOGLE_GEOSPATIAL_API_KEY=<대표님이 발급>
+# Mobile
+EXPO_PUBLIC_API_URL=https://scanpang-backend.onrender.com
+EXPO_PUBLIC_GOOGLE_MAPS_KEY=...
 ```
 
 ---
 
-## 중요 규칙
+## 중요 의사결정 기록
 
-1. **모든 에이전트는 shared/schema.sql을 Single Source of Truth로 사용**
-2. **프론트엔드는 Geospatial API 연동 전까지 Mock 데이터로 UI 개발 진행**
-3. **더미 데이터(포인트/LIVE)는 실제 API와 동일한 구조로 만들어서 나중에 실데이터 교체만 하면 되도록 설계**
-4. **한국어 주석 사용 (팀 내 커뮤니케이션 언어)**
-5. **커밋 메시지: [영역] 내용 형식 (예: [backend] 건물 조회 API 구현)**
+1. **Phase 1은 GPS+나침반+서버시각 기반 건물 매칭** — VPS는 Phase 2에서 Unity로 전환 시 적용
+2. **서버 시각을 7번째 검증 factor로 추가** — 시간대별 건물 외관 변화(네온사인, 조명, 그림자)로 A/B 건물 구분 정확도 향상
+3. **모노레포 구조** — 프론트/백엔드/공유 패키지를 한 repo에서 관리
+4. **행동 데이터는 오프라인 버퍼링** — 네트워크 불안정 시 로컬 저장 후 배치 전송
+5. **Gemini Live는 서버 프록시 경유** — API 키 보호 + 서버 시각 동기화 + 소싱 데이터 자동 저장
+
+---
+
+## Compact Instructions
+
+컨텍스트가 30% 이하로 떨어지면:
+1. 즉시 현재 작업을 마무리해
+2. PROGRESS.md에 다음을 저장해:
+   - 완료된 작업 목록
+   - 변경된 파일 목록
+   - 현재 진행 중이던 작업
+   - 다음에 해야 할 작업
+   - 발생한 이슈/결정사항
+3. git commit -m "[checkpoint] 진행상황 저장"
+4. 나에게 "컨텍스트가 부족합니다. 새 세션을 시작해주세요." 라고 알려줘
+
+새 세션 시작 시 반드시 CLAUDE.md와 PROGRESS.md를 먼저 읽고 이어서 작업해.

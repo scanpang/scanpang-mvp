@@ -155,6 +155,70 @@ export const getLiveFeeds = async (buildingId) => {
   return withRetry(() => apiClient.get(`/live/${buildingId}`));
 };
 
+// ===== Server Time API =====
+
+export const getServerTime = async () => {
+  return apiClient.get('/time');
+};
+
+export const getServerTimeContext = async (lat, lng) => {
+  return apiClient.get('/time/context', { params: { lat, lng } });
+};
+
+// ===== Behavior Report API =====
+
+export const getBehaviorReport = async (buildingId) => {
+  return withRetry(() => apiClient.get(`/behavior/report/${buildingId}`));
+};
+
+export const getAreaBehaviorReport = async (lat, lng, radius = 500) => {
+  return withRetry(() => apiClient.get('/behavior/report/area', { params: { lat, lng, radius } }));
+};
+
+// ===== Gemini Proxy API =====
+
+export const analyzeFrame = async (imageBase64, options = {}) => {
+  return apiClient.post('/gemini/analyze-frame', {
+    imageBase64,
+    mimeType: options.mimeType || 'image/jpeg',
+    buildingId: options.buildingId || null,
+    buildingName: options.buildingName || null,
+    lat: options.lat || null,
+    lng: options.lng || null,
+    heading: options.heading || null,
+    sessionId: options.sessionId || null,
+  }, { timeout: 15000 }); // Vision 분석은 시간 소요
+};
+
+export const startGeminiLive = async (options = {}) => {
+  return apiClient.post('/gemini/live/start', {
+    buildingId: options.buildingId || null,
+    buildingName: options.buildingName || null,
+    buildingInfo: options.buildingInfo || null,
+    lat: options.lat || null,
+    lng: options.lng || null,
+  });
+};
+
+export const sendGeminiMessage = async (sessionId, message) => {
+  return apiClient.post('/gemini/live/audio', { sessionId, message }, { timeout: 15000 });
+};
+
+export const getGeminiStreamUrl = (sessionId, message) => {
+  const params = new URLSearchParams({ sessionId, message });
+  return `${API_BASE_URL}/gemini/live/stream?${params.toString()}`;
+};
+
+// ===== Flywheel Stats API =====
+
+export const getFlywheelStats = async () => {
+  return withRetry(() => apiClient.get('/flywheel/stats'));
+};
+
+export const getFlywheelPending = async (limit = 20, offset = 0) => {
+  return withRetry(() => apiClient.get('/flywheel/pending', { params: { limit, offset } }));
+};
+
 export { apiClient };
 
 export default {
@@ -163,6 +227,16 @@ export default {
   getBuildingFloors,
   postScanLog,
   getLiveFeeds,
+  getServerTime,
+  getServerTimeContext,
+  getBehaviorReport,
+  getAreaBehaviorReport,
   getUserFriendlyError,
   flushPendingLogs,
+  analyzeFrame,
+  startGeminiLive,
+  sendGeminiMessage,
+  getGeminiStreamUrl,
+  getFlywheelStats,
+  getFlywheelPending,
 };

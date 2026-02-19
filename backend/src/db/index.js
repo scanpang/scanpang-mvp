@@ -62,6 +62,16 @@ async function query(text, params) {
   }
 }
 
+// Graceful shutdown
+async function shutdown() {
+  console.log('[DB] 풀 종료 중...');
+  await pool.end();
+  console.log('[DB] 풀 종료 완료');
+}
+
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);
+
 module.exports = {
   pool,
   query,

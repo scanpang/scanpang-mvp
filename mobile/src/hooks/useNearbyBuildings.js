@@ -10,6 +10,14 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { getNearbyBuildings } from '../services/api';
 import { DUMMY_BUILDINGS } from '../constants/dummyData';
 
+// 아파트/주거 타입 제외 필터
+const EXCLUDED_TYPES = ['아파트', '주거', 'apartment', 'residential'];
+const filterOutApartments = (buildings) =>
+  buildings.filter((b) => {
+    const type = (b.buildingUse || b.building_use || b.category || b.buildingType || '').toLowerCase();
+    return !EXCLUDED_TYPES.some((t) => type.includes(t));
+  });
+
 /**
  * @param {Object} params
  * @param {number|null} params.latitude - 현재 위도
@@ -55,11 +63,11 @@ const useNearbyBuildings = ({
           : response?.data ? (Array.isArray(response.data) ? response.data : [])
           : [];
         // API 필드명 정규화 (distanceMeters → distance)
-        const buildings = rawBuildings.map((b) => ({
+        const normalized = rawBuildings.map((b) => ({
           ...b,
           distance: b.distance ?? b.distanceMeters ?? null,
         }));
-        setBuildings(buildings);
+        setBuildings(filterOutApartments(normalized));
         setLoading(false);
       }
     } catch (err) {
@@ -68,9 +76,11 @@ const useNearbyBuildings = ({
       if (isMounted.current) {
         // API 실패 시 더미 데이터로 폴백
         // 거리순 정렬하여 radius 이내의 건물만 필터링
-        const fallback = DUMMY_BUILDINGS
-          .filter((b) => b.distance <= rad)
-          .sort((a, b) => a.distance - b.distance);
+        const fallback = filterOutApartments(
+          DUMMY_BUILDINGS
+            .filter((b) => b.distance <= rad)
+            .sort((a, b) => a.distance - b.distance)
+        );
 
         setBuildings(fallback);
         setError({

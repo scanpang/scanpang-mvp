@@ -43,7 +43,7 @@ router.get('/nearby', async (req, res, next) => {
       });
     }
 
-    const parsedRadius = radius ? parseInt(radius, 10) : 200;
+    const parsedRadius = Math.min(radius ? parseInt(radius, 10) : 200, 5000); // 최대 5km
     const parsedHeading = heading ? parseFloat(heading) : null;
 
     // 1. DB 조회 (항상 대기)

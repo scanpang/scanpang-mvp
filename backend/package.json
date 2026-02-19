@@ -13,6 +13,7 @@
     "seed": "node src/db/seeds/001_gangnam_buildings.js"
   },
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
     "axios": "^1.13.5",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",

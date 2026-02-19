@@ -17,6 +17,7 @@ import {
   Animated,
   Dimensions,
   ScrollView,
+  AppState,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Location from 'expo-location';
@@ -27,10 +28,14 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { Colors, COLORS, SPACING, TOUCH } from '../constants/theme';
 import { DUMMY_POINTS, getLiveFeedsByBuilding } from '../constants/dummyData';
-import { postScanLog } from '../services/api';
+import { postScanLog, getServerTimeContext, analyzeFrame } from '../services/api';
 import useNearbyBuildings from '../hooks/useNearbyBuildings';
 import useBuildingDetail from '../hooks/useBuildingDetail';
+import useSensorData from '../hooks/useSensorData';
 import { formatDistance } from '../utils/coordinate';
+import { rankBuildings } from '../services/detectionEngine';
+import { behaviorTracker } from '../services/behaviorTracker';
+import GeminiLiveChat from '../components/GeminiLiveChat';
 
 const { width: SW, height: SH } = Dimensions.get('window');
 
@@ -40,7 +45,7 @@ const computeHeading = (x, y) => {
 };
 
 // ===== AR 건물 라벨 =====
-const ARBuildingLabel = ({ building, isSelected, onPress, x, y, index, labelScale = 1 }) => {
+const ARBuildingLabel = ({ building, isSelected, onPress, x, y, index, labelScale = 1, confidence }) => {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0)).current;
 
@@ -68,7 +73,16 @@ const ARBuildingLabel = ({ building, isSelected, onPress, x, y, index, labelScal
         {hasReward && <View style={styles.rewardBadge}><Text style={styles.rewardBadgeText}>+P</Text></View>}
         <Text style={styles.arLabelName} numberOfLines={1}>{building.name}</Text>
         <Text style={styles.arLabelCategory}>{building.buildingUse || building.category || '건물'}</Text>
-        <Text style={styles.arLabelDistance}>{formatDistance(building.distance)}</Text>
+        <View style={styles.arLabelBottom}>
+          <Text style={styles.arLabelDistance}>{formatDistance(building.distance)}</Text>
+          {confidence != null && (
+            <View style={[styles.confidenceBadge, { backgroundColor: confidence >= 80 ? '#10B98130' : confidence >= 50 ? '#F59E0B30' : '#EF444430' }]}>
+              <Text style={[styles.confidenceText, { color: confidence >= 80 ? '#10B981' : confidence >= 50 ? '#F59E0B' : '#EF4444' }]}>
+                {confidence}%
+              </Text>
+            </View>
+          )}
+        </View>
       </TouchableOpacity>
       <View style={[styles.arLabelPin, isSelected && styles.arLabelPinSelected]} />
     </Animated.View>
@@ -76,7 +90,7 @@ const ARBuildingLabel = ({ building, isSelected, onPress, x, y, index, labelScal
 };
 
 // ===== 상단 오버레이 바 =====
-const CameraOverlayBar = ({ points, gpsStatus, onBack }) => {
+const CameraOverlayBar = ({ points, gpsStatus, onBack, motionState, isStable }) => {
   const gpsColor = gpsStatus === 'active' ? Colors.successGreen : gpsStatus === 'error' ? Colors.liveRed : Colors.accentAmber;
   const gpsText = gpsStatus === 'active' ? 'GPS 활성' : gpsStatus === 'error' ? '위치 오류' : '위치 확인중...';
 
@@ -87,8 +101,8 @@ const CameraOverlayBar = ({ points, gpsStatus, onBack }) => {
       </TouchableOpacity>
 
       <View style={styles.overlayModePill}>
-        <View style={[styles.overlayDot, { backgroundColor: Colors.successGreen }]} />
-        <Text style={styles.overlayModeText}>일반 모드</Text>
+        <View style={[styles.overlayDot, { backgroundColor: isStable ? Colors.successGreen : Colors.accentAmber }]} />
+        <Text style={styles.overlayModeText}>{isStable ? '7-Factor' : motionState === 'walking' ? '이동중' : '스캔'}</Text>
       </View>
 
       <View style={styles.overlayPointsPill}>
@@ -105,13 +119,16 @@ const CameraOverlayBar = ({ points, gpsStatus, onBack }) => {
 };
 
 // ===== 바텀시트: 건물 헤더 =====
-const BuildingHeader = ({ building, onClose }) => (
+const BuildingHeader = ({ building, onClose, onReport }) => (
   <View style={styles.bsHeader}>
     <View style={styles.bsHeaderLeft}>
       <Text style={styles.bsName}>{building.name}</Text>
       <Text style={styles.bsDistance}>{formatDistance(building.distance)}</Text>
     </View>
     <View style={styles.bsHeaderRight}>
+      <TouchableOpacity style={styles.bsReportPill} onPress={onReport}>
+        <Text style={styles.bsReportPillText}>리포트</Text>
+      </TouchableOpacity>
       <View style={styles.bsLivePill}>
         <Text style={styles.bsLivePillText}>LIVE 투시</Text>
       </View>
@@ -172,7 +189,7 @@ const BuildingStats = ({ building }) => {
 };
 
 // ===== 바텀시트: 층별 투시 리스트 =====
-const FloorList = ({ floors = [], onRewardTap }) => {
+const FloorList = ({ floors = [], onFloorTap, onRewardTap }) => {
   if (!floors.length) return null;
 
   const getFloorColor = (floor) => {
@@ -200,7 +217,7 @@ const FloorList = ({ floors = [], onRewardTap }) => {
             <TouchableOpacity
               style={[styles.floorItem, hasReward && styles.floorItemReward]}
               activeOpacity={0.7}
-              onPress={() => hasReward && onRewardTap && onRewardTap(f)}
+              onPress={() => { onFloorTap && onFloorTap(f); hasReward && onRewardTap && onRewardTap(f); }}
             >
               <View style={[styles.floorBadge, { backgroundColor: getFloorColor(floor) }]}>
                 <Text style={styles.floorBadgeText}>{floor}</Text>
@@ -312,12 +329,21 @@ const ScanCameraScreen = ({ route, navigation }) => {
   const [points, setPoints] = useState(DUMMY_POINTS.totalPoints);
   const [cameraPermissionDenied, setCameraPermissionDenied] = useState(false);
 
+  const [timeContext, setTimeContext] = useState(null);
+  const [geminiResults, setGeminiResults] = useState(new Map());
+
   const bottomSheetRef = useRef(null);
+  const cameraRef = useRef(null);
   const locationSubRef = useRef(null);
   const magnetSubRef = useRef(null);
   const isMountedRef = useRef(true);
   const lastHeadingRef = useRef(0);
+  const geminiTimerRef = useRef(null);
+  const geminiAnalyzingRef = useRef(false);
   const sessionIdRef = useRef(`session_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`);
+
+  // 7-Factor: 센서 데이터 수집 (자이로, 가속도계, 카메라 각도)
+  const { gyroscope, accelerometer, cameraAngle, isStable, motionState, getSnapshot } = useSensorData({ enabled: gpsStatus === 'active' });
 
   const snapPoints = useMemo(() => ['1%', '25%', '55%', '90%'], []);
 
@@ -332,10 +358,93 @@ const ScanCameraScreen = ({ route, navigation }) => {
     ? { ...(buildings.find(b => b.id === selectedBuildingId) || {}), ...(buildingDetail || {}) }
     : null;
 
+  // 7-Factor: 건물별 confidence 계산 + 정렬 (Gemini 결과 포함)
+  const rankedBuildings = useMemo(() => {
+    if (!buildings.length) return [];
+    const sensorData = { heading, gyroscope, accelerometer, cameraAngle };
+    return rankBuildings(buildings, sensorData, timeContext, geminiResults);
+  }, [buildings, heading, gyroscope, accelerometer, cameraAngle, timeContext, geminiResults]);
+
   const pinPositions = useMemo(
-    () => calculateARPositions(buildings, heading, SW, SH),
-    [buildings, heading]
+    () => calculateARPositions(rankedBuildings, heading, SW, SH),
+    [rankedBuildings, heading]
   );
+
+  // BehaviorTracker 세션 + 서버 시각
+  useEffect(() => {
+    // 세션 시작
+    behaviorTracker.startSession({
+      startLat: userLocation?.lat,
+      startLng: userLocation?.lng,
+    });
+
+    // 서버 시각 컨텍스트 fetch (1회)
+    getServerTimeContext(userLocation?.lat || 37.4979, userLocation?.lng || 127.0276)
+      .then(res => { if (res?.data) setTimeContext(res.data.context); })
+      .catch(() => {});
+
+    return () => { behaviorTracker.endSession(); };
+  }, []);
+
+  // BehaviorTracker에 위치/센서 업데이트
+  useEffect(() => {
+    if (userLocation) behaviorTracker.updateLocation(userLocation.lat, userLocation.lng);
+  }, [userLocation]);
+
+  useEffect(() => {
+    behaviorTracker.updateSensorData({ heading, ...getSnapshot() });
+  }, [heading, gyroscope, accelerometer]);
+
+  // 화면에 보이는 건물 추적
+  useEffect(() => {
+    const visibleIds = pinPositions.map(p => p.building.id);
+    behaviorTracker.updateVisibleBuildings(visibleIds);
+  }, [pinPositions]);
+
+  // Gemini Vision: 주기적 프레임 분석 (15초 간격, 안정 시에만)
+  useEffect(() => {
+    if (!isStable || !selectedBuildingId || !cameraRef.current) return;
+
+    const runAnalysis = async () => {
+      if (geminiAnalyzingRef.current) return;
+      geminiAnalyzingRef.current = true;
+      try {
+        const photo = await cameraRef.current.takePictureAsync({ base64: true, quality: 0.3, skipProcessing: true });
+        if (!photo?.base64 || !isMountedRef.current) return;
+
+        const building = buildings.find(b => b.id === selectedBuildingId);
+        const res = await analyzeFrame(photo.base64, {
+          buildingId: selectedBuildingId,
+          buildingName: building?.name,
+          lat: userLocation?.lat,
+          lng: userLocation?.lng,
+          heading,
+          sessionId: sessionIdRef.current,
+        });
+
+        if (res?.data?.analysis && isMountedRef.current) {
+          setGeminiResults(prev => {
+            const next = new Map(prev);
+            next.set(selectedBuildingId, res.data.analysis);
+            return next;
+          });
+        }
+      } catch {
+        // Gemini 분석 실패는 무시 (6개 factor로 계속 작동)
+      } finally {
+        geminiAnalyzingRef.current = false;
+      }
+    };
+
+    geminiTimerRef.current = setInterval(runAnalysis, 15000);
+    // 최초 1회 즉시 실행 (3초 딜레이)
+    const initTimer = setTimeout(runAnalysis, 3000);
+
+    return () => {
+      clearInterval(geminiTimerRef.current);
+      clearTimeout(initTimer);
+    };
+  }, [isStable, selectedBuildingId, buildings, userLocation, heading]);
 
   // 카메라 권한
   useEffect(() => {
@@ -378,10 +487,25 @@ const ScanCameraScreen = ({ route, navigation }) => {
     return () => magnetSubRef.current?.remove();
   }, []);
 
-  // 자동 선택
+  // 자동 선택 (confidence 최고 건물)
   useEffect(() => {
-    if (buildings.length > 0 && !selectedBuildingId) setSelectedBuildingId(buildings[0].id);
-  }, [buildings, selectedBuildingId]);
+    if (rankedBuildings.length > 0 && !selectedBuildingId) setSelectedBuildingId(rankedBuildings[0].id);
+  }, [rankedBuildings, selectedBuildingId]);
+
+  // AppState: 백그라운드 전환 시 배치 flush, 포그라운드 복귀 시 저장된 이벤트 재전송
+  useEffect(() => {
+    const appStateRef = { current: AppState.currentState };
+    const sub = AppState.addEventListener('change', (nextState) => {
+      if (appStateRef.current.match(/active/) && nextState === 'background') {
+        behaviorTracker.flush();
+      }
+      if (appStateRef.current.match(/background/) && nextState === 'active') {
+        behaviorTracker.flushStoredEvents();
+      }
+      appStateRef.current = nextState;
+    });
+    return () => sub.remove();
+  }, []);
 
   useEffect(() => () => { isMountedRef.current = false; }, []);
 
@@ -389,13 +513,26 @@ const ScanCameraScreen = ({ route, navigation }) => {
     if (!building) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setSelectedBuildingId(building.id);
-    bottomSheetRef.current?.snapToIndex(1); // peek
-    postScanLog({ sessionId: sessionIdRef.current, buildingId: building.id, eventType: 'pin_tapped', userLat: userLocation?.lat, userLng: userLocation?.lng, deviceHeading: heading, metadata: {} }).catch(() => {});
+    bottomSheetRef.current?.snapToIndex(1);
+    // 기존 scan log + 새 behavior tracker
+    postScanLog({ sessionId: sessionIdRef.current, buildingId: building.id, eventType: 'pin_tapped', userLat: userLocation?.lat, userLng: userLocation?.lng, deviceHeading: heading, metadata: { confidence: building.confidence } }).catch(() => {});
+    behaviorTracker.trackEvent('pin_click', { buildingId: building.id, metadata: { confidence: building.confidence } });
   }, [userLocation, heading]);
 
   const handleCloseSheet = useCallback(() => {
+    if (selectedBuildingId) {
+      behaviorTracker.trackEvent('card_close', { buildingId: selectedBuildingId });
+    }
     bottomSheetRef.current?.snapToIndex(0);
-  }, []);
+  }, [selectedBuildingId]);
+
+  const handleOpenReport = useCallback(() => {
+    if (!selectedBuilding) return;
+    navigation.navigate('BehaviorReport', {
+      buildingId: selectedBuilding.id,
+      buildingName: selectedBuilding.name,
+    });
+  }, [selectedBuilding, navigation]);
 
   // 가이드 텍스트
   const guideVisible = buildings.length === 0 && gpsStatus !== 'searching';
@@ -425,7 +562,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
           <Text style={styles.loadingText}>카메라 준비 중...</Text>
         </View>
       ) : (
-        <CameraView style={styles.camera} facing="back">
+        <CameraView ref={cameraRef} style={styles.camera} facing="back">
           {/* Layer 2: AR 건물 라벨 */}
           {pinPositions.map(({ building, x, y, scale }, index) => (
             <ARBuildingLabel
@@ -434,6 +571,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
               isSelected={selectedBuildingId === building.id}
               onPress={handleBuildingSelect}
               x={x} y={y} index={index} labelScale={scale || 1}
+              confidence={building.confidencePercent}
             />
           ))}
 
@@ -451,6 +589,8 @@ const ScanCameraScreen = ({ route, navigation }) => {
         points={points}
         gpsStatus={gpsStatus}
         onBack={() => navigation.goBack()}
+        motionState={motionState}
+        isStable={isStable}
       />
 
       {/* Layer 3: 하단 바텀시트 */}
@@ -461,20 +601,41 @@ const ScanCameraScreen = ({ route, navigation }) => {
         backgroundStyle={styles.bsBackground}
         handleIndicatorStyle={styles.bsHandle}
         enablePanDownToClose={false}
+        onChange={(index) => {
+          if (selectedBuildingId && index >= 2) {
+            behaviorTracker.trackEvent('card_open', { buildingId: selectedBuildingId });
+          }
+        }}
       >
         {selectedBuilding ? (
           <ScrollView style={styles.bsScroll} showsVerticalScrollIndicator={false} nestedScrollEnabled>
-            <BuildingHeader building={selectedBuilding} onClose={handleCloseSheet} />
+            <BuildingHeader building={selectedBuilding} onClose={handleCloseSheet} onReport={handleOpenReport} />
             <QuickInfoTags amenities={selectedBuilding.facilities || selectedBuilding.amenities || []} />
             <BuildingStats building={selectedBuilding} />
             <FloorList
               floors={buildingDetail?.floors || selectedBuilding?.floors || []}
+              onFloorTap={(floor) => {
+                behaviorTracker.trackEvent('card_open', {
+                  buildingId: selectedBuildingId,
+                  metadata: { floor: floor.floor || floor.floorNumber },
+                });
+              }}
               onRewardTap={(floor) => {
                 Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
                 setPoints(p => p + (floor.rewardPoints || 50));
+                behaviorTracker.trackEvent('ar_interaction', {
+                  buildingId: selectedBuildingId,
+                  metadata: { type: 'reward', floor: floor.floor || floor.floorNumber, points: floor.rewardPoints || 50 },
+                });
               }}
             />
             <LiveFeed feeds={buildingDetail?.liveFeeds || getLiveFeedsByBuilding(selectedBuilding.id)} />
+            <GeminiLiveChat
+              buildingId={selectedBuilding.id}
+              buildingName={selectedBuilding.name}
+              lat={userLocation?.lat}
+              lng={userLocation?.lng}
+            />
             <View style={{ height: 40 }} />
           </ScrollView>
         ) : (
@@ -516,7 +677,10 @@ const styles = StyleSheet.create({
   arLabelCardSelected: { borderWidth: 2, borderColor: Colors.accentAmber },
   arLabelName: { fontSize: 15, fontWeight: '700', color: Colors.textPrimary, marginBottom: 2 },
   arLabelCategory: { fontSize: 12, color: Colors.textSecondary },
-  arLabelDistance: { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
+  arLabelBottom: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 2 },
+  arLabelDistance: { fontSize: 12, color: Colors.textSecondary },
+  confidenceBadge: { borderRadius: 6, paddingHorizontal: 5, paddingVertical: 1 },
+  confidenceText: { fontSize: 10, fontWeight: '700' },
   rewardBadge: { position: 'absolute', top: -6, right: -6, backgroundColor: Colors.accentAmber, borderRadius: 8, paddingHorizontal: 5, paddingVertical: 1 },
   rewardBadgeText: { fontSize: 9, fontWeight: '800', color: '#FFF' },
   arLabelPin: { width: 12, height: 12, borderRadius: 6, backgroundColor: '#FFF', borderWidth: 2, borderColor: Colors.textTertiary, marginTop: -1 },
@@ -554,6 +718,8 @@ const styles = StyleSheet.create({
   bsName: { fontSize: 22, fontWeight: '700', color: '#FFF', marginBottom: 4 },
   bsDistance: { fontSize: 14, color: 'rgba(255,255,255,0.7)' },
   bsHeaderRight: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
+  bsReportPill: { backgroundColor: 'rgba(255,255,255,0.12)', paddingHorizontal: SPACING.md, paddingVertical: SPACING.xs + 2, borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' },
+  bsReportPillText: { fontSize: 13, fontWeight: '700', color: 'rgba(255,255,255,0.8)' },
   bsLivePill: { backgroundColor: Colors.primaryBlue, paddingHorizontal: SPACING.md, paddingVertical: SPACING.xs + 2, borderRadius: 20 },
   bsLivePillText: { fontSize: 13, fontWeight: '700', color: '#FFF' },
   bsCloseBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.1)', justifyContent: 'center', alignItems: 'center' },

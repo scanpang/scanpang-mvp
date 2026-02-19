@@ -58,6 +58,17 @@ const HomeScreen = ({ navigation }) => {
     navigation.navigate('ScanCamera', { focusBuildingId: building.id });
   };
 
+  const handleBuildingReport = (building) => {
+    navigation.navigate('BehaviorReport', {
+      buildingId: building.id,
+      buildingName: building.name,
+    });
+  };
+
+  const handleFlywheelDashboard = () => {
+    navigation.navigate('FlywheelDashboard');
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor={Colors.bgWhite} />
@@ -89,10 +100,20 @@ const HomeScreen = ({ navigation }) => {
           buildings={buildings}
           loading={loading}
           onBuildingPress={handleBuildingPress}
+          onBuildingLongPress={handleBuildingReport}
         />
 
         {/* 최근 활동 */}
         <RecentActivity onScanPress={handleStartScan} />
+
+        {/* Flywheel 대시보드 */}
+        <TouchableOpacity style={styles.flywheelCard} onPress={handleFlywheelDashboard} activeOpacity={0.7}>
+          <View style={styles.flywheelLeft}>
+            <Text style={styles.flywheelTitle}>Flywheel Dashboard</Text>
+            <Text style={styles.flywheelDesc}>자동 DB 구축 현황 보기</Text>
+          </View>
+          <Text style={styles.flywheelArrow}>{'›'}</Text>
+        </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
   );
@@ -143,6 +164,23 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: Colors.primaryBlue,
   },
+  // Flywheel 카드
+  flywheelCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: SPACING.xl,
+    marginTop: SPACING.xl,
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.lg,
+    backgroundColor: '#EFF6FF',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+  },
+  flywheelLeft: { flex: 1 },
+  flywheelTitle: { fontSize: 15, fontWeight: '700', color: Colors.primaryBlue },
+  flywheelDesc: { fontSize: 13, color: '#6B7280', marginTop: 2 },
+  flywheelArrow: { fontSize: 24, color: Colors.primaryBlue },
 });
 
 export default HomeScreen;

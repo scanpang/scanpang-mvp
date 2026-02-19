@@ -87,8 +87,88 @@ CREATE TABLE IF NOT EXISTS scan_logs (
     created_at TIMESTAMP DEFAULT NOW()
 );
 
+-- 건물 상세 프로필 (플라이휠로 지속 강화)
+CREATE TABLE IF NOT EXISTS building_profiles (
+    id SERIAL PRIMARY KEY,
+    building_id INTEGER REFERENCES buildings(id) ON DELETE CASCADE,
+    category VARCHAR(100),                      -- 업종, 용도
+    description TEXT,
+    business_hours JSONB,                       -- {"open": "09:00", "close": "18:00", "days": [...]}
+    contact JSONB,                              -- {"phone": "...", "email": "...", "website": "..."}
+    photos JSONB,                               -- 유저/AI가 수집한 사진들
+    live_info JSONB,                            -- Gemini가 감지한 실시간 정보
+    confidence_score DECIMAL(3,2) DEFAULT 0,    -- 데이터 신뢰도 (0~1)
+    source VARCHAR(50),                         -- 'public_data', 'user_camera', 'gemini_analysis'
+    last_verified_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- 행동 데이터 이벤트 (7-Factor 포함)
+CREATE TABLE IF NOT EXISTS behavior_events (
+    id SERIAL PRIMARY KEY,
+    session_id UUID NOT NULL,
+    user_id UUID,
+    building_id INTEGER REFERENCES buildings(id),
+    event_type VARCHAR(50) NOT NULL,            -- 'gaze_start', 'gaze_end', 'pin_click', 'card_open', 'card_close', 'zoom_in', 'photo_taken', 'ar_interaction', 'entered_building', 'passed_by'
+    duration_ms INTEGER,
+    -- 7-Factor 데이터
+    gps_lat DECIMAL(10,7),
+    gps_lng DECIMAL(10,7),
+    gps_accuracy DECIMAL(8,2),
+    compass_heading DECIMAL(5,2),
+    gyroscope JSONB,                            -- {alpha, beta, gamma}
+    accelerometer JSONB,                        -- {x, y, z}
+    camera_angle JSONB,                         -- {pitch, yaw, roll}
+    server_timestamp TIMESTAMP NOT NULL DEFAULT NOW(),
+    client_timestamp TIMESTAMP,
+    -- 메타데이터
+    device_info JSONB,
+    weather JSONB,
+    metadata JSONB,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- 유저 세션
+CREATE TABLE IF NOT EXISTS user_sessions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID,
+    started_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    ended_at TIMESTAMP,
+    start_lat DECIMAL(10,7),
+    start_lng DECIMAL(10,7),
+    gaze_path JSONB,                            -- [{building_id, duration_ms, timestamp}, ...]
+    buildings_viewed INTEGER DEFAULT 0,
+    buildings_entered INTEGER DEFAULT 0,
+    total_gaze_duration_ms INTEGER DEFAULT 0,
+    device_info JSONB,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Gemini 소싱 정보 (플라이휠 파이프라인)
+CREATE TABLE IF NOT EXISTS sourced_info (
+    id SERIAL PRIMARY KEY,
+    building_id INTEGER REFERENCES buildings(id),
+    source_type VARCHAR(50),                    -- 'gemini_vision', 'user_report', 'public_api'
+    raw_data JSONB,                             -- Gemini 원본 분석 결과
+    extracted_info JSONB,                       -- 추출된 구조화 정보
+    confidence DECIMAL(3,2),
+    verified BOOLEAN DEFAULT FALSE,
+    verified_by VARCHAR(50),                    -- 'auto', 'manual', 'cross_reference'
+    session_id UUID,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
 -- 인덱스
 CREATE INDEX IF NOT EXISTS idx_buildings_location ON buildings USING GIST(location);
 CREATE INDEX IF NOT EXISTS idx_floors_building ON floors(building_id, floor_order);
 CREATE INDEX IF NOT EXISTS idx_scan_logs_building ON scan_logs(building_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_scan_logs_session ON scan_logs(session_id);
+CREATE INDEX IF NOT EXISTS idx_behavior_events_building ON behavior_events(building_id);
+CREATE INDEX IF NOT EXISTS idx_behavior_events_session ON behavior_events(session_id);
+CREATE INDEX IF NOT EXISTS idx_behavior_events_type ON behavior_events(event_type);
+CREATE INDEX IF NOT EXISTS idx_behavior_events_timestamp ON behavior_events(server_timestamp);
+CREATE INDEX IF NOT EXISTS idx_user_sessions_user ON user_sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_sourced_info_building ON sourced_info(building_id);
+CREATE INDEX IF NOT EXISTS idx_sourced_info_verified ON sourced_info(verified);
+CREATE INDEX IF NOT EXISTS idx_building_profiles_building ON building_profiles(building_id);
