@@ -69,7 +69,7 @@ const GeminiLiveChat = ({ buildingId, buildingName, buildingInfo, lat, lng }) =>
       setMessages(prev => [...prev, { role: 'system', text: '응답 실패. 다시 시도해주세요.' }]);
     } finally {
       setLoading(false);
-      setTimeout(() => scrollRef.current?.scrollToEnd?.({ animated: true }), 100);
+      setTimeout(() => scrollRef.current?.scrollToEnd?.({ animated: true }), 50);
     }
   }, [loading, ensureSession]);
 
@@ -164,7 +164,7 @@ const styles = StyleSheet.create({
   quickBtn: { backgroundColor: 'rgba(255,255,255,0.08)', paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm, borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)' },
   quickBtnText: { fontSize: 13, color: 'rgba(255,255,255,0.7)' },
 
-  messageList: { maxHeight: 200, marginBottom: SPACING.sm },
+  messageList: { maxHeight: 350, marginBottom: SPACING.sm },
   messageBubble: { marginBottom: SPACING.xs, paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm, borderRadius: 14, maxWidth: '85%' },
   userBubble: { alignSelf: 'flex-end', backgroundColor: Colors.primaryBlue },
   aiBubble: { alignSelf: 'flex-start', backgroundColor: 'rgba(255,255,255,0.08)' },

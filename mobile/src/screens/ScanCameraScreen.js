@@ -18,11 +18,13 @@ import {
   Dimensions,
   ScrollView,
   AppState,
+  Linking,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Location from 'expo-location';
 import { Magnetometer } from 'expo-sensors';
 import * as Haptics from 'expo-haptics';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import BottomSheet from '@gorhom/bottom-sheet';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
@@ -38,6 +40,27 @@ import { behaviorTracker } from '../services/behaviorTracker';
 import GeminiLiveChat from '../components/GeminiLiveChat';
 
 const { width: SW, height: SH } = Dimensions.get('window');
+const RECENT_SCANS_KEY = '@scanpang_recent_scans';
+
+// ===== 바텀시트 스켈레톤 로딩 =====
+const BottomSheetSkeleton = () => (
+  <View style={styles.skeletonContainer}>
+    <View style={styles.skeletonRow}>
+      <View style={[styles.skeletonBlock, { width: '60%', height: 22 }]} />
+      <View style={[styles.skeletonBlock, { width: 60, height: 28, borderRadius: 14 }]} />
+    </View>
+    <View style={[styles.skeletonBlock, { width: '40%', height: 14, marginTop: 8 }]} />
+    <View style={styles.skeletonStatsRow}>
+      {[1, 2, 3, 4].map(i => (
+        <View key={i} style={styles.skeletonStatBox}>
+          <View style={[styles.skeletonBlock, { width: 32, height: 32, borderRadius: 16 }]} />
+          <View style={[styles.skeletonBlock, { width: '80%', height: 10, marginTop: 6 }]} />
+          <View style={[styles.skeletonBlock, { width: '60%', height: 14, marginTop: 4 }]} />
+        </View>
+      ))}
+    </View>
+  </View>
+);
 
 const computeHeading = (x, y) => {
   let angle = Math.atan2(y, x) * (180 / Math.PI);
@@ -517,6 +540,24 @@ const ScanCameraScreen = ({ route, navigation }) => {
     // 기존 scan log + 새 behavior tracker
     postScanLog({ sessionId: sessionIdRef.current, buildingId: building.id, eventType: 'pin_tapped', userLat: userLocation?.lat, userLng: userLocation?.lng, deviceHeading: heading, metadata: { confidence: building.confidence } }).catch(() => {});
     behaviorTracker.trackEvent('pin_click', { buildingId: building.id, metadata: { confidence: building.confidence } });
+
+    // AsyncStorage에 최근 스캔 기록 저장
+    (async () => {
+      try {
+        const raw = await AsyncStorage.getItem(RECENT_SCANS_KEY);
+        const scans = raw ? JSON.parse(raw) : [];
+        const newScan = {
+          id: `${building.id}_${Date.now()}`,
+          buildingName: building.name,
+          points: 50,
+          timeAgo: '방금 전',
+          timestamp: Date.now(),
+        };
+        scans.unshift(newScan);
+        if (scans.length > 20) scans.length = 20;
+        await AsyncStorage.setItem(RECENT_SCANS_KEY, JSON.stringify(scans));
+      } catch {}
+    })();
   }, [userLocation, heading]);
 
   const handleCloseSheet = useCallback(() => {
@@ -550,10 +591,14 @@ const ScanCameraScreen = ({ route, navigation }) => {
       {/* Layer 0: 전체화면 카메라 */}
       {cameraPermissionDenied ? (
         <View style={styles.permissionView}>
+          <Text style={styles.permissionIcon}>📷</Text>
           <Text style={styles.permissionTitle}>카메라 권한 필요</Text>
-          <Text style={styles.permissionDesc}>건물을 스캔하려면 카메라 접근 권한이 필요합니다.</Text>
+          <Text style={styles.permissionDesc}>건물을 스캔하려면 카메라 접근 권한이 필요합니다.{'\n'}설정에서 카메라 권한을 허용해주세요.</Text>
           <TouchableOpacity style={styles.permissionBtn} onPress={requestCameraPermission}>
             <Text style={styles.permissionBtnText}>권한 다시 요청</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.permissionSettingsBtn} onPress={() => Linking.openSettings()}>
+            <Text style={styles.permissionSettingsBtnText}>설정 열기</Text>
           </TouchableOpacity>
         </View>
       ) : !cameraPermission?.granted ? (
@@ -584,6 +629,13 @@ const ScanCameraScreen = ({ route, navigation }) => {
         </CameraView>
       )}
 
+      {/* GPS 에러 배너 */}
+      {gpsStatus === 'error' && (
+        <View style={styles.gpsErrorBanner}>
+          <Text style={styles.gpsErrorText}>GPS 신호를 받을 수 없습니다. 위치 서비스를 확인해주세요.</Text>
+        </View>
+      )}
+
       {/* Layer 1: 상단 오버레이 바 */}
       <CameraOverlayBar
         points={points}
@@ -607,7 +659,12 @@ const ScanCameraScreen = ({ route, navigation }) => {
           }
         }}
       >
-        {selectedBuilding ? (
+        {selectedBuilding && detailLoading ? (
+          <View style={styles.bsScroll}>
+            <BuildingHeader building={selectedBuilding} onClose={handleCloseSheet} onReport={handleOpenReport} />
+            <BottomSheetSkeleton />
+          </View>
+        ) : selectedBuilding ? (
           <ScrollView style={styles.bsScroll} showsVerticalScrollIndicator={false} nestedScrollEnabled>
             <BuildingHeader building={selectedBuilding} onClose={handleCloseSheet} onReport={handleOpenReport} />
             <QuickInfoTags amenities={selectedBuilding.facilities || selectedBuilding.amenities || []} />
@@ -656,10 +713,24 @@ const styles = StyleSheet.create({
 
   // 카메라 권한/로딩
   permissionView: { flex: 1, backgroundColor: '#0D1230', justifyContent: 'center', alignItems: 'center', padding: SPACING.xl },
+  permissionIcon: { fontSize: 48, marginBottom: SPACING.lg },
   permissionTitle: { fontSize: 18, fontWeight: '600', color: '#FFF', marginBottom: SPACING.sm },
-  permissionDesc: { fontSize: 14, color: '#B0B0B0', textAlign: 'center', marginBottom: SPACING.xl },
+  permissionDesc: { fontSize: 14, color: '#B0B0B0', textAlign: 'center', marginBottom: SPACING.xl, lineHeight: 22 },
   permissionBtn: { backgroundColor: Colors.primaryBlue, paddingHorizontal: SPACING.xl, paddingVertical: SPACING.md, borderRadius: 12 },
   permissionBtnText: { fontSize: 16, fontWeight: '600', color: '#FFF' },
+  permissionSettingsBtn: { marginTop: SPACING.md, paddingHorizontal: SPACING.xl, paddingVertical: SPACING.sm },
+  permissionSettingsBtnText: { fontSize: 14, fontWeight: '600', color: Colors.primaryBlue, textDecorationLine: 'underline' },
+
+  // GPS 에러 배너
+  gpsErrorBanner: { position: 'absolute', top: 100, left: SPACING.lg, right: SPACING.lg, backgroundColor: 'rgba(239,68,68,0.9)', borderRadius: 12, paddingHorizontal: SPACING.lg, paddingVertical: SPACING.sm, zIndex: 100 },
+  gpsErrorText: { fontSize: 13, fontWeight: '600', color: '#FFF', textAlign: 'center' },
+
+  // 바텀시트 스켈레톤
+  skeletonContainer: { paddingHorizontal: SPACING.lg, paddingTop: SPACING.md },
+  skeletonRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  skeletonBlock: { backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 8 },
+  skeletonStatsRow: { flexDirection: 'row', gap: SPACING.sm, marginTop: SPACING.lg },
+  skeletonStatBox: { flex: 1, alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 12, paddingVertical: SPACING.md },
   loadingView: { flex: 1, backgroundColor: '#0D1230', justifyContent: 'center', alignItems: 'center' },
   loadingText: { fontSize: 14, color: '#B0B0B0', marginTop: SPACING.md },
 

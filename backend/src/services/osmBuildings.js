@@ -71,6 +71,7 @@ async function fetchNearbyFromOSM(lat, lng, radius = 500) {
           address: buildAddress(tags),
           lat: elLat,
           lng: elLng,
+          distance: Math.round(distance),
           distanceMeters: Math.round(distance),
           bearing: Math.round(bearing),
           totalFloors,

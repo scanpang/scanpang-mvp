@@ -5,11 +5,14 @@
 const { Pool } = require('pg');
 require('dotenv').config();
 
+// SSL: 프로덕션(DATABASE_URL)에서만 활성화, 로컬에서는 비활성화
+const useSSL = !!process.env.DATABASE_URL;
+
 // DATABASE_URL이 있으면 connectionString 사용, 없으면 개별 파라미터
 const poolConfig = process.env.DATABASE_URL
   ? {
       connectionString: process.env.DATABASE_URL,
-      ssl: { rejectUnauthorized: false },
+      ssl: useSSL ? { rejectUnauthorized: false } : false,
     }
   : {
       host: process.env.DB_HOST,
@@ -17,7 +20,7 @@ const poolConfig = process.env.DATABASE_URL
       database: process.env.DB_NAME,
       user: process.env.DB_USER,
       password: process.env.DB_PASSWORD,
-      ssl: { rejectUnauthorized: false },
+      ssl: false,
     };
 
 const pool = new Pool({
@@ -25,6 +28,7 @@ const pool = new Pool({
   max: 10,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 10000,
+  statement_timeout: 15000,
 });
 
 // 풀 에러 핸들링

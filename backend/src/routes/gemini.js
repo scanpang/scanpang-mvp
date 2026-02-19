@@ -96,7 +96,8 @@ Return a JSON object with these fields:
 
 Only return valid JSON, no markdown or explanation.`;
 
-    const result = await model.generateContent([
+    // 25초 타임아웃 적용
+    const analyzePromise = model.generateContent([
       prompt,
       {
         inlineData: {
@@ -105,7 +106,11 @@ Only return valid JSON, no markdown or explanation.`;
         },
       },
     ]);
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Vision analysis timeout (25s)')), 25000)
+    );
 
+    const result = await Promise.race([analyzePromise, timeoutPromise]);
     const responseText = result.response.text();
 
     // JSON 파싱 시도
@@ -324,11 +329,16 @@ router.get('/live/stream', async (req, res, next) => {
 
     session.messageCount++;
 
+    // 클라이언트 연결 종료 감지
+    let clientClosed = false;
+    req.on('close', () => { clientClosed = true; });
+
     const result = await session.chat.sendMessageStream(message);
 
     let fullResponse = '';
 
     for await (const chunk of result.stream) {
+      if (clientClosed) break;
       const text = chunk.text();
       if (text) {
         fullResponse += text;
@@ -336,8 +346,10 @@ router.get('/live/stream', async (req, res, next) => {
       }
     }
 
-    // 완료 이벤트
-    res.write(`data: ${JSON.stringify({ type: 'done', fullResponse, messageCount: session.messageCount })}\n\n`);
+    if (!clientClosed) {
+      // 완료 이벤트
+      res.write(`data: ${JSON.stringify({ type: 'done', fullResponse, messageCount: session.messageCount })}\n\n`);
+    }
 
     // Flywheel 소싱 (정보성 대화인 경우)
     if (session.buildingId && fullResponse.length > 50) {

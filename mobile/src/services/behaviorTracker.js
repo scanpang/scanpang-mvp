@@ -181,9 +181,13 @@ class BehaviorTracker {
 
     this.eventQueue.push(event);
 
-    // 큐 크기 제한
+    // 큐 오버플로 시 즉시 flush 트리거 후 FIFO 유지
     if (this.eventQueue.length > MAX_QUEUE_SIZE) {
-      this.eventQueue = this.eventQueue.slice(-MAX_QUEUE_SIZE);
+      this.flush();
+      // flush 후에도 초과 시 오래된 이벤트부터 드롭
+      if (this.eventQueue.length > MAX_QUEUE_SIZE) {
+        this.eventQueue = this.eventQueue.slice(-MAX_QUEUE_SIZE);
+      }
     }
 
     // 배치 사이즈 도달 시 즉시 전송

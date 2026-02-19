@@ -16,6 +16,7 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import * as Location from 'expo-location';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { Colors, SPACING } from '../constants/theme';
 import { DUMMY_POINTS } from '../constants/dummyData';
@@ -26,10 +27,14 @@ import ScanStartCard from '../components/home/ScanStartCard';
 import NearbyBuildings from '../components/home/NearbyBuildings';
 import RecentActivity from '../components/home/RecentActivity';
 
+const RECENT_SCANS_KEY = '@scanpang_recent_scans';
+
 const HomeScreen = ({ navigation }) => {
   const [userLocation, setUserLocation] = useState(null);
+  const [locationName, setLocationName] = useState(null);
+  const [recentActivities, setRecentActivities] = useState([]);
 
-  // 위치 가져오기 (홈에서 미리)
+  // 위치 가져오기 + 역지오코딩
   useEffect(() => {
     (async () => {
       try {
@@ -37,6 +42,32 @@ const HomeScreen = ({ navigation }) => {
         if (status === 'granted') {
           const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
           setUserLocation({ lat: loc.coords.latitude, lng: loc.coords.longitude });
+
+          // 역지오코딩으로 동적 위치명
+          try {
+            const [place] = await Location.reverseGeocodeAsync({
+              latitude: loc.coords.latitude,
+              longitude: loc.coords.longitude,
+            });
+            if (place) {
+              const name = place.district || place.subregion || place.city || place.region || '';
+              const street = place.street || place.name || '';
+              setLocationName(street ? `${name} ${street} 주변` : `${name} 주변`);
+            }
+          } catch {}
+        }
+      } catch {}
+    })();
+  }, []);
+
+  // 최근 스캔 기록 로드
+  useEffect(() => {
+    (async () => {
+      try {
+        const raw = await AsyncStorage.getItem(RECENT_SCANS_KEY);
+        if (raw) {
+          const scans = JSON.parse(raw);
+          setRecentActivities(scans.slice(0, 3));
         }
       } catch {}
     })();
@@ -90,6 +121,7 @@ const HomeScreen = ({ navigation }) => {
         <StatusCard
           nearbyCount={buildings.length}
           stats={DUMMY_POINTS}
+          locationName={locationName}
         />
 
         {/* 스캔 시작 CTA */}
@@ -101,10 +133,11 @@ const HomeScreen = ({ navigation }) => {
           loading={loading}
           onBuildingPress={handleBuildingPress}
           onBuildingLongPress={handleBuildingReport}
+          onSeeAll={handleStartScan}
         />
 
         {/* 최근 활동 */}
-        <RecentActivity onScanPress={handleStartScan} />
+        <RecentActivity activities={recentActivities.length > 0 ? recentActivities : undefined} onScanPress={handleStartScan} />
 
         {/* Flywheel 대시보드 */}
         <TouchableOpacity style={styles.flywheelCard} onPress={handleFlywheelDashboard} activeOpacity={0.7}>

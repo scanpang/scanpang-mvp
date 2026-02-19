@@ -71,6 +71,7 @@ async function findNearbyBuildings(lat, lng, radius = 200, heading = null) {
     address: b.address,
     lat: parseFloat(b.lat),
     lng: parseFloat(b.lng),
+    distance: Math.round(parseFloat(b.distance_meters)),
     distanceMeters: Math.round(parseFloat(b.distance_meters)),
     bearing: Math.round(parseFloat(b.bearing)),
     totalFloors: b.total_floors,

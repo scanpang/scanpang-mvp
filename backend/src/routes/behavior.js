@@ -188,7 +188,7 @@ router.patch('/session/:id/end', async (req, res, next) => {
         buildings_viewed = $2,
         buildings_entered = $3,
         total_gaze_duration_ms = $4
-      WHERE id = $5
+      WHERE id = $5 AND ended_at IS NULL
       RETURNING id, ended_at, buildings_viewed, total_gaze_duration_ms
     `, [
       gazePath ? JSON.stringify(gazePath) : null,
@@ -199,6 +199,11 @@ router.patch('/session/:id/end', async (req, res, next) => {
     ]);
 
     if (result.rows.length === 0) {
+      // 세션이 존재하지만 이미 종료된 경우 vs 세션 자체가 없는 경우 구분
+      const exists = await db.query('SELECT id, ended_at FROM user_sessions WHERE id = $1', [id]);
+      if (exists.rows.length > 0 && exists.rows[0].ended_at) {
+        return res.status(409).json({ success: false, error: '이미 종료된 세션입니다.' });
+      }
       return res.status(404).json({ success: false, error: '세션을 찾을 수 없습니다.' });
     }
 

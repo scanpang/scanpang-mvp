@@ -13,9 +13,9 @@
 
 // 가중치 (합계 = 1.0)
 const WEIGHTS = {
-  gpsDistance: 0.25,      // Factor 1: GPS 거리
-  compassBearing: 0.25,   // Factor 2: 나침반 방위각 일치
-  gyroscope: 0.08,        // Factor 3: 기울기 안정성
+  gpsDistance: 0.27,      // Factor 1: GPS 거리
+  compassBearing: 0.26,   // Factor 2: 나침반 방위각 일치
+  gyroscope: 0.05,        // Factor 3: 기울기 안정성
   accelerometer: 0.07,    // Factor 4: 이동 상태
   cameraAngle: 0.10,      // Factor 5: 카메라 각도
   serverTime: 0.10,       // Factor 6: 서버 시각 컨텍스트

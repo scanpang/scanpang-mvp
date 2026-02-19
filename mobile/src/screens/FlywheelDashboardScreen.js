@@ -7,7 +7,7 @@
  * - 최근 24시간 활동
  * - 검증 대기 목록 미리보기
  */
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -16,18 +16,35 @@ import {
   ActivityIndicator,
   TouchableOpacity,
   RefreshControl,
+  Animated,
 } from 'react-native';
 import { Colors, SPACING } from '../constants/theme';
 import { getFlywheelStats, getFlywheelPending } from '../services/api';
 
-// 통계 카드
-const StatCard = ({ label, value, subValue, color = Colors.primaryBlue }) => (
-  <View style={styles.statCard}>
-    <Text style={[styles.statValue, { color }]}>{value}</Text>
-    <Text style={styles.statLabel}>{label}</Text>
-    {subValue != null && <Text style={styles.statSub}>{subValue}</Text>}
-  </View>
-);
+// 애니메이션 통계 카드 (페이드+슬라이드 stagger)
+const AnimatedStatCard = ({ label, value, subValue, color = Colors.primaryBlue, index = 0 }) => {
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(20)).current;
+
+  useEffect(() => {
+    const delay = index * 100;
+    const timer = setTimeout(() => {
+      Animated.parallel([
+        Animated.timing(fadeAnim, { toValue: 1, duration: 400, useNativeDriver: true }),
+        Animated.timing(slideAnim, { toValue: 0, duration: 400, useNativeDriver: true }),
+      ]).start();
+    }, delay);
+    return () => clearTimeout(timer);
+  }, []);
+
+  return (
+    <Animated.View style={[styles.statCard, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
+      <Text style={[styles.statValue, { color }]}>{value}</Text>
+      <Text style={styles.statLabel}>{label}</Text>
+      {subValue != null && <Text style={styles.statSub}>{subValue}</Text>}
+    </Animated.View>
+  );
+};
 
 // 소스별 분포 바
 const SourceBar = ({ label, count, total, color }) => {
@@ -65,6 +82,7 @@ const FlywheelDashboardScreen = ({ navigation }) => {
   const [pending, setPending] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const qualityScaleAnim = useRef(new Animated.Value(0)).current;
 
   const fetchData = useCallback(async () => {
     try {
@@ -83,6 +101,13 @@ const FlywheelDashboardScreen = ({ navigation }) => {
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  // 품질 원 애니메이션
+  useEffect(() => {
+    if (!loading) {
+      Animated.spring(qualityScaleAnim, { toValue: 1, friction: 6, tension: 80, useNativeDriver: true }).start();
+    }
+  }, [loading]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
@@ -120,10 +145,10 @@ const FlywheelDashboardScreen = ({ navigation }) => {
 
       {/* 핵심 통계 */}
       <View style={styles.statsGrid}>
-        <StatCard label="총 소싱" value={total} color={Colors.primaryBlue} />
-        <StatCard label="검증률" value={`${s.verificationRate || 0}%`} color={Colors.successGreen} />
-        <StatCard label="커버리지" value={`${s.buildingsCovered || 0}개`} subValue="건물" color={Colors.accentAmber} />
-        <StatCard label="24h 활동" value={s.last24hSourcing || 0} color="#8B5CF6" />
+        <AnimatedStatCard label="총 소싱" value={total} color={Colors.primaryBlue} index={0} />
+        <AnimatedStatCard label="검증률" value={`${s.verificationRate || 0}%`} color={Colors.successGreen} index={1} />
+        <AnimatedStatCard label="커버리지" value={`${s.buildingsCovered || 0}개`} subValue="건물" color={Colors.accentAmber} index={2} />
+        <AnimatedStatCard label="24h 활동" value={s.last24hSourcing || 0} color="#8B5CF6" index={3} />
       </View>
 
       {/* 검증 현황 */}
@@ -160,10 +185,10 @@ const FlywheelDashboardScreen = ({ navigation }) => {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>데이터 품질</Text>
         <View style={styles.qualityRow}>
-          <View style={styles.qualityCircle}>
+          <Animated.View style={[styles.qualityCircle, { transform: [{ scale: qualityScaleAnim }] }]}>
             <Text style={styles.qualityValue}>{Math.round((s.avgConfidence || 0) * 100)}</Text>
             <Text style={styles.qualityUnit}>%</Text>
-          </View>
+          </Animated.View>
           <View style={styles.qualityInfo}>
             <Text style={styles.qualityLabel}>평균 신뢰도</Text>
             <Text style={styles.qualityDesc}>

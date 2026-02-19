@@ -41,7 +41,7 @@ const SkeletonCard = () => (
   </View>
 );
 
-const NearbyBuildings = ({ buildings = [], loading = false, onBuildingPress, onBuildingLongPress }) => {
+const NearbyBuildings = ({ buildings = [], loading = false, onBuildingPress, onBuildingLongPress, onSeeAll }) => {
   const renderItem = ({ item }) => (
     <BuildingPreviewCard building={item} onPress={onBuildingPress} onLongPress={onBuildingLongPress} />
   );
@@ -50,7 +50,7 @@ const NearbyBuildings = ({ buildings = [], loading = false, onBuildingPress, onB
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.sectionTitle}>주변 건물</Text>
-        <TouchableOpacity><Text style={styles.seeAll}>모두 보기 ›</Text></TouchableOpacity>
+        <TouchableOpacity onPress={onSeeAll}><Text style={styles.seeAll}>모두 보기 ›</Text></TouchableOpacity>
       </View>
 
       {loading || buildings.length === 0 ? (

@@ -114,7 +114,7 @@ app.use((err, req, res, _next) => {
 });
 
 // ===== 서버 시작 =====
-app.listen(PORT, async () => {
+const server = app.listen(PORT, async () => {
   console.log('========================================');
   console.log('  ScanPang Backend v0.1.0');
   console.log(`  환경: ${process.env.NODE_ENV || 'production'}`);
@@ -127,5 +127,23 @@ app.listen(PORT, async () => {
     console.warn('[경고] DB 연결에 실패했습니다. DATABASE_URL을 확인해주세요.');
   }
 });
+
+// ===== Graceful Shutdown =====
+const gracefulShutdown = (signal) => {
+  console.log(`[${signal}] Graceful shutdown 시작...`);
+  server.close(async () => {
+    console.log('[Server] HTTP 서버 종료 완료');
+    try {
+      await db.pool.end();
+      console.log('[DB] 풀 종료 완료');
+    } catch {}
+    process.exit(0);
+  });
+  // 10초 내 종료 안 되면 강제 종료
+  setTimeout(() => { process.exit(1); }, 10000);
+};
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 module.exports = app;

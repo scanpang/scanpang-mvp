@@ -10,7 +10,7 @@ import { View, Text, StyleSheet, Animated } from 'react-native';
 import { Colors, SPACING } from '../../constants/theme';
 import { getGreeting } from '../../utils/greeting';
 
-const StatusCard = ({ nearbyCount = 0, stats }) => {
+const StatusCard = ({ nearbyCount = 0, stats, locationName }) => {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(-20)).current;
 
@@ -26,7 +26,7 @@ const StatusCard = ({ nearbyCount = 0, stats }) => {
   return (
     <Animated.View style={[styles.card, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
       <View style={styles.gradient}>
-        <Text style={styles.location}>강남역 주변</Text>
+        <Text style={styles.location}>{locationName || '내 주변'}</Text>
         <Text style={styles.greeting}>{getGreeting()}</Text>
         <Text style={styles.subtitle}>
           주변에 스캔 가능한 건물 {nearbyCount}개

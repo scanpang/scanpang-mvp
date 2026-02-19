@@ -8,9 +8,7 @@
 
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
-// API Base URL
-const API_BASE_URL = 'https://scanpang-backend.onrender.com/api';
+import { API_BASE_URL, API_KEY as CONFIG_API_KEY, TIMEOUTS } from '../constants/config';
 
 // ===== 에러 메시지 매핑 =====
 const ERROR_MESSAGES = {
@@ -37,16 +35,13 @@ export const getUserFriendlyError = (error) => {
   return ERROR_MESSAGES[status] || ERROR_MESSAGES.default;
 };
 
-// API 인증 키
-const API_KEY = 'scanpang-dev-key-2024';
-
 // Axios 인스턴스 생성
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 5000,
+  timeout: TIMEOUTS.default,
   headers: {
     'Content-Type': 'application/json',
-    'x-api-key': API_KEY,
+    'x-api-key': CONFIG_API_KEY,
   },
 });
 
@@ -187,7 +182,7 @@ export const analyzeFrame = async (imageBase64, options = {}) => {
     lng: options.lng || null,
     heading: options.heading || null,
     sessionId: options.sessionId || null,
-  }, { timeout: 15000 }); // Vision 분석은 시간 소요
+  }, { timeout: TIMEOUTS.geminiVision });
 };
 
 export const startGeminiLive = async (options = {}) => {
@@ -201,7 +196,7 @@ export const startGeminiLive = async (options = {}) => {
 };
 
 export const sendGeminiMessage = async (sessionId, message) => {
-  return apiClient.post('/gemini/live/audio', { sessionId, message }, { timeout: 15000 });
+  return apiClient.post('/gemini/live/audio', { sessionId, message }, { timeout: TIMEOUTS.geminiChat });
 };
 
 export const getGeminiStreamUrl = (sessionId, message) => {

@@ -196,6 +196,19 @@ async function seed() {
           VALUES ($1, $2, $3, $4, $5, $6, $7, TRUE)
         `, [buildingId, feed.type, feed.title, feed.desc, feed.icon, feed.color, feed.time]);
       }
+
+      // building_profiles 추가
+      const hours = b.use.includes('호텔') ? '24시간' : b.use.includes('상업') ? '10:00-22:00' : '08:00-20:00';
+      await pool.query(`
+        INSERT INTO building_profiles (building_id, description, business_hours, live_info)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (building_id) DO NOTHING
+      `, [
+        buildingId,
+        `${b.name}은(는) ${b.address}에 위치한 ${b.use} 건물입니다. 지상 ${b.floors}층, 지하 ${b.basement}층 규모입니다.`,
+        JSON.stringify({ weekday: hours, weekend: hours, holiday: b.use.includes('호텔') ? '24시간' : '휴무' }),
+        JSON.stringify({ congestion: 'normal', lastUpdated: new Date().toISOString() }),
+      ]);
     }
 
     // 최종 건물 수 확인
