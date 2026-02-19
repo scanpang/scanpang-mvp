@@ -41,10 +41,13 @@ const SkeletonCard = () => (
   </View>
 );
 
-const NearbyBuildings = ({ buildings = [], loading = false, onBuildingPress, onBuildingLongPress, onSeeAll }) => {
+const NearbyBuildings = ({ buildings = [], loading = false, error = null, onBuildingPress, onBuildingLongPress, onSeeAll, onRetry }) => {
   const renderItem = ({ item }) => (
     <BuildingPreviewCard building={item} onPress={onBuildingPress} onLongPress={onBuildingLongPress} />
   );
+
+  const showSkeleton = loading;
+  const showEmpty = !loading && buildings.length === 0;
 
   return (
     <View style={styles.container}>
@@ -53,21 +56,40 @@ const NearbyBuildings = ({ buildings = [], loading = false, onBuildingPress, onB
         <TouchableOpacity onPress={onSeeAll}><Text style={styles.seeAll}>모두 보기 ›</Text></TouchableOpacity>
       </View>
 
-      {loading || buildings.length === 0 ? (
+      {showSkeleton ? (
         <View style={styles.skeletonRow}>
           <SkeletonCard /><SkeletonCard /><SkeletonCard />
         </View>
+      ) : showEmpty ? (
+        <View style={styles.emptyContainer}>
+          <Text style={styles.emptyIcon}>{error ? '!' : '~'}</Text>
+          <Text style={styles.emptyText}>
+            {error?.message || '주변에 건물 정보가 없습니다'}
+          </Text>
+          {onRetry && (
+            <TouchableOpacity style={styles.retryBtn} onPress={onRetry}>
+              <Text style={styles.retryBtnText}>다시 시도</Text>
+            </TouchableOpacity>
+          )}
+        </View>
       ) : (
-        <FlatList
-          data={buildings}
-          renderItem={renderItem}
-          keyExtractor={(item) => String(item.id)}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          snapToInterval={CARD_WIDTH + CARD_GAP}
-          decelerationRate="fast"
-          contentContainerStyle={styles.listContent}
-        />
+        <>
+          {error?.isFallback && (
+            <View style={styles.fallbackBanner}>
+              <Text style={styles.fallbackText}>오프라인 데이터 표시 중</Text>
+            </View>
+          )}
+          <FlatList
+            data={buildings}
+            renderItem={renderItem}
+            keyExtractor={(item) => String(item.id)}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            snapToInterval={CARD_WIDTH + CARD_GAP}
+            decelerationRate="fast"
+            contentContainerStyle={styles.listContent}
+          />
+        </>
       )}
     </View>
   );
@@ -109,6 +131,15 @@ const styles = StyleSheet.create({
   skeletonCard: { opacity: 0.5 },
   skeletonBg: { backgroundColor: Colors.borderDefault },
   skeletonLine: { height: 12, borderRadius: 6, backgroundColor: Colors.borderDefault, marginBottom: SPACING.xs },
+  // empty / error
+  emptyContainer: { alignItems: 'center', paddingVertical: SPACING.xl, paddingHorizontal: SPACING.xl },
+  emptyIcon: { fontSize: 28, fontWeight: '700', color: Colors.textTertiary, marginBottom: SPACING.sm },
+  emptyText: { fontSize: 14, color: Colors.textSecondary, textAlign: 'center' },
+  retryBtn: { marginTop: SPACING.md, backgroundColor: Colors.primaryBlue, paddingHorizontal: SPACING.lg, paddingVertical: SPACING.sm, borderRadius: 12 },
+  retryBtnText: { fontSize: 14, fontWeight: '600', color: '#FFF' },
+  // fallback banner
+  fallbackBanner: { marginHorizontal: SPACING.xl, marginBottom: SPACING.sm, backgroundColor: '#FEF3C7', borderRadius: 8, paddingHorizontal: SPACING.md, paddingVertical: SPACING.xs },
+  fallbackText: { fontSize: 12, fontWeight: '500', color: '#92400E', textAlign: 'center' },
 });
 
 export default NearbyBuildings;

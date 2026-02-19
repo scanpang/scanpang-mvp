@@ -95,7 +95,7 @@ const ARBuildingLabel = ({ building, isSelected, onPress, x, y, index, labelScal
       >
         {hasReward && <View style={styles.rewardBadge}><Text style={styles.rewardBadgeText}>+P</Text></View>}
         <Text style={styles.arLabelName} numberOfLines={1}>{building.name}</Text>
-        <Text style={styles.arLabelCategory}>{building.buildingUse || building.category || '건물'}</Text>
+        <Text style={styles.arLabelCategory}>{building.buildingUse || building.category || ''}</Text>
         <View style={styles.arLabelBottom}>
           <Text style={styles.arLabelDistance}>{formatDistance(building.distance)}</Text>
           {confidence != null && (
@@ -113,31 +113,71 @@ const ARBuildingLabel = ({ building, isSelected, onPress, x, y, index, labelScal
 };
 
 // ===== 상단 오버레이 바 =====
-const CameraOverlayBar = ({ points, gpsStatus, onBack, motionState, isStable }) => {
+const FACTOR_LABELS = {
+  gpsDistance: 'GPS',
+  compassBearing: '나침반',
+  gyroscope: '자이로',
+  accelerometer: '가속도',
+  cameraAngle: '카메라',
+  serverTime: '서버시각',
+  geminiVision: 'Gemini',
+};
+
+const CameraOverlayBar = ({ points, gpsStatus, onBack, motionState, isStable, factorScore, factors }) => {
+  const [showPanel, setShowPanel] = useState(false);
   const gpsColor = gpsStatus === 'active' ? Colors.successGreen : gpsStatus === 'error' ? Colors.liveRed : Colors.accentAmber;
   const gpsText = gpsStatus === 'active' ? 'GPS 활성' : gpsStatus === 'error' ? '위치 오류' : '위치 확인중...';
+  const scoreColor = (factorScore || 0) >= 70 ? Colors.successGreen : (factorScore || 0) >= 40 ? Colors.accentAmber : Colors.liveRed;
 
   return (
-    <View style={styles.overlayBar}>
-      <TouchableOpacity style={styles.overlayBackBtn} onPress={onBack} hitSlop={TOUCH.hitSlop}>
-        <Text style={styles.overlayBackText}>{'‹'}</Text>
-      </TouchableOpacity>
+    <>
+      <View style={styles.overlayBar}>
+        <TouchableOpacity style={styles.overlayBackBtn} onPress={onBack} hitSlop={TOUCH.hitSlop}>
+          <Text style={styles.overlayBackText}>{'‹'}</Text>
+        </TouchableOpacity>
 
-      <View style={styles.overlayModePill}>
-        <View style={[styles.overlayDot, { backgroundColor: isStable ? Colors.successGreen : Colors.accentAmber }]} />
-        <Text style={styles.overlayModeText}>{isStable ? '7-Factor' : motionState === 'walking' ? '이동중' : '스캔'}</Text>
+        <TouchableOpacity style={styles.overlayModePill} onPress={() => setShowPanel(p => !p)} activeOpacity={0.7}>
+          <View style={[styles.overlayDot, { backgroundColor: isStable ? Colors.successGreen : Colors.accentAmber }]} />
+          <Text style={styles.overlayModeText}>
+            {isStable ? `7-Factor ${factorScore || 0}` : motionState === 'walking' ? '이동중' : '스캔'}
+          </Text>
+        </TouchableOpacity>
+
+        <View style={styles.overlayPointsPill}>
+          <Text style={styles.overlayPointsStar}>★</Text>
+          <Text style={styles.overlayPointsText}>{points.toLocaleString()}</Text>
+        </View>
+
+        <View style={styles.overlayGpsContainer}>
+          <View style={[styles.overlayDot, { backgroundColor: gpsColor }]} />
+          <Text style={[styles.overlayGpsText, { color: gpsColor }]}>{gpsText}</Text>
+        </View>
       </View>
 
-      <View style={styles.overlayPointsPill}>
-        <Text style={styles.overlayPointsStar}>★</Text>
-        <Text style={styles.overlayPointsText}>{points.toLocaleString()}</Text>
-      </View>
-
-      <View style={styles.overlayGpsContainer}>
-        <View style={[styles.overlayDot, { backgroundColor: gpsColor }]} />
-        <Text style={[styles.overlayGpsText, { color: gpsColor }]}>{gpsText}</Text>
-      </View>
-    </View>
+      {/* 7-Factor 미니 패널 */}
+      {showPanel && factors && (
+        <View style={styles.factorPanel}>
+          <View style={styles.factorPanelHeader}>
+            <Text style={styles.factorPanelTitle}>7-Factor 상세</Text>
+            <Text style={[styles.factorPanelScore, { color: scoreColor }]}>{factorScore || 0}점</Text>
+          </View>
+          {Object.entries(FACTOR_LABELS).map(([key, label]) => {
+            const val = factors[key] != null ? Math.round(factors[key] * 100) : 0;
+            const icon = val >= 70 ? '\u2705' : val >= 40 ? '\u26A0\uFE0F' : '\u274C';
+            return (
+              <View key={key} style={styles.factorRow}>
+                <Text style={styles.factorIcon}>{icon}</Text>
+                <Text style={styles.factorLabel}>{label}</Text>
+                <View style={styles.factorBarBg}>
+                  <View style={[styles.factorBarFill, { width: `${val}%`, backgroundColor: val >= 70 ? Colors.successGreen : val >= 40 ? Colors.accentAmber : Colors.liveRed }]} />
+                </View>
+                <Text style={styles.factorValue}>{val}</Text>
+              </View>
+            );
+          })}
+        </View>
+      )}
+    </>
   );
 };
 
@@ -294,49 +334,103 @@ const LiveFeed = ({ feeds = [] }) => {
 // ===== AR 위치 계산 (방위각 기반) =====
 const CAMERA_HFOV = 60; // 카메라 수평 시야각 (도)
 
+const LABEL_W = 130;
+const LABEL_H = 70;
+const MAX_VISIBLE_LABELS = 6;
+const CLUSTER_THRESHOLD = 3; // 같은 영역 이 이상이면 클러스터링
+
 const calculateARPositions = (buildings, heading, screenW, screenH) => {
   if (!buildings.length) return [];
 
-  const positions = [];
-  const occupied = [];
+  const candidates = [];
 
-  buildings.slice(0, 10).forEach((building) => {
+  // 1단계: 화면 좌표 계산
+  buildings.slice(0, 15).forEach((building) => {
     const bearing = building.bearing ?? 0;
     const distance = building.distance || building.distanceMeters || 200;
 
-    // 디바이스 방향 기준 상대 방위각
     let relBearing = bearing - heading;
     if (relBearing > 180) relBearing -= 360;
     if (relBearing < -180) relBearing += 360;
 
-    // 시야 밖이면 스킵 (FOV + 10° 여유)
+    // 시야 밖이면 스킵
     if (Math.abs(relBearing) > CAMERA_HFOV / 2 + 10) return;
 
-    // X: 방위각 → 화면 좌표 (중앙 = 정면)
-    const labelW = 130;
-    let x = (screenW / 2) + (relBearing / (CAMERA_HFOV / 2)) * (screenW / 2) - labelW / 2;
-
-    // Y: 거리 기반 (가까우면 아래, 멀면 위 = 수평선 쪽)
+    let x = (screenW / 2) + (relBearing / (CAMERA_HFOV / 2)) * (screenW / 2) - LABEL_W / 2;
     const normDist = Math.min(distance / 500, 1);
     let y = screenH * (0.52 - normDist * 0.28);
-
-    // 스케일: 가까우면 크게, 멀면 작게
     const scale = Math.max(0.65, 1.1 - normDist * 0.45);
 
     // 화면 경계 클램프
-    x = Math.max(4, Math.min(x, screenW - labelW));
-    y = Math.max(70, Math.min(y, screenH * 0.55));
+    x = Math.max(4, Math.min(x, screenW - LABEL_W));
+    y = Math.max(70, Math.min(y, screenH * 0.50));
 
-    // 겹침 방지
-    for (const prev of occupied) {
-      if (Math.abs(x - prev.x) < labelW && Math.abs(y - prev.y) < 55) {
-        y = prev.y + 60;
+    candidates.push({ building, x, y, scale, distance });
+  });
+
+  // 2단계: 거리순 정렬 (가까운 건물 우선 배치)
+  candidates.sort((a, b) => a.distance - b.distance);
+
+  // 3단계: 겹침 방지 (다중 패스) + 최대 표시 수 제한
+  const positions = [];
+  const occupied = [];
+  const hidden = [];
+
+  for (const cand of candidates) {
+    if (positions.length >= MAX_VISIBLE_LABELS) {
+      hidden.push(cand.building);
+      continue;
+    }
+
+    let { x, y } = cand;
+    let attempts = 0;
+    const maxAttempts = 5;
+
+    // 겹침 발견 시 위/아래로 밀어내기 (최대 5회 시도)
+    while (attempts < maxAttempts) {
+      let overlapping = false;
+      for (const prev of occupied) {
+        if (Math.abs(x - prev.x) < LABEL_W * 0.8 && Math.abs(y - prev.y) < LABEL_H) {
+          // 아래로 밀기, 화면 밖이면 위로
+          y = prev.y + LABEL_H + 4;
+          if (y > screenH * 0.55) {
+            y = prev.y - LABEL_H - 4;
+          }
+          overlapping = true;
+          break;
+        }
       }
+      if (!overlapping) break;
+      attempts++;
+    }
+
+    // 화면 밖이면 숨김
+    if (y < 60 || y > screenH * 0.58) {
+      hidden.push(cand.building);
+      continue;
     }
 
     occupied.push({ x, y });
-    positions.push({ building, x, y, scale });
-  });
+    positions.push({ building: cand.building, x, y, scale: cand.scale });
+  }
+
+  // 4단계: 숨겨진 건물이 있으면 마지막 위치에 "+N개" 클러스터 표시
+  if (hidden.length > 0 && positions.length > 0) {
+    const last = positions[positions.length - 1];
+    positions.push({
+      building: {
+        id: '__cluster__',
+        name: `외 ${hidden.length}개 건물`,
+        buildingUse: `${hidden.map(b => b.name).slice(0, 2).join(', ')}...`,
+        distance: hidden[0]?.distance || hidden[0]?.distanceMeters || 0,
+        bearing: 0,
+      },
+      x: Math.min(last.x + 10, screenW - LABEL_W),
+      y: Math.min(last.y + LABEL_H + 8, screenH * 0.55),
+      scale: 0.75,
+      isCluster: true,
+    });
+  }
 
   return positions;
 };
@@ -558,6 +652,31 @@ const ScanCameraScreen = ({ route, navigation }) => {
         await AsyncStorage.setItem(RECENT_SCANS_KEY, JSON.stringify(scans));
       } catch {}
     })();
+
+    // Gemini Vision 즉시 분석 (건물 선택 시 1회, DB 건물만)
+    if (cameraRef.current && !String(building.id).startsWith('osm_')) {
+      (async () => {
+        try {
+          const photo = await cameraRef.current.takePictureAsync({ base64: true, quality: 0.3, skipProcessing: true });
+          if (!photo?.base64 || !isMountedRef.current) return;
+          const res = await analyzeFrame(photo.base64, {
+            buildingId: building.id,
+            buildingName: building.name,
+            lat: userLocation?.lat,
+            lng: userLocation?.lng,
+            heading,
+            sessionId: sessionIdRef.current,
+          });
+          if (res?.data?.analysis && isMountedRef.current) {
+            setGeminiResults(prev => {
+              const next = new Map(prev);
+              next.set(building.id, res.data.analysis);
+              return next;
+            });
+          }
+        } catch {}
+      })();
+    }
   }, [userLocation, heading]);
 
   const handleCloseSheet = useCallback(() => {
@@ -588,7 +707,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
     <GestureHandlerRootView style={styles.container}>
       <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
 
-      {/* Layer 0: 전체화면 카메라 */}
+      {/* Layer 0: 전체화면 카메라 (absolute로 항상 배경 보장) */}
       {cameraPermissionDenied ? (
         <View style={styles.permissionView}>
           <Text style={styles.permissionIcon}>📷</Text>
@@ -607,26 +726,39 @@ const ScanCameraScreen = ({ route, navigation }) => {
           <Text style={styles.loadingText}>카메라 준비 중...</Text>
         </View>
       ) : (
-        <CameraView ref={cameraRef} style={styles.camera} facing="back">
-          {/* Layer 2: AR 건물 라벨 */}
-          {pinPositions.map(({ building, x, y, scale }, index) => (
-            <ARBuildingLabel
-              key={building.id}
-              building={building}
-              isSelected={selectedBuildingId === building.id}
-              onPress={handleBuildingSelect}
-              x={x} y={y} index={index} labelScale={scale || 1}
-              confidence={building.confidencePercent}
-            />
-          ))}
+        <>
+          {/* 카메라: absolute fill로 항상 전체 배경 */}
+          <CameraView ref={cameraRef} style={StyleSheet.absoluteFillObject} facing="back" />
 
-          {/* 가이드 텍스트 */}
-          <Animated.View style={[styles.guideOverlay, { opacity: guideAnim }]} pointerEvents="none">
-            <Text style={styles.guideText}>
-              {searchingVisible ? '위치를 탐색하고 있습니다...' : '건물을 향해 카메라를 비추세요'}
-            </Text>
-          </Animated.View>
-        </CameraView>
+          {/* Layer 2: AR 건물 라벨 (카메라 위 별도 레이어) */}
+          <View style={styles.arLabelLayer} pointerEvents="box-none">
+            {pinPositions.map(({ building, x, y, scale, isCluster }, index) => (
+              isCluster ? (
+                <Animated.View key="__cluster__" style={[styles.arLabel, { top: y, left: x, opacity: 0.7 }]}>
+                  <View style={styles.clusterCard}>
+                    <Text style={styles.clusterText}>{building.name}</Text>
+                  </View>
+                </Animated.View>
+              ) : (
+                <ARBuildingLabel
+                  key={building.id}
+                  building={building}
+                  isSelected={selectedBuildingId === building.id}
+                  onPress={handleBuildingSelect}
+                  x={x} y={y} index={index} labelScale={scale || 1}
+                  confidence={building.confidencePercent}
+                />
+              )
+            ))}
+
+            {/* 가이드 텍스트 */}
+            <Animated.View style={[styles.guideOverlay, { opacity: guideAnim }]} pointerEvents="none">
+              <Text style={styles.guideText}>
+                {searchingVisible ? '위치를 탐색하고 있습니다...' : '건물을 향해 카메라를 비추세요'}
+              </Text>
+            </Animated.View>
+          </View>
+        </>
       )}
 
       {/* GPS 에러 배너 */}
@@ -643,6 +775,8 @@ const ScanCameraScreen = ({ route, navigation }) => {
         onBack={() => navigation.goBack()}
         motionState={motionState}
         isStable={isStable}
+        factorScore={rankedBuildings[0]?.confidencePercent || 0}
+        factors={rankedBuildings[0]?.factors || null}
       />
 
       {/* Layer 3: 하단 바텀시트 */}
@@ -710,6 +844,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
   camera: { flex: 1 },
+  arLabelLayer: { ...StyleSheet.absoluteFillObject, zIndex: 1 },
 
   // 카메라 권한/로딩
   permissionView: { flex: 1, backgroundColor: '#0D1230', justifyContent: 'center', alignItems: 'center', padding: SPACING.xl },
@@ -756,6 +891,8 @@ const styles = StyleSheet.create({
   rewardBadgeText: { fontSize: 9, fontWeight: '800', color: '#FFF' },
   arLabelPin: { width: 12, height: 12, borderRadius: 6, backgroundColor: '#FFF', borderWidth: 2, borderColor: Colors.textTertiary, marginTop: -1 },
   arLabelPinSelected: { backgroundColor: Colors.accentAmber, borderColor: Colors.accentAmber },
+  clusterCard: { backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 12, paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' },
+  clusterText: { fontSize: 12, fontWeight: '600', color: 'rgba(255,255,255,0.9)' },
 
   // ===== 상단 오버레이 =====
   overlayBar: {
@@ -775,6 +912,21 @@ const styles = StyleSheet.create({
   overlayPointsText: { fontSize: 13, fontWeight: '700', color: '#FFF' },
   overlayGpsContainer: { marginLeft: 'auto', flexDirection: 'row', alignItems: 'center', gap: SPACING.xs },
   overlayGpsText: { fontSize: 11, fontWeight: '500' },
+  // 7-Factor 패널
+  factorPanel: {
+    position: 'absolute', top: 100, left: SPACING.lg, right: SPACING.lg,
+    backgroundColor: 'rgba(0,0,0,0.85)', borderRadius: 16,
+    paddingHorizontal: SPACING.lg, paddingVertical: SPACING.md, zIndex: 200,
+  },
+  factorPanelHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: SPACING.sm },
+  factorPanelTitle: { fontSize: 14, fontWeight: '700', color: '#FFF' },
+  factorPanelScore: { fontSize: 18, fontWeight: '800' },
+  factorRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 5 },
+  factorIcon: { fontSize: 12, width: 18, textAlign: 'center' },
+  factorLabel: { fontSize: 12, fontWeight: '600', color: 'rgba(255,255,255,0.8)', width: 50 },
+  factorBarBg: { flex: 1, height: 6, backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 3, overflow: 'hidden' },
+  factorBarFill: { height: 6, borderRadius: 3 },
+  factorValue: { fontSize: 11, fontWeight: '700', color: 'rgba(255,255,255,0.7)', width: 24, textAlign: 'right' },
 
   // ===== 바텀시트 =====
   bsBackground: { backgroundColor: Colors.darkBg, borderTopLeftRadius: 20, borderTopRightRadius: 20 },

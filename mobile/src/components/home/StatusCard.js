@@ -44,7 +44,7 @@ const StatusCard = ({ nearbyCount = 0, stats, locationName }) => {
               <Text style={styles.statLabel}>획득 포인트</Text>
             </View>
             <View style={styles.statBox}>
-              <Text style={styles.statValue}>{stats.todayEarned}/{stats.dailyLimit}</Text>
+              <Text style={styles.statValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>{stats.todayEarned}/{stats.dailyLimit}</Text>
               <Text style={styles.statLabel}>남은 한도</Text>
               <View style={styles.progressBg}>
                 <View style={[styles.progressFill, { width: `${Math.min(limitProgress * 100, 100)}%` }]} />

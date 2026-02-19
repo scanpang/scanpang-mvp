@@ -73,7 +73,7 @@ const HomeScreen = ({ navigation }) => {
     })();
   }, []);
 
-  const { buildings, loading } = useNearbyBuildings({
+  const { buildings, loading, error: nearbyError, refetch: refetchNearby } = useNearbyBuildings({
     latitude: userLocation?.lat,
     longitude: userLocation?.lng,
     heading: null,
@@ -130,10 +130,12 @@ const HomeScreen = ({ navigation }) => {
         {/* 주변 건물 미리보기 */}
         <NearbyBuildings
           buildings={buildings}
-          loading={loading}
+          loading={loading || !userLocation}
+          error={nearbyError}
           onBuildingPress={handleBuildingPress}
           onBuildingLongPress={handleBuildingReport}
           onSeeAll={handleStartScan}
+          onRetry={refetchNearby}
         />
 
         {/* 최근 활동 */}

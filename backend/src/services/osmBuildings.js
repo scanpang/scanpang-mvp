@@ -31,10 +31,15 @@ async function fetchNearbyFromOSM(lat, lng, radius = 500) {
     return cached.data;
   }
 
-  // Overpass QL: name 태그가 있는 건물 조회 (way만, relation은 느려서 제외)
+  // Overpass QL: 이름 있는 건물 + 주소 있는 건물 + 아파트 단지 relation 조회
   const query = `
-    [out:json][timeout:5];
-    way["building"]["name"](around:${radius},${lat},${lng});
+    [out:json][timeout:8];
+    (
+      way["building"]["name"](around:${radius},${lat},${lng});
+      way["building"]["addr:street"](around:${radius},${lat},${lng});
+      relation["building"="apartments"](around:${radius},${lat},${lng});
+      relation["landuse"="residential"]["name"](around:${radius},${lat},${lng});
+    );
     out center tags;
   `;
 
@@ -50,13 +55,62 @@ async function fetchNearbyFromOSM(lat, lng, radius = 500) {
 
     const elements = response.data?.elements || [];
 
+    // 1단계: relation(아파트 단지) 이름 수집
+    const complexNames = [];
+    elements.forEach(el => {
+      if (el.type === 'relation' && el.tags?.name) {
+        const eLat = el.center?.lat || el.lat;
+        const eLng = el.center?.lon || el.lon;
+        if (eLat && eLng) {
+          complexNames.push({
+            name: el.tags['name:ko'] || el.tags.name,
+            lat: eLat, lng: eLng,
+          });
+        }
+      }
+    });
+
+    // 2단계: "X동" 패턴 이름에 단지명 보강
+    const DONG_PATTERN = /^[A-Za-z0-9가-힣]{1,3}동$/;
+    function enrichName(rawName, tags, elLat, elLng) {
+      let name = tags['name:ko'] || rawName || '';
+
+      // "X동" 패턴이면 가장 가까운 단지명을 앞에 붙임
+      if (name && DONG_PATTERN.test(name) && complexNames.length > 0) {
+        let bestDist = Infinity, bestComplex = null;
+        for (const c of complexNames) {
+          const d = haversineDistance(elLat, elLng, c.lat, c.lng);
+          if (d < bestDist && d < 300) { bestDist = d; bestComplex = c.name; }
+        }
+        if (bestComplex) {
+          // "이매촌 한신아파트" + "A동" → "이매촌한신 A동"
+          const short = bestComplex.replace(/아파트$|아파트먼트$|단지$/g, '').trim();
+          name = `${short} ${name}`;
+        }
+      }
+
+      // 이름이 없으면 주소에서 생성
+      if (!name) {
+        const street = tags['addr:street'] || '';
+        const houseNum = tags['addr:housenumber'] || '';
+        if (street && houseNum) {
+          name = `${street} ${houseNum}`;
+        } else if (street) {
+          name = street;
+        }
+      }
+
+      return name || null;
+    }
+
+    // 3단계: 건물 way 처리
     const buildings = elements
-      .filter(el => (el.center || (el.lat && el.lon)))
+      .filter(el => el.type === 'way' && (el.center || (el.lat && el.lon)))
       .map((el) => {
         const elLat = el.center?.lat || el.lat;
         const elLng = el.center?.lon || el.lon;
         const tags = el.tags || {};
-        const name = tags['name:ko'] || tags.name || '';
+        const name = enrichName(tags.name || '', tags, elLat, elLng);
 
         if (!name) return null;
 
@@ -226,17 +280,25 @@ function buildAddress(tags) {
 
 function mapBuildingType(tags) {
   if (tags.office) return '오피스';
-  if (tags.shop) return '상업시설';
-  if (tags.amenity === 'hospital') return '병원';
+  if (tags.shop) return tags.shop === 'convenience' ? '편의점' : tags.shop === 'supermarket' ? '마트' : '상가';
+  if (tags.amenity === 'hospital' || tags.amenity === 'clinic') return '병원';
   if (tags.amenity === 'school' || tags.amenity === 'university') return '학교';
+  if (tags.amenity === 'restaurant') return '음식점';
+  if (tags.amenity === 'cafe') return '카페';
+  if (tags.amenity === 'bank') return '은행';
+  if (tags.amenity === 'pharmacy') return '약국';
+  if (tags.tourism === 'hotel') return '호텔';
   const mapping = {
-    commercial: '상업시설', office: '오피스', retail: '상업시설',
+    commercial: '상업시설', office: '오피스', retail: '상가',
     residential: '주거', apartments: '아파트', hotel: '호텔',
     hospital: '병원', school: '학교', university: '대학교',
-    church: '교회', industrial: '산업시설', warehouse: '창고',
-    yes: '건물',
+    church: '교회', temple: '사찰', industrial: '산업시설',
+    warehouse: '창고', garage: '주차장', civic: '공공시설',
+    public: '공공시설', train_station: '역', supermarket: '마트',
+    kindergarten: '유치원', dormitory: '기숙사',
+    yes: '',
   };
-  return mapping[tags.building] || '건물';
+  return mapping[tags.building] || '';
 }
 
 function haversineDistance(lat1, lng1, lat2, lng2) {
