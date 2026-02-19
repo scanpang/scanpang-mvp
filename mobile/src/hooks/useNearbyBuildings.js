@@ -44,6 +44,8 @@ const useNearbyBuildings = ({
   const lastParams = useRef(null);
   // 마운트 상태 추적
   const isMounted = useRef(true);
+  // 자동 재시도 1회 제한
+  const retryDoneRef = useRef(false);
 
   /**
    * API 호출 실행 함수
@@ -74,8 +76,6 @@ const useNearbyBuildings = ({
       console.warn('[useNearbyBuildings] API 실패, 더미 데이터로 폴백:', err.message);
 
       if (isMounted.current) {
-        // API 실패 시 더미 데이터로 폴백
-        // 거리순 정렬하여 radius 이내의 건물만 필터링
         const fallback = filterOutApartments(
           DUMMY_BUILDINGS
             .filter((b) => b.distance <= rad)
@@ -88,6 +88,17 @@ const useNearbyBuildings = ({
           isFallback: true,
         });
         setLoading(false);
+
+        // 3초 후 자동 재시도 1회
+        if (!retryDoneRef.current) {
+          retryDoneRef.current = true;
+          setTimeout(() => {
+            if (isMounted.current) {
+              lastParams.current = null; // 캐시 무시
+              fetchBuildings(lat, lng, hd, rad);
+            }
+          }, 3000);
+        }
       }
     }
   }, []);
