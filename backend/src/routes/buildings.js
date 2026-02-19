@@ -46,14 +46,21 @@ router.get('/nearby', async (req, res, next) => {
     const parsedRadius = radius ? parseInt(radius, 10) : 200;
     const parsedHeading = heading ? parseFloat(heading) : null;
 
-    // DB와 OSM 동시 조회 (하나가 실패해도 다른 쪽 결과 반환)
-    const [dbResult, osmResult] = await Promise.allSettled([
-      geospatial.findNearbyBuildings(parsedLat, parsedLng, parsedRadius, parsedHeading),
-      osmBuildings.fetchNearbyFromOSM(parsedLat, parsedLng, parsedRadius),
-    ]);
+    // 1. DB 조회 (항상 대기)
+    let dbBuildings = [];
+    try {
+      dbBuildings = await geospatial.findNearbyBuildings(parsedLat, parsedLng, parsedRadius, parsedHeading);
+    } catch (err) {
+      console.warn('[nearby] DB 조회 실패:', err.message);
+    }
 
-    const dbBuildings = dbResult.status === 'fulfilled' ? dbResult.value : [];
-    let osmResults = osmResult.status === 'fulfilled' ? osmResult.value : [];
+    // 2. OSM: 캐시 히트면 즉시 사용, 미스면 비동기 fetch (응답 안 기다림)
+    let osmResults = osmBuildings.getCachedNearby(parsedLat, parsedLng, parsedRadius);
+    if (!osmResults) {
+      // 백그라운드에서 OSM 데이터 가져오기 (다음 요청에 캐시 히트)
+      osmBuildings.fetchNearbyFromOSM(parsedLat, parsedLng, parsedRadius).catch(() => {});
+      osmResults = [];
+    }
 
     // OSM 결과에 heading 필터 적용
     if (parsedHeading !== null && osmResults.length > 0) {

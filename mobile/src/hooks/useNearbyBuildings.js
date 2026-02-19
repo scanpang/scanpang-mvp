@@ -95,11 +95,11 @@ const useNearbyBuildings = ({
     const paramsKey = `${lat?.toFixed(5)}_${lng?.toFixed(5)}_${Math.round(hd)}_${rad}`;
     if (lastParams.current === paramsKey) return;
 
-    // 500ms 디바운싱
+    // 200ms 디바운싱 (빠른 감지)
     debounceTimer.current = setTimeout(() => {
       lastParams.current = paramsKey;
       fetchBuildings(lat, lng, hd, rad);
-    }, 500);
+    }, 200);
   }, [fetchBuildings]);
 
   /**

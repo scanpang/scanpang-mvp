@@ -43,7 +43,7 @@ const API_KEY = 'scanpang-dev-key-2024';
 // Axios 인스턴스 생성
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 10000,
+  timeout: 5000,
   headers: {
     'Content-Type': 'application/json',
     'x-api-key': API_KEY,
@@ -67,7 +67,7 @@ apiClient.interceptors.response.use(
 // ===== 재시도 로직 (exponential backoff) =====
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const withRetry = async (fn, maxRetries = 3) => {
+const withRetry = async (fn, maxRetries = 2) => {
   let lastError;
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
@@ -75,8 +75,7 @@ const withRetry = async (fn, maxRetries = 3) => {
     } catch (error) {
       lastError = error;
       if (attempt < maxRetries - 1) {
-        const delay = Math.min(1000 * Math.pow(2, attempt), 5000);
-        await sleep(delay);
+        await sleep(1000);
       }
     }
   }

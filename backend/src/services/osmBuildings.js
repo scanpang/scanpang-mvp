@@ -31,13 +31,10 @@ async function fetchNearbyFromOSM(lat, lng, radius = 500) {
     return cached.data;
   }
 
-  // Overpass QL: name 태그가 있는 건물 조회
+  // Overpass QL: name 태그가 있는 건물 조회 (way만, relation은 느려서 제외)
   const query = `
-    [out:json][timeout:10];
-    (
-      way["building"]["name"](around:${radius},${lat},${lng});
-      relation["building"]["name"](around:${radius},${lat},${lng});
-    );
+    [out:json][timeout:5];
+    way["building"]["name"](around:${radius},${lat},${lng});
     out center tags;
   `;
 
@@ -47,7 +44,7 @@ async function fetchNearbyFromOSM(lat, lng, radius = 500) {
       `data=${encodeURIComponent(query)}`,
       {
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        timeout: 12000,
+        timeout: 6000,
       }
     );
 
@@ -259,8 +256,22 @@ function calculateBearing(lat1, lng1, lat2, lng2) {
   return (toDeg(Math.atan2(y, x)) + 360) % 360;
 }
 
+/**
+ * 캐시에서 주변 건물 즉시 조회 (캐시 히트만)
+ * @returns {Array|null} 캐시 히트 시 건물 배열, 미스 시 null
+ */
+function getCachedNearby(lat, lng, radius) {
+  const cacheKey = getCacheKey(lat, lng, radius);
+  const cached = nearbyCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    return cached.data;
+  }
+  return null;
+}
+
 module.exports = {
   fetchNearbyFromOSM,
   getOsmBuildingData,
   generateOsmProfile,
+  getCachedNearby,
 };

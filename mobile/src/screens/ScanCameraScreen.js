@@ -40,7 +40,7 @@ const computeHeading = (x, y) => {
 };
 
 // ===== AR 건물 라벨 =====
-const ARBuildingLabel = ({ building, isSelected, onPress, x, y, index }) => {
+const ARBuildingLabel = ({ building, isSelected, onPress, x, y, index, labelScale = 1 }) => {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0)).current;
 
@@ -58,7 +58,7 @@ const ARBuildingLabel = ({ building, isSelected, onPress, x, y, index }) => {
   const hasReward = building.floors?.some(f => f.hasReward || f.has_reward);
 
   return (
-    <Animated.View style={[styles.arLabel, { top: y, left: x, opacity: fadeAnim, transform: [{ scale: scaleAnim }] }]}>
+    <Animated.View style={[styles.arLabel, { top: y, left: x, opacity: fadeAnim, transform: [{ scale: scaleAnim.interpolate({ inputRange: [0, 1], outputRange: [0, labelScale] }) }] }]}>
       <TouchableOpacity
         style={[styles.arLabelCard, isSelected && styles.arLabelCardSelected]}
         onPress={() => onPress(building)}
@@ -251,21 +251,53 @@ const LiveFeed = ({ feeds = [] }) => {
   );
 };
 
-// ===== 핀 위치 계산 =====
-const calculatePinPositions = (buildings, screenW, screenH) => {
+// ===== AR 위치 계산 (방위각 기반) =====
+const CAMERA_HFOV = 60; // 카메라 수평 시야각 (도)
+
+const calculateARPositions = (buildings, heading, screenW, screenH) => {
+  if (!buildings.length) return [];
+
   const positions = [];
   const occupied = [];
-  buildings.slice(0, 5).forEach((building, index) => {
-    let x = 20 + (index % 3) * (screenW * 0.28);
-    let y = 80 + Math.floor(index / 3) * 90;
+
+  buildings.slice(0, 10).forEach((building) => {
+    const bearing = building.bearing ?? 0;
+    const distance = building.distance || building.distanceMeters || 200;
+
+    // 디바이스 방향 기준 상대 방위각
+    let relBearing = bearing - heading;
+    if (relBearing > 180) relBearing -= 360;
+    if (relBearing < -180) relBearing += 360;
+
+    // 시야 밖이면 스킵 (FOV + 10° 여유)
+    if (Math.abs(relBearing) > CAMERA_HFOV / 2 + 10) return;
+
+    // X: 방위각 → 화면 좌표 (중앙 = 정면)
+    const labelW = 130;
+    let x = (screenW / 2) + (relBearing / (CAMERA_HFOV / 2)) * (screenW / 2) - labelW / 2;
+
+    // Y: 거리 기반 (가까우면 아래, 멀면 위 = 수평선 쪽)
+    const normDist = Math.min(distance / 500, 1);
+    let y = screenH * (0.52 - normDist * 0.28);
+
+    // 스케일: 가까우면 크게, 멀면 작게
+    const scale = Math.max(0.65, 1.1 - normDist * 0.45);
+
+    // 화면 경계 클램프
+    x = Math.max(4, Math.min(x, screenW - labelW));
+    y = Math.max(70, Math.min(y, screenH * 0.55));
+
+    // 겹침 방지
     for (const prev of occupied) {
-      if (Math.abs(x - prev.x) < 160 && Math.abs(y - prev.y) < 70) y = prev.y + 75;
+      if (Math.abs(x - prev.x) < labelW && Math.abs(y - prev.y) < 55) {
+        y = prev.y + 60;
+      }
     }
-    x = Math.max(8, Math.min(x, screenW - 170));
-    y = Math.max(60, Math.min(y, screenH * 0.45));
+
     occupied.push({ x, y });
-    positions.push({ building, x, y });
+    positions.push({ building, x, y, scale });
   });
+
   return positions;
 };
 
@@ -301,8 +333,8 @@ const ScanCameraScreen = ({ route, navigation }) => {
     : null;
 
   const pinPositions = useMemo(
-    () => calculatePinPositions(buildings, SW, SH),
-    [buildings]
+    () => calculateARPositions(buildings, heading, SW, SH),
+    [buildings, heading]
   );
 
   // 카메라 권한
@@ -333,13 +365,13 @@ const ScanCameraScreen = ({ route, navigation }) => {
     return () => { cancelled = true; locationSubRef.current?.remove(); };
   }, []);
 
-  // 나침반
+  // 나침반 (200ms 간격, 2° 변화 감지)
   useEffect(() => {
-    Magnetometer.setUpdateInterval(500);
+    Magnetometer.setUpdateInterval(200);
     const sub = Magnetometer.addListener((data) => {
       if (isMountedRef.current && data) {
         const h = computeHeading(data.x, data.y);
-        if (Math.abs(h - lastHeadingRef.current) >= 5) { lastHeadingRef.current = h; setHeading(h); }
+        if (Math.abs(h - lastHeadingRef.current) >= 2) { lastHeadingRef.current = h; setHeading(h); }
       }
     });
     magnetSubRef.current = sub;
@@ -395,13 +427,13 @@ const ScanCameraScreen = ({ route, navigation }) => {
       ) : (
         <CameraView style={styles.camera} facing="back">
           {/* Layer 2: AR 건물 라벨 */}
-          {pinPositions.map(({ building, x, y }, index) => (
+          {pinPositions.map(({ building, x, y, scale }, index) => (
             <ARBuildingLabel
               key={building.id}
               building={building}
               isSelected={selectedBuildingId === building.id}
               onPress={handleBuildingSelect}
-              x={x} y={y} index={index}
+              x={x} y={y} index={index} labelScale={scale || 1}
             />
           ))}
 
