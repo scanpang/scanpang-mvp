@@ -331,21 +331,26 @@ const LiveFeed = ({ feeds = [] }) => {
   );
 };
 
-// ===== AR 위치 계산 (방위각 기반) =====
-const CAMERA_HFOV = 60; // 카메라 수평 시야각 (도)
+// ===== AR 위치 계산 (컬럼 스태킹 방식) =====
+const CAMERA_HFOV = 60;
 
-const LABEL_W = 130;
-const LABEL_H = 70;
-const MAX_VISIBLE_LABELS = 6;
-const CLUSTER_THRESHOLD = 3; // 같은 영역 이 이상이면 클러스터링
+const LABEL_W = 120;
+const LABEL_H = 64;
+const LABEL_GAP = 8;
+const MAX_VISIBLE_LABELS = 5;
+
+// Y 배치 범위 (상단 오버레이 아래 ~ 바텀시트 위)
+const Y_MIN = 100;
+const Y_MAX_RATIO = 0.52;
 
 const calculateARPositions = (buildings, heading, screenW, screenH) => {
   if (!buildings.length) return [];
 
-  const candidates = [];
+  const yMax = screenH * Y_MAX_RATIO;
 
-  // 1단계: 화면 좌표 계산
-  buildings.slice(0, 15).forEach((building) => {
+  // 1단계: 화면 좌표 계산 (시야 내 건물만)
+  const candidates = [];
+  buildings.slice(0, 20).forEach((building) => {
     const bearing = building.bearing ?? 0;
     const distance = building.distance || building.distanceMeters || 200;
 
@@ -353,81 +358,115 @@ const calculateARPositions = (buildings, heading, screenW, screenH) => {
     if (relBearing > 180) relBearing -= 360;
     if (relBearing < -180) relBearing += 360;
 
-    // 시야 밖이면 스킵
     if (Math.abs(relBearing) > CAMERA_HFOV / 2 + 10) return;
 
-    let x = (screenW / 2) + (relBearing / (CAMERA_HFOV / 2)) * (screenW / 2) - LABEL_W / 2;
+    const x = (screenW / 2) + (relBearing / (CAMERA_HFOV / 2)) * (screenW / 2) - LABEL_W / 2;
     const normDist = Math.min(distance / 500, 1);
-    let y = screenH * (0.52 - normDist * 0.28);
-    const scale = Math.max(0.65, 1.1 - normDist * 0.45);
+    const scale = Math.max(0.6, 1.1 - normDist * 0.5);
 
-    // 화면 경계 클램프
-    x = Math.max(4, Math.min(x, screenW - LABEL_W));
-    y = Math.max(70, Math.min(y, screenH * 0.50));
-
-    candidates.push({ building, x, y, scale, distance });
+    candidates.push({
+      building,
+      x: Math.max(4, Math.min(x, screenW - LABEL_W - 4)),
+      distance,
+      scale,
+      relBearing,
+    });
   });
 
-  // 2단계: 거리순 정렬 (가까운 건물 우선 배치)
+  if (!candidates.length) return [];
+
+  // 2단계: 거리순 정렬 (가까운 건물 우선)
   candidates.sort((a, b) => a.distance - b.distance);
 
-  // 3단계: 겹침 방지 (다중 패스) + 최대 표시 수 제한
-  const positions = [];
-  const occupied = [];
-  const hidden = [];
-
+  // 3단계: 컬럼 그룹핑 — x좌표가 LABEL_W*0.6 이내면 같은 컬럼
+  const columns = [];
   for (const cand of candidates) {
-    if (positions.length >= MAX_VISIBLE_LABELS) {
-      hidden.push(cand.building);
-      continue;
-    }
-
-    let { x, y } = cand;
-    let attempts = 0;
-    const maxAttempts = 5;
-
-    // 겹침 발견 시 위/아래로 밀어내기 (최대 5회 시도)
-    while (attempts < maxAttempts) {
-      let overlapping = false;
-      for (const prev of occupied) {
-        if (Math.abs(x - prev.x) < LABEL_W * 0.8 && Math.abs(y - prev.y) < LABEL_H) {
-          // 아래로 밀기, 화면 밖이면 위로
-          y = prev.y + LABEL_H + 4;
-          if (y > screenH * 0.55) {
-            y = prev.y - LABEL_H - 4;
-          }
-          overlapping = true;
-          break;
-        }
+    let placed = false;
+    for (const col of columns) {
+      if (Math.abs(cand.x - col.centerX) < LABEL_W * 0.6) {
+        col.items.push(cand);
+        placed = true;
+        break;
       }
-      if (!overlapping) break;
-      attempts++;
     }
-
-    // 화면 밖이면 숨김
-    if (y < 60 || y > screenH * 0.58) {
-      hidden.push(cand.building);
-      continue;
+    if (!placed) {
+      columns.push({ centerX: cand.x, items: [cand] });
     }
-
-    occupied.push({ x, y });
-    positions.push({ building: cand.building, x, y, scale: cand.scale });
   }
 
-  // 4단계: 숨겨진 건물이 있으면 마지막 위치에 "+N개" 클러스터 표시
-  if (hidden.length > 0 && positions.length > 0) {
-    const last = positions[positions.length - 1];
+  // 4단계: 각 컬럼 내에서 수직 스태킹 (겹침 불가능)
+  const positions = [];
+  const hidden = [];
+
+  // 컬럼을 가장 가까운 건물 기준으로 정렬
+  columns.sort((a, b) => a.items[0].distance - b.items[0].distance);
+
+  for (const col of columns) {
+    // 이 컬럼에서 배치할 라벨 수 (전체 한도 고려)
+    const slotsLeft = MAX_VISIBLE_LABELS - positions.length;
+    if (slotsLeft <= 0) {
+      col.items.forEach(c => hidden.push(c.building));
+      continue;
+    }
+
+    const maxInCol = Math.min(col.items.length, slotsLeft, 3); // 한 컬럼 최대 3개
+    const visibleInCol = col.items.slice(0, maxInCol);
+    const hiddenInCol = col.items.slice(maxInCol);
+    hiddenInCol.forEach(c => hidden.push(c.building));
+
+    // 컬럼 중심 Y: 화면 중앙 부근에서 시작, 위로 펼침
+    const stackHeight = visibleInCol.length * (LABEL_H + LABEL_GAP) - LABEL_GAP;
+    const midY = (Y_MIN + yMax) / 2;
+    let startY = midY - stackHeight / 2;
+
+    // 화면 범위 내 클램프
+    if (startY < Y_MIN) startY = Y_MIN;
+    if (startY + stackHeight > yMax) startY = yMax - stackHeight;
+
+    visibleInCol.forEach((cand, idx) => {
+      const y = startY + idx * (LABEL_H + LABEL_GAP);
+      positions.push({
+        building: cand.building,
+        x: cand.x,
+        y,
+        scale: cand.scale,
+      });
+    });
+  }
+
+  // 5단계: 최종 겹침 보정 (컬럼 간 겹침만 체크)
+  for (let i = 1; i < positions.length; i++) {
+    for (let j = 0; j < i; j++) {
+      const dx = Math.abs(positions[i].x - positions[j].x);
+      const dy = Math.abs(positions[i].y - positions[j].y);
+      if (dx < LABEL_W * 0.7 && dy < LABEL_H) {
+        // 수평으로 밀어내기
+        if (positions[i].x <= positions[j].x) {
+          positions[i].x = Math.max(4, positions[j].x - LABEL_W - 4);
+        } else {
+          positions[i].x = Math.min(screenW - LABEL_W - 4, positions[j].x + LABEL_W + 4);
+        }
+      }
+    }
+  }
+
+  // 6단계: 숨겨진 건물 클러스터 표시
+  if (hidden.length > 0) {
+    const lastPos = positions[positions.length - 1];
+    const clusterX = Math.min(screenW - LABEL_W - 4, (lastPos?.x || screenW / 2 - 50) + 10);
+    const fallbackY = (Y_MIN + yMax) / 2;
+    const clusterY = Math.min(yMax, (lastPos?.y || fallbackY) + LABEL_H + LABEL_GAP);
     positions.push({
       building: {
         id: '__cluster__',
-        name: `외 ${hidden.length}개 건물`,
-        buildingUse: `${hidden.map(b => b.name).slice(0, 2).join(', ')}...`,
-        distance: hidden[0]?.distance || hidden[0]?.distanceMeters || 0,
+        name: `+${hidden.length}개 건물`,
+        buildingUse: hidden.slice(0, 2).map(b => b.name).join(', '),
+        distance: hidden[0]?.distance || 0,
         bearing: 0,
       },
-      x: Math.min(last.x + 10, screenW - LABEL_W),
-      y: Math.min(last.y + LABEL_H + 8, screenH * 0.55),
-      scale: 0.75,
+      x: clusterX,
+      y: clusterY > yMax ? yMax - LABEL_H : clusterY,
+      scale: 0.7,
       isCluster: true,
     });
   }
@@ -876,9 +915,9 @@ const styles = StyleSheet.create({
   // ===== AR 라벨 =====
   arLabel: { position: 'absolute', alignItems: 'center' },
   arLabelCard: {
-    backgroundColor: '#FFF', borderRadius: 12, paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm + 2,
+    backgroundColor: '#FFF', borderRadius: 10, paddingHorizontal: SPACING.sm + 2, paddingVertical: SPACING.sm,
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.15, shadowRadius: 6, elevation: 5,
-    minWidth: 120,
+    minWidth: 110, maxWidth: LABEL_W,
   },
   arLabelCardSelected: { borderWidth: 2, borderColor: Colors.accentAmber },
   arLabelName: { fontSize: 15, fontWeight: '700', color: Colors.textPrimary, marginBottom: 2 },
