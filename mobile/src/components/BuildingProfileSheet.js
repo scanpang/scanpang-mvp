@@ -9,12 +9,12 @@ import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
   TouchableOpacity,
   Animated,
   Dimensions,
   ActivityIndicator,
 } from 'react-native';
+import { ScrollView as GHScrollView } from 'react-native-gesture-handler';
 import { BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { SPACING, TOUCH } from '../constants/theme';
 import { formatDistance } from '../utils/coordinate';
@@ -173,7 +173,7 @@ const TAB_DEFS = [
 const TabBar = ({ activeTab, onChangeTab, meta }) => {
   const visibleTabs = TAB_DEFS.filter(t => t.alwaysShow || meta?.[t.metaKey]);
   return (
-    <ScrollView
+    <GHScrollView
       horizontal
       showsHorizontalScrollIndicator={false}
       nestedScrollEnabled
@@ -191,7 +191,7 @@ const TabBar = ({ activeTab, onChangeTab, meta }) => {
           <Text style={[s.tabText, activeTab === t.key && s.tabTextActive]}>{t.label}</Text>
         </TouchableOpacity>
       ))}
-    </ScrollView>
+    </GHScrollView>
   );
 };
 
@@ -199,7 +199,7 @@ const TabBar = ({ activeTab, onChangeTab, meta }) => {
 const AmenityTags = ({ amenities = [] }) => {
   if (!amenities.length) return null;
   return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} nestedScrollEnabled directionalLockEnabled style={s.amenityScroll} contentContainerStyle={s.amenityContent}>
+    <GHScrollView horizontal showsHorizontalScrollIndicator={false} nestedScrollEnabled directionalLockEnabled style={s.amenityScroll} contentContainerStyle={s.amenityContent}>
       {amenities.map((item, i) => (
         <View key={i} style={s.amenityTag}>
           <View style={[s.amenityDot, { backgroundColor: TAG_COLORS[i % TAG_COLORS.length] }]} />
@@ -209,7 +209,7 @@ const AmenityTags = ({ amenities = [] }) => {
           </View>
         </View>
       ))}
-    </ScrollView>
+    </GHScrollView>
   );
 };
 
@@ -415,9 +415,15 @@ const BuildingProfileSheet = ({ buildingProfile, loading, error, onClose, onRetr
   const isDataSparse = (meta?.dataCompleteness || 0) < 25;
 
   return (
-    <BottomSheetScrollView style={s.container} showsVerticalScrollIndicator={false} nestedScrollEnabled>
-      <SheetHeader building={building} onClose={onClose} onXrayToggle={onXrayToggle} xrayActive={xrayActive} />
-      <TabBar activeTab={activeTab} onChangeTab={handleTabChange} meta={meta} />
+    <View style={s.outerWrap}>
+      {/* 고정 영역: 헤더 + 탭바 (BottomSheetScrollView 바깥 → 가로 스와이프 제스처 충돌 해결) */}
+      <View style={s.fixedHeader}>
+        <SheetHeader building={building} onClose={onClose} onXrayToggle={onXrayToggle} xrayActive={xrayActive} />
+        <TabBar activeTab={activeTab} onChangeTab={handleTabChange} meta={meta} />
+      </View>
+
+      {/* 스크롤 영역: 탭 콘텐츠만 */}
+      <BottomSheetScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.scrollContent}>
 
       {activeTab === 'overview' && (
         <View>
@@ -599,11 +605,15 @@ const BuildingProfileSheet = ({ buildingProfile, loading, error, onClose, onRetr
 
       <View style={{ height: 40 }} />
     </BottomSheetScrollView>
+    </View>
   );
 };
 
 // ===== 스타일 =====
 const s = StyleSheet.create({
+  outerWrap: { flex: 1 },
+  fixedHeader: { paddingHorizontal: SPACING.lg },
+  scrollContent: { paddingHorizontal: SPACING.lg },
   container: { paddingHorizontal: SPACING.lg },
 
   // 스켈레톤

@@ -58,8 +58,9 @@ const computeHeading = (x, y) => {
 };
 
 // ===== 포커스 가이드 프레임 (QR 스캐너 스타일) =====
-const GUIDE_SIZE = SW * 0.65;
-const GUIDE_TOP = SH * 0.22;
+const GUIDE_WIDTH = SW * 0.65;
+const GUIDE_HEIGHT = GUIDE_WIDTH * (4 / 3); // 3:4 비율 (가로:세로)
+const GUIDE_TOP = SH * 0.18;
 const CORNER_LEN = 28;
 const CORNER_W = 3;
 
@@ -404,7 +405,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
     return rankBuildings(buildings, sensorData, timeContext, geminiResults);
   }, [buildings, heading, gyroscope, accelerometer, cameraAngle, timeContext, geminiResults]);
 
-  // 포커스 영역 내 가장 가까운 건물 1개 계산 (바텀시트 열리면 중단)
+  // 포커스 영역 내 중심에 가장 가까운 건물 1개 계산 (바텀시트 열리면 중단)
   const focusedBuilding = useMemo(() => {
     if (sheetOpen) return null; // 바텀시트 열려있으면 감지 중단
     if (!rankedBuildings.length) return null;
@@ -416,9 +417,13 @@ const ScanCameraScreen = ({ route, navigation }) => {
       if (diff < -180) diff += 360;
       return Math.abs(diff) <= FOCUS_ANGLE;
     });
-    // 거리순 → 가장 가까운 1개
+    // 중심 방위각 차이순 → 가장 중심에 가까운 1개
     if (!inFocus.length) return null;
-    return inFocus.sort((a, b) => (a.distance || 999) - (b.distance || 999))[0];
+    return inFocus.sort((a, b) => {
+      const diffA = Math.abs(((a.bearing ?? 0) - heading + 540) % 360 - 180);
+      const diffB = Math.abs(((b.bearing ?? 0) - heading + 540) % 360 - 180);
+      return diffA - diffB;
+    })[0];
   }, [rankedBuildings, heading, sheetOpen]);
 
   // focusedBuilding이 유효할 때 ref에 캡처 (scanComplete effect에서 안전하게 참조)
@@ -888,7 +893,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
 };
 
 // ===== 스타일 =====
-const GUIDE_LEFT = (SW - GUIDE_SIZE) / 2;
+const GUIDE_LEFT = (SW - GUIDE_WIDTH) / 2;
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
@@ -918,9 +923,9 @@ const styles = StyleSheet.create({
 
   // ===== 포커스 가이드 =====
   dimTop: { width: SW, height: GUIDE_TOP, backgroundColor: 'rgba(0,0,0,0.4)' },
-  dimRow: { flexDirection: 'row', height: GUIDE_SIZE },
+  dimRow: { flexDirection: 'row', height: GUIDE_HEIGHT },
   dimSide: { width: GUIDE_LEFT, backgroundColor: 'rgba(0,0,0,0.4)' },
-  guideHole: { width: GUIDE_SIZE, height: GUIDE_SIZE },
+  guideHole: { width: GUIDE_WIDTH, height: GUIDE_HEIGHT },
   dimBottom: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', alignItems: 'center', paddingTop: SPACING.md },
   nearbyCountText: { fontSize: 13, fontWeight: '500', color: 'rgba(255,255,255,0.6)' },
 
@@ -936,7 +941,7 @@ const styles = StyleSheet.create({
   focusedLabelContainer: {
     position: 'absolute',
     left: 0, right: 0,
-    top: GUIDE_TOP + GUIDE_SIZE + 12,
+    top: GUIDE_TOP + GUIDE_HEIGHT + 12,
     alignItems: 'center', zIndex: 10,
   },
   focusedLabelWrap: { alignItems: 'center' },
