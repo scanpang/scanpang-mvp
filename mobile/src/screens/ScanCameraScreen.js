@@ -380,6 +380,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
   const gaugeTimerRef = useRef(null);
   const focusedIdRef = useRef(null);
   const outOfFocusCountRef = useRef(0);
+  const focusedBuildingRef = useRef(null); // scanComplete 시점의 건물 캡처용
   const sessionIdRef = useRef(`session_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`);
 
   const { gyroscope, accelerometer, cameraAngle, isStable, motionState, getSnapshot } = useSensorData({ enabled: gpsStatus === 'active' });
@@ -419,6 +420,11 @@ const ScanCameraScreen = ({ route, navigation }) => {
     if (!inFocus.length) return null;
     return inFocus.sort((a, b) => (a.distance || 999) - (b.distance || 999))[0];
   }, [rankedBuildings, heading, sheetOpen]);
+
+  // focusedBuilding이 유효할 때 ref에 캡처 (scanComplete effect에서 안전하게 참조)
+  useEffect(() => {
+    if (focusedBuilding) focusedBuildingRef.current = focusedBuilding;
+  }, [focusedBuilding]);
 
   // ===== 게이지 시스템 (디바운스 리셋) =====
   useEffect(() => {
@@ -481,53 +487,49 @@ const ScanCameraScreen = ({ route, navigation }) => {
   }, [focusedBuilding?.id, scanComplete, sheetOpen]);
 
   // 게이지 완료 시 → 햅틱 + 0.5초 메시지 + scan-complete API + 바텀시트
+  // 충돌2 수정: focusedBuildingRef 사용하여 sheetOpen→null 타이밍 이슈 방지
   useEffect(() => {
-    if (scanComplete && focusedBuilding) {
-      // 1. 햅틱 피드백
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    // focusedBuilding이 이미 null(sheetOpen)일 수 있으므로 ref에서 가져옴
+    const building = focusedBuilding || focusedBuildingRef.current;
+    if (!scanComplete || !building) return;
 
-      // 2. "스캔 완료!" 0.5초 표시 후 소멸
-      setScanCompleteMessage(`${focusedBuilding.name} 스캔 완료!`);
-      const msgTimer = setTimeout(() => setScanCompleteMessage(null), 500);
+    // 1. 햅틱 피드백
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
-      // 3. 바텀시트 즉시 열기 + 더미 프로필 즉시 세팅
-      setSelectedBuildingId(focusedBuilding.id);
-      setProfileError(null);
+    // 2. "스캔 완료!" 0.5초 표시 후 소멸
+    setScanCompleteMessage(`${building.name} 스캔 완료!`);
+    const msgTimer = setTimeout(() => setScanCompleteMessage(null), 500);
 
-      // 더미 프로필 즉시 세팅 (API 응답 대기 없이)
-      const dummyProfile = buildDummyProfile(focusedBuilding);
-      if (dummyProfile) setProfileData(dummyProfile);
+    // 3. 바텀시트 즉시 열기 + 더미 프로필 즉시 세팅
+    setSelectedBuildingId(building.id);
+    setProfileError(null);
 
-      // 바텀시트 열기
-      setTimeout(() => bottomSheetRef.current?.snapToIndex(1), 50);
+    const dummyProfile = buildDummyProfile(building);
+    if (dummyProfile) setProfileData(dummyProfile);
 
-      // 백그라운드에서 API 호출 (성공 시 덮어쓰기)
-      const buildingId = focusedBuilding.id;
-      postScanComplete(buildingId, {
-        confidence: focusedBuilding.confidencePercent || focusedBuilding.confidence || 50,
-        sensorData: {
-          gps: { lat: userLocation?.lat, lng: userLocation?.lng, accuracy: 10 },
-          compass: { heading },
-        },
-      }).then(res => {
-        const data = res?.data || res;
-        if (data) setProfileData(data);
-      }).catch(() => {
-        // 이미 더미 데이터 표시 중이므로 무시
-      });
+    setTimeout(() => bottomSheetRef.current?.snapToIndex(1), 50);
 
-      // scan log + behavior
-      postScanLog({ sessionId: sessionIdRef.current, buildingId, eventType: 'gaze_scan', userLat: userLocation?.lat, userLng: userLocation?.lng, deviceHeading: heading, metadata: { confidence: focusedBuilding.confidence } }).catch(() => {});
-      behaviorTracker.trackEvent('gaze_scan', { buildingId, metadata: { confidence: focusedBuilding.confidence } });
+    // 백그라운드에서 API 호출 (성공 시 덮어쓰기)
+    const buildingId = building.id;
+    postScanComplete(buildingId, {
+      confidence: building.confidencePercent || building.confidence || 50,
+      sensorData: {
+        gps: { lat: userLocation?.lat, lng: userLocation?.lng, accuracy: 10 },
+        compass: { heading },
+      },
+    }).then(res => {
+      const data = res?.data || res;
+      if (data) setProfileData(data);
+    }).catch(() => {});
 
-      // 최근 스캔 저장
-      saveRecentScan(focusedBuilding);
+    // scan log + behavior
+    postScanLog({ sessionId: sessionIdRef.current, buildingId, eventType: 'gaze_scan', userLat: userLocation?.lat, userLng: userLocation?.lng, deviceHeading: heading, metadata: { confidence: building.confidence } }).catch(() => {});
+    behaviorTracker.trackEvent('gaze_scan', { buildingId, metadata: { confidence: building.confidence } });
 
-      // Gemini 분석 트리거
-      triggerGeminiAnalysis(focusedBuilding);
+    saveRecentScan(building);
+    triggerGeminiAnalysis(building);
 
-      return () => clearTimeout(msgTimer);
-    }
+    return () => clearTimeout(msgTimer);
   }, [scanComplete]);
 
   // ===== GPS 캐시 → 빠른 초기 위치 =====
@@ -721,6 +723,8 @@ const ScanCameraScreen = ({ route, navigation }) => {
     setScanCompleteMessage(null);
     setXrayActive(false);
     focusedIdRef.current = null;
+    outOfFocusCountRef.current = 0;
+    focusedBuildingRef.current = null;
     bottomSheetRef.current?.snapToIndex(0);
   }, [selectedBuildingId]);
 
@@ -829,9 +833,22 @@ const ScanCameraScreen = ({ route, navigation }) => {
         handleIndicatorStyle={styles.bsHandle}
         enablePanDownToClose={false}
         onChange={(index) => {
-          setSheetOpen(index >= 1);
-          if (selectedBuildingId && index >= 1) {
+          const wasOpen = index >= 1;
+          setSheetOpen(wasOpen);
+          if (selectedBuildingId && wasOpen) {
             behaviorTracker.trackEvent('card_open', { buildingId: selectedBuildingId });
+          }
+          // 충돌1 수정: 시트가 1%로 내려가면 스캔상태 리셋
+          if (!wasOpen && selectedBuildingId) {
+            setSelectedBuildingId(null);
+            setScanComplete(false);
+            setGaugeProgress(0);
+            setProfileData(null);
+            setProfileError(null);
+            setScanCompleteMessage(null);
+            setXrayActive(false);
+            focusedIdRef.current = null;
+            outOfFocusCountRef.current = 0;
           }
         }}
       >
