@@ -366,6 +366,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
   const [profileData, setProfileData] = useState(null); // scan-complete API 응답
   const [profileError, setProfileError] = useState(null);
   const [xrayActive, setXrayActive] = useState(false);
+  const [sheetOpen, setSheetOpen] = useState(false);
 
   const bottomSheetRef = useRef(null);
   const cameraRef = useRef(null);
@@ -754,8 +755,8 @@ const ScanCameraScreen = ({ route, navigation }) => {
           {/* Layer 1: 포커스 가이드 */}
           <FocusGuide isActive={!!focusedBuilding} buildingCount={buildings.length} />
 
-          {/* Layer 2: 포커스된 건물 라벨 (스캔 완료 후에도 유지) */}
-          {focusedBuilding && (
+          {/* Layer 2: 포커스된 건물 라벨 (바텀시트 열리면 숨김) */}
+          {focusedBuilding && !sheetOpen && (
             <View style={styles.focusedLabelContainer} pointerEvents="box-none">
               <FocusedLabel
                 building={focusedBuilding}
@@ -802,6 +803,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
         handleIndicatorStyle={styles.bsHandle}
         enablePanDownToClose={false}
         onChange={(index) => {
+          setSheetOpen(index >= 1);
           if (selectedBuildingId && index >= 1) {
             behaviorTracker.trackEvent('card_open', { buildingId: selectedBuildingId });
           }
