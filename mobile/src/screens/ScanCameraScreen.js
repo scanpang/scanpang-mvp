@@ -48,6 +48,9 @@ const FOCUS_ANGLE = Math.round((CAMERA_HFOV * 0.65) / 2); // 포커스 가이드
 const GAUGE_DURATION = 3000; // 3초
 const GAUGE_TICK = 50; // 50ms마다 업데이트
 const FOCUS_RESET_THRESHOLD = 8; // 연속 8틱(400ms) 벗어나야 게이지 리셋
+const STICKINESS_BONUS = 5; // 현재 포커스 건물에 5° 보너스 (방위각 비교 시)
+const SWITCH_THRESHOLD = 3; // 새 건물이 3° 이상 더 가까워야 전환
+const SWITCH_CONFIRM_THRESHOLD = 5; // 5틱 연속 같은 새 건물이어야 전환
 
 // GPS 캐시 키
 const GPS_CACHE_KEY = '@scanpang_last_gps';
@@ -382,6 +385,8 @@ const ScanCameraScreen = ({ route, navigation }) => {
   const focusedIdRef = useRef(null);
   const outOfFocusCountRef = useRef(0);
   const focusedBuildingRef = useRef(null); // scanComplete 시점의 건물 캡처용
+  const pendingSwitchRef = useRef(null);
+  const switchCountRef = useRef(0);
   const sessionIdRef = useRef(`session_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`);
 
   const { gyroscope, accelerometer, cameraAngle, isStable, motionState, getSnapshot } = useSensorData({ enabled: gpsStatus === 'active' });
@@ -417,13 +422,32 @@ const ScanCameraScreen = ({ route, navigation }) => {
       if (diff < -180) diff += 360;
       return Math.abs(diff) <= FOCUS_ANGLE;
     });
-    // 중심 방위각 차이순 → 가장 중심에 가까운 1개
     if (!inFocus.length) return null;
-    return inFocus.sort((a, b) => {
-      const diffA = Math.abs(((a.bearing ?? 0) - heading + 540) % 360 - 180);
-      const diffB = Math.abs(((b.bearing ?? 0) - heading + 540) % 360 - 180);
-      return diffA - diffB;
-    })[0];
+
+    const currentFocusedId = focusedIdRef.current;
+
+    const scored = inFocus.map(b => {
+      const bearingDiff = Math.abs(((b.bearing ?? 0) - heading + 540) % 360 - 180);
+      const isCurrentFocus = b.id === currentFocusedId;
+      const adjustedDiff = isCurrentFocus ? Math.max(0, bearingDiff - STICKINESS_BONUS) : bearingDiff;
+      return { building: b, bearingDiff, adjustedDiff };
+    });
+
+    scored.sort((a, b) => a.adjustedDiff - b.adjustedDiff);
+    const best = scored[0]?.building ?? null;
+
+    // 현재 포커스 건물이 아직 inFocus 안에 있으면, 새 건물이 SWITCH_THRESHOLD 이상 더 가까울 때만 전환
+    if (currentFocusedId && best?.id !== currentFocusedId) {
+      const currentInList = scored.find(s => s.building.id === currentFocusedId);
+      if (currentInList) {
+        const bestRaw = scored.find(s => s.building.id === best?.id);
+        if (bestRaw && currentInList.bearingDiff - bestRaw.bearingDiff < SWITCH_THRESHOLD) {
+          return currentInList.building;
+        }
+      }
+    }
+
+    return best;
   }, [rankedBuildings, heading, sheetOpen]);
 
   // focusedBuilding이 유효할 때 ref에 캡처 (scanComplete effect에서 안전하게 참조)
@@ -440,6 +464,8 @@ const ScanCameraScreen = ({ route, navigation }) => {
       if (newId === null) {
         // 포커스 잃음 → 카운터 증가, 임계값 도달 시에만 리셋
         outOfFocusCountRef.current += 1;
+        pendingSwitchRef.current = null;
+        switchCountRef.current = 0;
         if (outOfFocusCountRef.current >= FOCUS_RESET_THRESHOLD) {
           focusedIdRef.current = null;
           outOfFocusCountRef.current = 0;
@@ -452,22 +478,39 @@ const ScanCameraScreen = ({ route, navigation }) => {
         // 임계값 미달 → 기존 게이지 유지 (일시적 흔들림 무시)
         return;
       } else if (focusedIdRef.current && newId !== focusedIdRef.current) {
-        // 다른 건물로 전환 → 즉시 리셋
-        focusedIdRef.current = newId;
-        outOfFocusCountRef.current = 0;
-        setGaugeProgress(0);
-        setScanComplete(false);
-        setScanCompleteMessage(null);
-        if (gaugeTimerRef.current) clearInterval(gaugeTimerRef.current);
-        gaugeTimerRef.current = null;
+        // 다른 건물로 전환 → 디바운스 (연속 N틱 같은 건물이어야 전환 확정)
+        if (pendingSwitchRef.current === newId) {
+          switchCountRef.current++;
+          if (switchCountRef.current >= SWITCH_CONFIRM_THRESHOLD) {
+            // 전환 확정
+            focusedIdRef.current = newId;
+            outOfFocusCountRef.current = 0;
+            setGaugeProgress(0);
+            setScanComplete(false);
+            setScanCompleteMessage(null);
+            if (gaugeTimerRef.current) clearInterval(gaugeTimerRef.current);
+            gaugeTimerRef.current = null;
+            pendingSwitchRef.current = null;
+            switchCountRef.current = 0;
+          }
+          // 아직 확정 안 됨 → focusedIdRef.current 유지, 기존 게이지 계속
+        } else {
+          // 새로운 후보 건물 등장 → 카운트 시작
+          pendingSwitchRef.current = newId;
+          switchCountRef.current = 1;
+        }
       } else {
         // null → 새 건물 (첫 포커스)
         focusedIdRef.current = newId;
         outOfFocusCountRef.current = 0;
+        pendingSwitchRef.current = null;
+        switchCountRef.current = 0;
       }
     } else {
       // 같은 건물 유지 → 카운터 리셋
       outOfFocusCountRef.current = 0;
+      pendingSwitchRef.current = null;
+      switchCountRef.current = 0;
     }
 
     // 포커스 건물 있으면 게이지 시작 (바텀시트 열려있으면 중단)
@@ -524,7 +567,20 @@ const ScanCameraScreen = ({ route, navigation }) => {
       },
     }).then(res => {
       const data = res?.data || res;
-      if (data) setProfileData(data);
+      if (data) {
+        setProfileData(prev => {
+          if (!prev) return data;
+          return {
+            ...prev,
+            ...Object.fromEntries(
+              Object.entries(data).filter(([_, v]) =>
+                v !== null && v !== undefined && v !== '' &&
+                !(Array.isArray(v) && v.length === 0)
+              )
+            ),
+          };
+        });
+      }
     }).catch(() => {});
 
     // scan log + behavior
@@ -645,7 +701,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
     const sub = Magnetometer.addListener((data) => {
       if (isMountedRef.current && data) {
         const h = computeHeading(data.x, data.y);
-        if (Math.abs(h - lastHeadingRef.current) >= 2) { lastHeadingRef.current = h; setHeading(h); }
+        if (Math.abs(h - lastHeadingRef.current) >= 5) { lastHeadingRef.current = h; setHeading(h); }
       }
     });
     magnetSubRef.current = sub;
@@ -730,6 +786,8 @@ const ScanCameraScreen = ({ route, navigation }) => {
     focusedIdRef.current = null;
     outOfFocusCountRef.current = 0;
     focusedBuildingRef.current = null;
+    pendingSwitchRef.current = null;
+    switchCountRef.current = 0;
     bottomSheetRef.current?.snapToIndex(0);
   }, [selectedBuildingId]);
 
@@ -838,22 +896,16 @@ const ScanCameraScreen = ({ route, navigation }) => {
         handleIndicatorStyle={styles.bsHandle}
         enablePanDownToClose={false}
         onChange={(index) => {
-          const wasOpen = index >= 1;
-          setSheetOpen(wasOpen);
-          if (selectedBuildingId && wasOpen) {
+          const isOpen = index >= 1;
+          setSheetOpen(isOpen);
+          if (selectedBuildingId && isOpen) {
             behaviorTracker.trackEvent('card_open', { buildingId: selectedBuildingId });
           }
-          // 충돌1 수정: 시트가 1%로 내려가면 스캔상태 리셋
-          if (!wasOpen && selectedBuildingId) {
-            setSelectedBuildingId(null);
-            setScanComplete(false);
-            setGaugeProgress(0);
-            setProfileData(null);
-            setProfileError(null);
-            setScanCompleteMessage(null);
-            setXrayActive(false);
-            focusedIdRef.current = null;
-            outOfFocusCountRef.current = 0;
+          // 데이터가 있는데 시트가 1%로 내려갔으면 → 다시 50%로 올리기
+          if (index === 0 && selectedBuildingId && profileData) {
+            setTimeout(() => {
+              bottomSheetRef.current?.snapToIndex(1);
+            }, 100);
           }
         }}
       >
