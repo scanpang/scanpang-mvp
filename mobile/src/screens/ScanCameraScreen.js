@@ -44,9 +44,10 @@ import XRayOverlay from '../components/XRayOverlay';
 const { width: SW, height: SH } = Dimensions.get('window');
 const RECENT_SCANS_KEY = '@scanpang_recent_scans';
 const CAMERA_HFOV = 60;
-const FOCUS_ANGLE = 20; // 포커스 영역: heading ± 20°
+const FOCUS_ANGLE = Math.round((CAMERA_HFOV * 0.65) / 2); // 포커스 가이드 65% 기반 ≈ 19°
 const GAUGE_DURATION = 3000; // 3초
 const GAUGE_TICK = 50; // 50ms마다 업데이트
+const FOCUS_RESET_THRESHOLD = 8; // 연속 8틱(400ms) 벗어나야 게이지 리셋
 
 // GPS 캐시 키
 const GPS_CACHE_KEY = '@scanpang_last_gps';
@@ -79,7 +80,7 @@ const FocusGuide = ({ isActive, buildingCount }) => (
     </View>
     <View style={styles.dimBottom}>
       <Text style={styles.nearbyCountText}>
-        {buildingCount > 0 ? `주변 ${buildingCount}개 건물 감지` : ''}
+        {isActive ? '' : '건물에 카메라를 맞춰 스캔하세요'}
       </Text>
     </View>
   </View>
@@ -378,6 +379,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
   const geminiAnalyzingRef = useRef(false);
   const gaugeTimerRef = useRef(null);
   const focusedIdRef = useRef(null);
+  const outOfFocusCountRef = useRef(0);
   const sessionIdRef = useRef(`session_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`);
 
   const { gyroscope, accelerometer, cameraAngle, isStable, motionState, getSnapshot } = useSensorData({ enabled: gpsStatus === 'active' });
@@ -418,29 +420,53 @@ const ScanCameraScreen = ({ route, navigation }) => {
     return inFocus.sort((a, b) => (a.distance || 999) - (b.distance || 999))[0];
   }, [rankedBuildings, heading, sheetOpen]);
 
-  // ===== 게이지 시스템 =====
+  // ===== 게이지 시스템 (디바운스 리셋) =====
   useEffect(() => {
     const newId = focusedBuilding?.id || null;
 
-    // 포커스 건물 변경 시 게이지 + 이전 상태 전부 클리어
+    // 포커스 건물 변경 감지
     if (newId !== focusedIdRef.current) {
-      focusedIdRef.current = newId;
-      setGaugeProgress(0);
-      setScanComplete(false);
-      setScanCompleteMessage(null);
-      if (gaugeTimerRef.current) clearInterval(gaugeTimerRef.current);
-      gaugeTimerRef.current = null;
+      if (newId === null) {
+        // 포커스 잃음 → 카운터 증가, 임계값 도달 시에만 리셋
+        outOfFocusCountRef.current += 1;
+        if (outOfFocusCountRef.current >= FOCUS_RESET_THRESHOLD) {
+          focusedIdRef.current = null;
+          outOfFocusCountRef.current = 0;
+          setGaugeProgress(0);
+          setScanComplete(false);
+          setScanCompleteMessage(null);
+          if (gaugeTimerRef.current) clearInterval(gaugeTimerRef.current);
+          gaugeTimerRef.current = null;
+        }
+        // 임계값 미달 → 기존 게이지 유지 (일시적 흔들림 무시)
+        return;
+      } else if (focusedIdRef.current && newId !== focusedIdRef.current) {
+        // 다른 건물로 전환 → 즉시 리셋
+        focusedIdRef.current = newId;
+        outOfFocusCountRef.current = 0;
+        setGaugeProgress(0);
+        setScanComplete(false);
+        setScanCompleteMessage(null);
+        if (gaugeTimerRef.current) clearInterval(gaugeTimerRef.current);
+        gaugeTimerRef.current = null;
+      } else {
+        // null → 새 건물 (첫 포커스)
+        focusedIdRef.current = newId;
+        outOfFocusCountRef.current = 0;
+      }
+    } else {
+      // 같은 건물 유지 → 카운터 리셋
+      outOfFocusCountRef.current = 0;
     }
 
     // 포커스 건물 있으면 게이지 시작 (바텀시트 열려있으면 중단)
-    if (newId && !scanComplete && !sheetOpen) {
+    if (focusedIdRef.current && !scanComplete && !sheetOpen) {
       gaugeTimerRef.current = setInterval(() => {
         setGaugeProgress(prev => {
           const next = prev + (GAUGE_TICK / GAUGE_DURATION);
           if (next >= 1) {
             clearInterval(gaugeTimerRef.current);
             gaugeTimerRef.current = null;
-            // 게이지 완료 → 자동 스캔
             setScanComplete(true);
             return 1;
           }
@@ -456,7 +482,6 @@ const ScanCameraScreen = ({ route, navigation }) => {
 
   // 게이지 완료 시 → 햅틱 + 0.5초 메시지 + scan-complete API + 바텀시트
   useEffect(() => {
-    console.log('[DEBUG] scanComplete effect:', { scanComplete, focusedBuilding: focusedBuilding?.id });
     if (scanComplete && focusedBuilding) {
       // 1. 햅틱 피드백
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
