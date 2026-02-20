@@ -63,46 +63,36 @@ const useBuildingDetail = (buildingId, { enabled = true, useCache = true } = {})
     if (currentRequestId.current === id && !forceRefresh) return;
 
     currentRequestId.current = id;
-    setLoading(true);
     setError(null);
 
+    // 즉시 더미 프로필 표시 (API 응답 대기 없이)
+    const rawBuilding = DUMMY_BUILDINGS.find((b) => b.id === id);
+    const dummyProfile = rawBuilding
+      ? buildDummyProfile(rawBuilding)
+      : buildDummyProfile({ id, name: `건물 ${id}`, distance: 0, amenities: [], floors: [], stats: {} });
+
+    if (dummyProfile && isMounted.current) {
+      setBuilding(dummyProfile);
+      setLoading(false);
+      // 캐시에도 저장
+      buildingCache.set(id, { data: dummyProfile, timestamp: Date.now() });
+    } else {
+      setLoading(true);
+    }
+
+    // 백그라운드에서 API 호출 시도 (성공 시 덮어쓰기)
     try {
       const response = await getBuildingProfile(id);
-      // API 응답: { success, data: {...} } (인터셉터가 response.data 반환)
       const profile = response?.data || response;
 
-      if (isMounted.current && currentRequestId.current === id) {
-        // 캐시에 저장
-        buildingCache.set(id, {
-          data: profile,
-          timestamp: Date.now(),
-        });
-
+      if (isMounted.current && currentRequestId.current === id && profile) {
+        buildingCache.set(id, { data: profile, timestamp: Date.now() });
         setBuilding(profile);
         setLoading(false);
       }
     } catch (err) {
-      console.warn(`[useBuildingDetail] API 실패 (${id}), 더미 데이터로 폴백:`, err.message);
-
-      if (isMounted.current && currentRequestId.current === id) {
-        // API 실패 시 더미 데이터에서 검색 → 프로필 형식으로 변환
-        const rawBuilding = DUMMY_BUILDINGS.find((b) => b.id === id);
-        const fallback = rawBuilding ? buildDummyProfile(rawBuilding) : buildDummyProfile({ id, name: `건물 ${id}`, distance: 0, amenities: [], floors: [], stats: {} });
-
-        if (fallback) {
-          buildingCache.set(id, {
-            data: fallback,
-            timestamp: Date.now(),
-          });
-        }
-
-        setBuilding(fallback);
-        setError({
-          message: '오프라인 모드 - 더미 데이터를 표시합니다.',
-          isFallback: true,
-        });
-        setLoading(false);
-      }
+      // API 실패해도 이미 더미 데이터 표시 중이므로 무시
+      console.warn(`[useBuildingDetail] API 실패 (${id}), 더미 데이터 유지:`, err.message);
     }
   }, [useCache]);
 

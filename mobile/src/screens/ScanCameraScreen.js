@@ -463,13 +463,18 @@ const ScanCameraScreen = ({ route, navigation }) => {
       setScanCompleteMessage(`${focusedBuilding.name} 스캔 완료!`);
       const msgTimer = setTimeout(() => setScanCompleteMessage(null), 500);
 
-      // 3. 바텀시트 즉시 열기 + scan-complete API 호출
+      // 3. 바텀시트 즉시 열기 + 더미 프로필 즉시 세팅
       setSelectedBuildingId(focusedBuilding.id);
       setProfileError(null);
 
-      // 바텀시트를 API 응답 대기 없이 즉시 열기
+      // 더미 프로필 즉시 세팅 (API 응답 대기 없이)
+      const dummyProfile = buildDummyProfile(focusedBuilding);
+      if (dummyProfile) setProfileData(dummyProfile);
+
+      // 바텀시트 열기
       setTimeout(() => bottomSheetRef.current?.snapToIndex(1), 50);
 
+      // 백그라운드에서 API 호출 (성공 시 덮어쓰기)
       const buildingId = focusedBuilding.id;
       postScanComplete(buildingId, {
         confidence: focusedBuilding.confidencePercent || focusedBuilding.confidence || 50,
@@ -481,9 +486,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
         const data = res?.data || res;
         if (data) setProfileData(data);
       }).catch(() => {
-        // API 실패 시 더미 프로필로 폴백
-        const dummy = buildDummyProfile(focusedBuilding);
-        if (dummy) setProfileData(dummy);
+        // 이미 더미 데이터 표시 중이므로 무시
       });
 
       // scan log + behavior
@@ -663,19 +666,17 @@ const ScanCameraScreen = ({ route, navigation }) => {
 
   const handleLabelPress = useCallback((building) => {
     if (!building) return;
-    console.log('[DEBUG] handleLabelPress called:', building.id, building.name);
-    console.log('[DEBUG] bottomSheetRef.current:', !!bottomSheetRef.current);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setSelectedBuildingId(building.id);
     setScanComplete(true);
     setProfileError(null);
-    setProfileData(null);
 
-    // 바텀시트 즉시 열기 (state flush 후 snap 보장)
-    setTimeout(() => {
-      console.log('[DEBUG] snapToIndex(1) called, ref exists:', !!bottomSheetRef.current);
-      bottomSheetRef.current?.snapToIndex(1);
-    }, 50);
+    // 더미 프로필 즉시 세팅
+    const dummyProfile = buildDummyProfile(building);
+    if (dummyProfile) setProfileData(dummyProfile);
+
+    // 바텀시트 즉시 열기
+    setTimeout(() => bottomSheetRef.current?.snapToIndex(1), 50);
 
     postScanLog({ sessionId: sessionIdRef.current, buildingId: building.id, eventType: 'pin_tapped', userLat: userLocation?.lat, userLng: userLocation?.lng, deviceHeading: heading, metadata: { confidence: building.confidence } }).catch(() => {});
     behaviorTracker.trackEvent('pin_click', { buildingId: building.id, metadata: { confidence: building.confidence } });
