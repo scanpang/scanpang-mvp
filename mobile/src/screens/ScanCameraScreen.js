@@ -25,7 +25,7 @@ import * as Location from 'expo-location';
 import { Magnetometer } from 'expo-sensors';
 import * as Haptics from 'expo-haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import BottomSheet from '@gorhom/bottom-sheet';
+import BottomSheet, { BottomSheetView, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { Colors, SPACING, TOUCH } from '../constants/theme';
@@ -453,6 +453,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
 
   // 게이지 완료 시 → 햅틱 + 0.5초 메시지 + scan-complete API + 바텀시트
   useEffect(() => {
+    console.log('[DEBUG] scanComplete effect:', { scanComplete, focusedBuilding: focusedBuilding?.id });
     if (scanComplete && focusedBuilding) {
       // 1. 햅틱 피드백
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -659,6 +660,8 @@ const ScanCameraScreen = ({ route, navigation }) => {
 
   const handleLabelPress = useCallback((building) => {
     if (!building) return;
+    console.log('[DEBUG] handleLabelPress called:', building.id, building.name);
+    console.log('[DEBUG] bottomSheetRef.current:', !!bottomSheetRef.current);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setSelectedBuildingId(building.id);
     setScanComplete(true);
@@ -666,7 +669,10 @@ const ScanCameraScreen = ({ route, navigation }) => {
     setProfileData(null);
 
     // 바텀시트 즉시 열기 (state flush 후 snap 보장)
-    setTimeout(() => bottomSheetRef.current?.snapToIndex(1), 50);
+    setTimeout(() => {
+      console.log('[DEBUG] snapToIndex(1) called, ref exists:', !!bottomSheetRef.current);
+      bottomSheetRef.current?.snapToIndex(1);
+    }, 50);
 
     postScanLog({ sessionId: sessionIdRef.current, buildingId: building.id, eventType: 'pin_tapped', userLat: userLocation?.lat, userLng: userLocation?.lng, deviceHeading: heading, metadata: { confidence: building.confidence } }).catch(() => {});
     behaviorTracker.trackEvent('pin_click', { buildingId: building.id, metadata: { confidence: building.confidence } });
@@ -797,34 +803,36 @@ const ScanCameraScreen = ({ route, navigation }) => {
           }
         }}
       >
-        {selectedBuildingId ? (
-          <BuildingProfileSheet
-            buildingProfile={profileData || buildingDetail}
-            loading={detailLoading && !profileData}
-            error={profileError}
-            onClose={handleCloseSheet}
-            onXrayToggle={handleXrayToggle}
-            xrayActive={xrayActive}
-            onRetry={() => {
-              setProfileError(null);
-              if (selectedBuildingId) {
-                postScanComplete(selectedBuildingId, {
-                  confidence: 50,
-                  sensorData: { gps: { lat: userLocation?.lat, lng: userLocation?.lng }, compass: { heading } },
-                }).then(res => {
-                  const data = res?.data || res;
-                  if (data) setProfileData(data);
-                }).catch(() => setProfileError(true));
-              }
-            }}
-          />
-        ) : (
-          <View style={styles.bsEmpty}>
-            <Text style={styles.bsEmptyText}>
-              {gpsStatus === 'searching' ? '주변 건물을 탐색 중...' : '건물에 카메라를 맞춰 스캔해보세요'}
-            </Text>
-          </View>
-        )}
+        <BottomSheetView style={{ flex: 1 }}>
+          {selectedBuildingId ? (
+            <BuildingProfileSheet
+              buildingProfile={profileData || buildingDetail}
+              loading={detailLoading && !profileData}
+              error={profileError}
+              onClose={handleCloseSheet}
+              onXrayToggle={handleXrayToggle}
+              xrayActive={xrayActive}
+              onRetry={() => {
+                setProfileError(null);
+                if (selectedBuildingId) {
+                  postScanComplete(selectedBuildingId, {
+                    confidence: 50,
+                    sensorData: { gps: { lat: userLocation?.lat, lng: userLocation?.lng }, compass: { heading } },
+                  }).then(res => {
+                    const data = res?.data || res;
+                    if (data) setProfileData(data);
+                  }).catch(() => setProfileError(true));
+                }
+              }}
+            />
+          ) : (
+            <View style={styles.bsEmpty}>
+              <Text style={styles.bsEmptyText}>
+                {gpsStatus === 'searching' ? '주변 건물을 탐색 중...' : '건물에 카메라를 맞춰 스캔해보세요'}
+              </Text>
+            </View>
+          )}
+        </BottomSheetView>
       </BottomSheet>
     </GestureHandlerRootView>
   );

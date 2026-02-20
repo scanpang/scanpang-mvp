@@ -15,6 +15,7 @@ import {
   Dimensions,
   ActivityIndicator,
 } from 'react-native';
+import { BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { SPACING, TOUCH } from '../constants/theme';
 import { formatDistance } from '../utils/coordinate';
 
@@ -385,7 +386,7 @@ const BuildingProfileSheet = ({ buildingProfile, loading, error, onClose, onRetr
   const isDataSparse = (meta?.dataCompleteness || 0) < 25;
 
   return (
-    <ScrollView style={s.container} showsVerticalScrollIndicator={false} nestedScrollEnabled>
+    <BottomSheetScrollView style={s.container} showsVerticalScrollIndicator={false} nestedScrollEnabled>
       <SheetHeader building={building} onClose={onClose} onXrayToggle={onXrayToggle} xrayActive={xrayActive} />
       <TabBar activeTab={activeTab} onChangeTab={handleTabChange} meta={meta} />
 
@@ -562,7 +563,7 @@ const BuildingProfileSheet = ({ buildingProfile, loading, error, onClose, onRetr
       )}
 
       <View style={{ height: 40 }} />
-    </ScrollView>
+    </BottomSheetScrollView>
   );
 };
 
