@@ -298,12 +298,35 @@ const DUMMY_RESTAURANTS_MAP = {
     { name: '재즈 라운지', category: '주점', sub_category: '요리주점', signature_menu: '칵테일', signature_price: '15,000', wait_teams: 0, is_open: false, rating: 4.5 },
     { name: '코엑스 푸드코트', category: '한식', sub_category: '푸드코트', signature_menu: '비빔밥', signature_price: '9,000', wait_teams: 8, is_open: true, rating: 3.9 },
   ],
+  bld_004: [
+    { name: '한우리', category: '한식', sub_category: '한우전문', signature_menu: '한우등심세트', signature_price: '89,000', wait_teams: 15, is_open: true, rating: 4.7 },
+    { name: '스시 오마카세 히든', category: '일식', sub_category: '오마카세', signature_menu: '런치 코스', signature_price: '65,000', wait_teams: 8, is_open: true, rating: 4.8 },
+    { name: '빕스 프리미어', category: '양식', sub_category: '뷔페', signature_menu: '프리미엄 뷔페', signature_price: '45,900', wait_teams: 6, is_open: true, rating: 4.2 },
+  ],
+  bld_005: [
+    { name: '더현대 푸드홀', category: '한식', sub_category: '푸드홀', signature_menu: '한우 덮밥', signature_price: '18,000', wait_teams: 10, is_open: true, rating: 4.4 },
+    { name: '폴 바셋', category: '카페', sub_category: '스페셜티 카페', signature_menu: '플랫 화이트', signature_price: '6,500', wait_teams: 2, is_open: true, rating: 4.5 },
+    { name: '치폴레', category: '양식', sub_category: '멕시칸', signature_menu: '부리또 볼', signature_price: '12,500', wait_teams: 0, is_open: true, rating: 4.0 },
+  ],
 };
 
 const DUMMY_REALESTATE_MAP = {
   bld_001: [
     { listing_type: '월세', room_type: '오피스', deposit: 5000, monthly_rent: 150, unit_number: '1201호', size_pyeong: 25, size_sqm: 82.6 },
     { listing_type: '월세', room_type: '오피스', deposit: 3000, monthly_rent: 80, unit_number: '803호', size_pyeong: 12, size_sqm: 39.6 },
+  ],
+  bld_002: [
+    { listing_type: '월세', room_type: '오피스', deposit: 10000, monthly_rent: 300, unit_number: '1505호', size_pyeong: 40, size_sqm: 132.2 },
+    { listing_type: '월세', room_type: '오피스', deposit: 7000, monthly_rent: 200, unit_number: '1002호', size_pyeong: 30, size_sqm: 99.2 },
+  ],
+  bld_003: [
+    { listing_type: '월세', room_type: '상가', deposit: 15000, monthly_rent: 500, unit_number: '1F-A08호', size_pyeong: 22, size_sqm: 72.7 },
+    { listing_type: '월세', room_type: '상가', deposit: 8000, monthly_rent: 250, unit_number: '2F-B03호', size_pyeong: 15, size_sqm: 49.6 },
+  ],
+  bld_004: [
+    { listing_type: '월세', room_type: '오피스', deposit: 20000, monthly_rent: 600, unit_number: '4502호', size_pyeong: 55, size_sqm: 181.8 },
+    { listing_type: '전세', room_type: '레지던스', deposit: 150000, monthly_rent: null, unit_number: '7801호', size_pyeong: 62, size_sqm: 204.9 },
+    { listing_type: '월세', room_type: '상가', deposit: 30000, monthly_rent: 800, unit_number: '3F-C12호', size_pyeong: 35, size_sqm: 115.7 },
   ],
   bld_005: [
     { listing_type: '월세', room_type: '상가', deposit: 10000, monthly_rent: 350, unit_number: 'B1-12호', size_pyeong: 18, size_sqm: 59.5 },
@@ -312,6 +335,28 @@ const DUMMY_REALESTATE_MAP = {
 };
 
 const DUMMY_TOURISM_MAP = {
+  bld_001: {
+    attraction_name: '강남 금융 역사관',
+    attraction_name_en: 'Gangnam Finance Museum',
+    category: '박물관',
+    rating: 4.0,
+    review_count: 1250,
+    congestion: '여유로움',
+    hours: '09:00 - 18:00',
+    admission_fee: '무료',
+    description: '대한민국 금융 산업의 발전사를 한눈에 볼 수 있는 전시관. 인터랙티브 체험존과 금융 시뮬레이션 코너가 인기입니다.',
+  },
+  bld_002: {
+    attraction_name: '삼성 이노베이션 뮤지엄',
+    attraction_name_en: 'Samsung Innovation Museum',
+    category: '전시관',
+    rating: 4.5,
+    review_count: 6340,
+    congestion: '보통',
+    hours: '10:00 - 18:00',
+    admission_fee: '무료 (사전 예약 필수)',
+    description: '반도체, 디스플레이, 모바일의 과거·현재·미래를 체험할 수 있는 삼성전자 기업 박물관. VR 체험존, 미래 기술 전시관이 하이라이트.',
+  },
   bld_003: {
     attraction_name: '코엑스 아쿠아리움',
     attraction_name_en: 'COEX Aquarium',
@@ -334,12 +379,25 @@ const DUMMY_TOURISM_MAP = {
     admission_fee: '성인 29,000원 / 어린이 25,000원',
     description: '555m 높이의 대한민국 최고 전망대. 117~123층에서 서울 시내를 360도 파노라마로 감상할 수 있습니다. 스카이데크 투명 유리 바닥 체험 가능.',
   },
+  bld_005: {
+    attraction_name: '현대 어린이책 미술관',
+    attraction_name_en: 'Hyundai Kids Book Museum',
+    category: '미술관',
+    rating: 4.6,
+    review_count: 3870,
+    congestion: '혼잡',
+    hours: '10:30 - 19:00',
+    admission_fee: '성인 8,000원 / 어린이 6,000원',
+    description: '그림책과 예술이 만나는 복합 문화 공간. 몰입형 미디어아트 전시와 어린이 창작 워크숍이 상시 운영됩니다.',
+  },
 };
 
 const DUMMY_PROMOTIONS_MAP = {
   bld_001: { title: '첫 스캔 보너스 이벤트', reward_points: 500, condition_text: '이 건물 첫 스캔 시 보너스 포인트 지급' },
+  bld_002: { title: '삼성타운 출근길 스캔', reward_points: 300, condition_text: '평일 오전 7~9시 스캔 시 추가 포인트' },
   bld_003: { title: '코엑스 스캔 챌린지', reward_points: 1000, condition_text: '코엑스 내 3개 층 이상 스캔 시 보너스' },
   bld_004: { title: '랜드마크 스캔 리워드', reward_points: 800, condition_text: '롯데월드타워 스캔 완료 시 특별 리워드' },
+  bld_005: { title: '판교 쇼핑 스캔 이벤트', reward_points: 600, condition_text: '현대백화점 스캔 후 매장 방문 시 쿠폰 지급' },
 };
 
 /**
