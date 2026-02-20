@@ -7,8 +7,11 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getNearbyBuildings } from '../services/api';
 import { DUMMY_BUILDINGS } from '../constants/dummyData';
+
+const BUILDINGS_CACHE_KEY = '@scanpang_nearby_cache';
 
 // 아파트/주거 타입 제외 필터
 const EXCLUDED_TYPES = ['아파트', '주거', 'apartment', 'residential'];
@@ -69,22 +72,37 @@ const useNearbyBuildings = ({
           ...b,
           distance: b.distance ?? b.distanceMeters ?? null,
         }));
-        setBuildings(filterOutApartments(normalized));
+        const filtered = filterOutApartments(normalized);
+        setBuildings(filtered);
         setLoading(false);
+        // 성공 시 캐시 저장
+        try {
+          await AsyncStorage.setItem(BUILDINGS_CACHE_KEY, JSON.stringify(filtered.slice(0, 30)));
+        } catch {}
       }
     } catch (err) {
-      console.warn('[useNearbyBuildings] API 실패, 더미 데이터로 폴백:', err.message);
+      console.warn('[useNearbyBuildings] API 실패, 캐시/더미 데이터로 폴백:', err.message);
 
       if (isMounted.current) {
-        const fallback = filterOutApartments(
-          DUMMY_BUILDINGS
-            .filter((b) => b.distance <= rad)
-            .sort((a, b) => a.distance - b.distance)
-        );
+        // 캐시된 데이터가 있으면 사용, 없으면 더미
+        let fallback;
+        try {
+          const cached = await AsyncStorage.getItem(BUILDINGS_CACHE_KEY);
+          if (cached) {
+            fallback = JSON.parse(cached);
+          }
+        } catch {}
+        if (!fallback || !fallback.length) {
+          fallback = filterOutApartments(
+            DUMMY_BUILDINGS
+              .filter((b) => b.distance <= rad)
+              .sort((a, b) => a.distance - b.distance)
+          );
+        }
 
         setBuildings(fallback);
         setError({
-          message: 'API 연결 실패. 더미 데이터를 표시합니다.',
+          message: 'API 연결 실패. 캐시 데이터를 표시합니다.',
           isFallback: true,
         });
         setLoading(false);

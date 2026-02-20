@@ -10,7 +10,9 @@
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "migrate": "node src/db/migrations/001_init.js",
-    "seed": "node src/db/seeds/001_gangnam_buildings.js"
+    "migrate:003": "node src/db/migrations/003_building_profiles_v2.js",
+    "seed": "node src/db/seeds/001_gangnam_buildings.js",
+    "seed:imae": "node src/db/seeds/004_imae_profiles.js"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",

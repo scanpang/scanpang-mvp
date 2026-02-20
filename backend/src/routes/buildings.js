@@ -1,11 +1,13 @@
 /**
  * 건물 조회 API 라우터
- * - GET /nearby     : 주변 건물 조회 (DB + OSM 병합)
- * - GET /:id/profile : 건물 상세 프로필
- * - GET /:id/floors  : 층별 정보
+ * - GET /nearby              : 주변 건물 조회 (DB + OSM 병합)
+ * - GET /:id/profile         : 건물 상세 프로필
+ * - GET /:id/floors          : 층별 정보
+ * - POST /:id/scan-complete  : 스캔 완료 이벤트 처리
  */
 const express = require('express');
 const router = express.Router();
+const db = require('../db');
 const geospatial = require('../services/geospatial');
 const buildingProfile = require('../services/buildingProfile');
 const osmBuildings = require('../services/osmBuildings');
@@ -187,6 +189,103 @@ router.get('/:id/floors', async (req, res, next) => {
         buildingId,
         count: floors.length,
       },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/buildings/:id/scan-complete
+ * 게이지 완료 시 프론트에서 호출
+ * - behavior_events에 scan_complete 이벤트 기록
+ * - confidence >= 0.5: flywheel 소싱 카운트 증가
+ * - confidence >= 0.8: building_profiles 자동 검증
+ * - 응답: GET /profile과 동일한 구조 반환
+ */
+router.post('/:id/scan-complete', async (req, res, next) => {
+  try {
+    const rawId = req.params.id;
+    const { confidence, sensorData, cameraFrame } = req.body;
+
+    // OSM 건물은 scan-complete 미지원
+    if (rawId.startsWith('osm_')) {
+      const osmData = osmBuildings.getOsmBuildingData(rawId);
+      if (!osmData) {
+        return res.status(404).json({
+          success: false,
+          error: '건물 데이터가 만료되었습니다.',
+        });
+      }
+      const profile = osmBuildings.generateOsmProfile(osmData);
+      return res.json({ success: true, data: profile });
+    }
+
+    const buildingId = parseInt(rawId, 10);
+    if (isNaN(buildingId)) {
+      return res.status(400).json({
+        success: false,
+        error: '유효하지 않은 건물 ID입니다.',
+      });
+    }
+
+    // 1. behavior_events에 scan_complete 이벤트 기록
+    const gps = sensorData?.gps || {};
+    const compass = sensorData?.compass || {};
+    await db.query(
+      `INSERT INTO behavior_events
+        (session_id, building_id, event_type, gps_lat, gps_lng, gps_accuracy, compass_heading, metadata)
+      VALUES
+        (gen_random_uuid(), $1, 'scan_complete', $2, $3, $4, $5, $6)`,
+      [
+        buildingId,
+        gps.lat || null,
+        gps.lng || null,
+        gps.accuracy || null,
+        compass.heading || null,
+        JSON.stringify({ confidence, hasCameraFrame: !!cameraFrame }),
+      ]
+    );
+
+    // 2. confidence >= 0.5: flywheel 소싱 카운트 증가
+    const normalizedConfidence = (confidence || 0) / 100; // 0-100 → 0-1
+    if (normalizedConfidence >= 0.5) {
+      await db.query(
+        `INSERT INTO sourced_info (building_id, source_type, confidence, raw_data)
+        VALUES ($1, 'user_camera', $2, $3)`,
+        [
+          buildingId,
+          normalizedConfidence,
+          JSON.stringify({ type: 'scan_complete', confidence }),
+        ]
+      );
+    }
+
+    // 3. confidence >= 0.8: building_profiles 자동 검증
+    if (normalizedConfidence >= 0.8) {
+      await db.query(
+        `UPDATE building_profiles
+        SET confidence_score = GREATEST(confidence_score, $2),
+            last_verified_at = NOW(),
+            updated_at = NOW()
+        WHERE building_id = $1`,
+        [buildingId, normalizedConfidence]
+      );
+    }
+
+    // 4. 프로필 반환 (GET /profile과 동일)
+    const profile = await buildingProfile.getProfile(buildingId);
+
+    if (!profile) {
+      return res.status(404).json({
+        success: false,
+        error: '건물을 찾을 수 없습니다.',
+      });
+    }
+
+    res.json({
+      success: true,
+      data: profile,
     });
   } catch (err) {
     next(err);

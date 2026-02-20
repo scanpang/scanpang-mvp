@@ -29,15 +29,16 @@ import BottomSheet from '@gorhom/bottom-sheet';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { Colors, SPACING, TOUCH } from '../constants/theme';
-import { DUMMY_POINTS, getLiveFeedsByBuilding } from '../constants/dummyData';
-import { postScanLog, getServerTimeContext, analyzeFrame } from '../services/api';
+import { DUMMY_POINTS } from '../constants/dummyData';
+import { postScanLog, postScanComplete, getServerTimeContext, analyzeFrame } from '../services/api';
 import useNearbyBuildings from '../hooks/useNearbyBuildings';
 import useBuildingDetail from '../hooks/useBuildingDetail';
 import useSensorData from '../hooks/useSensorData';
 import { formatDistance } from '../utils/coordinate';
 import { rankBuildings } from '../services/detectionEngine';
 import { behaviorTracker } from '../services/behaviorTracker';
-import GeminiLiveChat from '../components/GeminiLiveChat';
+import BuildingProfileSheet from '../components/BuildingProfileSheet';
+import XRayOverlay from '../components/XRayOverlay';
 
 const { width: SW, height: SH } = Dimensions.get('window');
 const RECENT_SCANS_KEY = '@scanpang_recent_scans';
@@ -360,6 +361,10 @@ const ScanCameraScreen = ({ route, navigation }) => {
   const [geminiResults, setGeminiResults] = useState(new Map());
   const [gaugeProgress, setGaugeProgress] = useState(0);
   const [scanComplete, setScanComplete] = useState(false);
+  const [scanCompleteMessage, setScanCompleteMessage] = useState(null); // 0.5초 표시 후 소멸
+  const [profileData, setProfileData] = useState(null); // scan-complete API 응답
+  const [profileError, setProfileError] = useState(null);
+  const [xrayActive, setXrayActive] = useState(false);
 
   const bottomSheetRef = useRef(null);
   const cameraRef = useRef(null);
@@ -374,7 +379,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
   const sessionIdRef = useRef(`session_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`);
 
   const { gyroscope, accelerometer, cameraAngle, isStable, motionState, getSnapshot } = useSensorData({ enabled: gpsStatus === 'active' });
-  const snapPoints = useMemo(() => ['1%', '30%', '60%', '90%'], []);
+  const snapPoints = useMemo(() => ['1%', '50%', '90%'], []);
 
   const { buildings } = useNearbyBuildings({
     latitude: userLocation?.lat, longitude: userLocation?.lng,
@@ -414,11 +419,12 @@ const ScanCameraScreen = ({ route, navigation }) => {
   useEffect(() => {
     const newId = focusedBuilding?.id || null;
 
-    // 포커스 건물 변경 시 게이지 리셋
+    // 포커스 건물 변경 시 게이지 + 이전 상태 전부 클리어
     if (newId !== focusedIdRef.current) {
       focusedIdRef.current = newId;
       setGaugeProgress(0);
       setScanComplete(false);
+      setScanCompleteMessage(null);
       if (gaugeTimerRef.current) clearInterval(gaugeTimerRef.current);
       gaugeTimerRef.current = null;
     }
@@ -445,22 +451,49 @@ const ScanCameraScreen = ({ route, navigation }) => {
     };
   }, [focusedBuilding?.id, scanComplete]);
 
-  // 게이지 완료 시 → 햅틱 + 바텀시트 자동 열기
+  // 게이지 완료 시 → 햅틱 + 0.5초 메시지 + scan-complete API + 바텀시트
   useEffect(() => {
     if (scanComplete && focusedBuilding) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      // 1. 햅틱 피드백
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+      // 2. "스캔 완료!" 0.5초 표시 후 소멸
+      setScanCompleteMessage(`${focusedBuilding.name} 스캔 완료!`);
+      const msgTimer = setTimeout(() => setScanCompleteMessage(null), 500);
+
+      // 3. scan-complete API 호출 + 바텀시트 열기
       setSelectedBuildingId(focusedBuilding.id);
-      bottomSheetRef.current?.snapToIndex(1);
+      setProfileError(null);
+
+      const buildingId = focusedBuilding.id;
+      postScanComplete(buildingId, {
+        confidence: focusedBuilding.confidencePercent || focusedBuilding.confidence || 50,
+        sensorData: {
+          gps: { lat: userLocation?.lat, lng: userLocation?.lng, accuracy: 10 },
+          compass: { heading },
+        },
+      }).then(res => {
+        const data = res?.data || res;
+        if (data) setProfileData(data);
+        // 4. 바텀시트 열기 (snap to index 1 = 50%)
+        bottomSheetRef.current?.snapToIndex(1);
+      }).catch(() => {
+        setProfileError(true);
+        // API 실패해도 바텀시트는 열기
+        bottomSheetRef.current?.snapToIndex(1);
+      });
 
       // scan log + behavior
-      postScanLog({ sessionId: sessionIdRef.current, buildingId: focusedBuilding.id, eventType: 'gaze_scan', userLat: userLocation?.lat, userLng: userLocation?.lng, deviceHeading: heading, metadata: { confidence: focusedBuilding.confidence } }).catch(() => {});
-      behaviorTracker.trackEvent('gaze_scan', { buildingId: focusedBuilding.id, metadata: { confidence: focusedBuilding.confidence } });
+      postScanLog({ sessionId: sessionIdRef.current, buildingId, eventType: 'gaze_scan', userLat: userLocation?.lat, userLng: userLocation?.lng, deviceHeading: heading, metadata: { confidence: focusedBuilding.confidence } }).catch(() => {});
+      behaviorTracker.trackEvent('gaze_scan', { buildingId, metadata: { confidence: focusedBuilding.confidence } });
 
       // 최근 스캔 저장
       saveRecentScan(focusedBuilding);
 
       // Gemini 분석 트리거
       triggerGeminiAnalysis(focusedBuilding);
+
+      return () => clearTimeout(msgTimer);
     }
   }, [scanComplete]);
 
@@ -599,7 +632,9 @@ const ScanCameraScreen = ({ route, navigation }) => {
       const scans = raw ? JSON.parse(raw) : [];
       scans.unshift({
         id: `${building.id}_${Date.now()}`,
-        buildingName: building.name,
+        buildingName: building.name || building.address || '건물',
+        name: building.name || null,
+        address: building.address || null,
         points: 50, timeAgo: '방금 전', timestamp: Date.now(),
       });
       if (scans.length > 20) scans.length = 20;
@@ -627,8 +662,13 @@ const ScanCameraScreen = ({ route, navigation }) => {
     if (!building) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setSelectedBuildingId(building.id);
-    setScanComplete(true); // 게이지 완료 처리
+    setScanComplete(true);
+    setProfileError(null);
+    setProfileData(null);
+
+    // GET /api/buildings/:id/profile → 바텀시트 즉시 열기
     bottomSheetRef.current?.snapToIndex(1);
+
     postScanLog({ sessionId: sessionIdRef.current, buildingId: building.id, eventType: 'pin_tapped', userLat: userLocation?.lat, userLng: userLocation?.lng, deviceHeading: heading, metadata: { confidence: building.confidence } }).catch(() => {});
     behaviorTracker.trackEvent('pin_click', { buildingId: building.id, metadata: { confidence: building.confidence } });
     saveRecentScan(building);
@@ -640,23 +680,41 @@ const ScanCameraScreen = ({ route, navigation }) => {
     setSelectedBuildingId(null);
     setScanComplete(false);
     setGaugeProgress(0);
+    setProfileData(null);
+    setProfileError(null);
+    setScanCompleteMessage(null);
+    setXrayActive(false);
     focusedIdRef.current = null;
     bottomSheetRef.current?.snapToIndex(0);
   }, [selectedBuildingId]);
+
+  const handleXrayToggle = useCallback(() => {
+    setXrayActive(prev => {
+      if (!prev) {
+        // 열기: 바텀시트 축소
+        bottomSheetRef.current?.snapToIndex(0);
+      } else {
+        // 닫기: 바텀시트 복원
+        bottomSheetRef.current?.snapToIndex(1);
+      }
+      return !prev;
+    });
+  }, []);
 
   const handleOpenReport = useCallback(() => {
     if (!selectedBuilding) return;
     navigation.navigate('BehaviorReport', { buildingId: selectedBuilding.id, buildingName: selectedBuilding.name });
   }, [selectedBuilding, navigation]);
 
-  // 안내 텍스트 결정
+  // 안내 텍스트 결정 (scanCompleteMessage는 0.5초 후 자동 소멸)
   const guideMessage = useMemo(() => {
+    if (scanCompleteMessage) return scanCompleteMessage;
     if (gpsStatus === 'searching') return '위치를 탐색하고 있습니다...';
     if (!buildings.length) return '건물을 향해 카메라를 비추세요';
     if (!focusedBuilding) return '건물에 카메라를 맞춰주세요';
-    if (scanComplete) return `${focusedBuilding.name} 스캔 완료!`;
-    return `${focusedBuilding.name}을(를) 스캔하고 있어요`;
-  }, [gpsStatus, buildings.length, focusedBuilding, scanComplete]);
+    if (scanComplete) return null; // 바텀시트가 올라왔으므로 숨김
+    return `${focusedBuilding.name} 스캔 중...`;
+  }, [gpsStatus, buildings.length, focusedBuilding, scanComplete, scanCompleteMessage]);
 
   return (
     <GestureHandlerRootView style={styles.container}>
@@ -687,8 +745,8 @@ const ScanCameraScreen = ({ route, navigation }) => {
           {/* Layer 1: 포커스 가이드 */}
           <FocusGuide isActive={!!focusedBuilding} buildingCount={buildings.length} />
 
-          {/* Layer 2: 포커스된 건물 라벨 */}
-          {focusedBuilding && !scanComplete && (
+          {/* Layer 2: 포커스된 건물 라벨 (스캔 완료 후에도 유지) */}
+          {focusedBuilding && (
             <View style={styles.focusedLabelContainer} pointerEvents="box-none">
               <FocusedLabel
                 building={focusedBuilding}
@@ -717,8 +775,14 @@ const ScanCameraScreen = ({ route, navigation }) => {
         factorScore={rankedBuildings[0]?.confidencePercent || 0}
       />
 
-      {/* 안내 텍스트 */}
-      <GuideText text={guideMessage} />
+      {/* Layer 3.5: X-Ray 오버레이 */}
+      <XRayOverlay
+        floors={(profileData || buildingDetail)?.floors || []}
+        visible={xrayActive && !!selectedBuildingId}
+      />
+
+      {/* 안내 텍스트 (null이면 숨김) */}
+      {guideMessage && <GuideText text={guideMessage} />}
 
       {/* Layer 4: 바텀시트 */}
       <BottomSheet
@@ -729,34 +793,32 @@ const ScanCameraScreen = ({ route, navigation }) => {
         handleIndicatorStyle={styles.bsHandle}
         enablePanDownToClose={false}
         onChange={(index) => {
-          if (selectedBuildingId && index >= 2) {
+          if (selectedBuildingId && index >= 1) {
             behaviorTracker.trackEvent('card_open', { buildingId: selectedBuildingId });
           }
         }}
       >
-        {selectedBuilding && detailLoading ? (
-          <View style={styles.bsScroll}>
-            <BuildingHeader building={selectedBuilding} onClose={handleCloseSheet} onReport={handleOpenReport} />
-            <BottomSheetSkeleton />
-          </View>
-        ) : selectedBuilding ? (
-          <ScrollView style={styles.bsScroll} showsVerticalScrollIndicator={false} nestedScrollEnabled>
-            <BuildingHeader building={selectedBuilding} onClose={handleCloseSheet} onReport={handleOpenReport} />
-            <QuickInfoTags amenities={selectedBuilding.facilities || selectedBuilding.amenities || []} />
-            <BuildingStats building={selectedBuilding} />
-            <FloorList
-              floors={buildingDetail?.floors || selectedBuilding?.floors || []}
-              onFloorTap={(floor) => behaviorTracker.trackEvent('card_open', { buildingId: selectedBuildingId, metadata: { floor: floor.floor || floor.floorNumber } })}
-              onRewardTap={(floor) => {
-                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                setPoints(p => p + (floor.rewardPoints || 50));
-                behaviorTracker.trackEvent('ar_interaction', { buildingId: selectedBuildingId, metadata: { type: 'reward', floor: floor.floor || floor.floorNumber, points: floor.rewardPoints || 50 } });
-              }}
-            />
-            <LiveFeed feeds={buildingDetail?.liveFeeds || getLiveFeedsByBuilding(selectedBuilding.id)} />
-            <GeminiLiveChat buildingId={selectedBuilding.id} buildingName={selectedBuilding.name} lat={userLocation?.lat} lng={userLocation?.lng} />
-            <View style={{ height: 40 }} />
-          </ScrollView>
+        {selectedBuildingId ? (
+          <BuildingProfileSheet
+            buildingProfile={profileData || buildingDetail}
+            loading={detailLoading && !profileData}
+            error={profileError}
+            onClose={handleCloseSheet}
+            onXrayToggle={handleXrayToggle}
+            xrayActive={xrayActive}
+            onRetry={() => {
+              setProfileError(null);
+              if (selectedBuildingId) {
+                postScanComplete(selectedBuildingId, {
+                  confidence: 50,
+                  sensorData: { gps: { lat: userLocation?.lat, lng: userLocation?.lng }, compass: { heading } },
+                }).then(res => {
+                  const data = res?.data || res;
+                  if (data) setProfileData(data);
+                }).catch(() => setProfileError(true));
+              }
+            }}
+          />
         ) : (
           <View style={styles.bsEmpty}>
             <Text style={styles.bsEmptyText}>
@@ -869,8 +931,8 @@ const styles = StyleSheet.create({
   guideText: { fontSize: 14, fontWeight: '500', color: 'rgba(255,255,255,0.9)', backgroundColor: 'rgba(0,0,0,0.5)', paddingHorizontal: SPACING.xl, paddingVertical: SPACING.sm, borderRadius: 20, overflow: 'hidden' },
 
   // ===== 바텀시트 =====
-  bsBackground: { backgroundColor: '#1A1F2E', borderTopLeftRadius: 20, borderTopRightRadius: 20 },
-  bsHandle: { backgroundColor: 'rgba(255,255,255,0.3)', width: 40 },
+  bsBackground: { backgroundColor: '#141428', borderTopLeftRadius: 20, borderTopRightRadius: 20 },
+  bsHandle: { backgroundColor: 'rgba(255,255,255,0.2)', width: 36, height: 4, borderRadius: 2 },
   bsScroll: { paddingHorizontal: SPACING.lg },
   bsEmpty: { alignItems: 'center', paddingVertical: SPACING.xxl },
   bsEmptyText: { fontSize: 15, color: '#B0B0B0' },

@@ -95,6 +95,14 @@ export const getBuildingFloors = async (id) => {
   return withRetry(() => apiClient.get(`/buildings/${id}/floors`));
 };
 
+export const postScanComplete = async (id, { confidence, sensorData, cameraFrame } = {}) => {
+  return apiClient.post(`/buildings/${id}/scan-complete`, {
+    confidence,
+    sensorData,
+    cameraFrame,
+  });
+};
+
 // ===== 스캔 로그: 오프라인 큐 지원 =====
 const SCAN_LOG_QUEUE_KEY = '@scanpang_log_queue';
 
@@ -220,6 +228,7 @@ export default {
   getNearbyBuildings,
   getBuildingProfile,
   getBuildingFloors,
+  postScanComplete,
   postScanLog,
   getLiveFeeds,
   getServerTime,

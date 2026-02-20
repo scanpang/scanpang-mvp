@@ -14,18 +14,22 @@ const DUMMY_ACTIVITY = [
   { id: 3, buildingName: '코엑스몰', points: 100, timeAgo: '3일 전' },
 ];
 
-const ActivityItem = ({ item }) => (
-  <View style={styles.item}>
-    <View style={styles.iconCircle}>
-      <Text style={styles.iconText}>B</Text>
+const ActivityItem = ({ item }) => {
+  // 건물명 우선순위: name > buildingName > address
+  const displayName = item.name || item.buildingName || item.address || '건물';
+  return (
+    <View style={styles.item}>
+      <View style={styles.iconCircle}>
+        <Text style={styles.iconText}>B</Text>
+      </View>
+      <View style={styles.itemContent}>
+        <Text style={styles.buildingName} numberOfLines={2} ellipsizeMode="tail">{displayName}</Text>
+        <Text style={styles.timeAgo}>{item.timeAgo}</Text>
+      </View>
+      <Text style={styles.points}>+{item.points}P</Text>
     </View>
-    <View style={styles.itemContent}>
-      <Text style={styles.buildingName}>{item.buildingName}</Text>
-      <Text style={styles.timeAgo}>{item.timeAgo}</Text>
-    </View>
-    <Text style={styles.points}>+{item.points}P</Text>
-  </View>
-);
+  );
+};
 
 const RecentActivity = ({ activities = DUMMY_ACTIVITY, onScanPress }) => (
   <View style={styles.container}>
