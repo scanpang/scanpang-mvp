@@ -388,7 +388,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
 
   const { buildings } = useNearbyBuildings({
     latitude: userLocation?.lat, longitude: userLocation?.lng,
-    heading, radius: 300, enabled: gpsStatus === 'active',
+    heading, radius: 300, enabled: gpsStatus === 'active' && !sheetOpen,
   });
 
   const { building: buildingDetail, loading: detailLoading } = useBuildingDetail(selectedBuildingId);
