@@ -1,6 +1,6 @@
 /**
  * 건물 조회 API 라우터
- * - GET /nearby              : 주변 건물 조회 (DB + OSM 병합)
+ * - GET /nearby              : 주변 건물 조회 (OSM primary + Naver 보강 + DB 보조)
  * - GET /:id/profile         : 건물 상세 프로필
  * - GET /:id/floors          : 층별 정보
  * - POST /:id/scan-complete  : 스캔 완료 이벤트 처리
@@ -11,6 +11,7 @@ const db = require('../db');
 const geospatial = require('../services/geospatial');
 const buildingProfile = require('../services/buildingProfile');
 const osmBuildings = require('../services/osmBuildings');
+const naverBuildings = require('../services/naverBuildings');
 
 /**
  * GET /api/buildings/nearby
@@ -48,39 +49,51 @@ router.get('/nearby', async (req, res, next) => {
     const parsedRadius = Math.min(radius ? parseInt(radius, 10) : 200, 5000); // 최대 5km
     const parsedHeading = heading ? parseFloat(heading) : null;
 
-    // 1. DB 조회 (항상 대기)
+    // 1. OSM: primary 소스 (동기 — 캐시 히트면 즉시, 미스면 fetch 대기)
+    let osmResults = osmBuildings.getCachedNearby(parsedLat, parsedLng, parsedRadius);
+    if (!osmResults) {
+      try {
+        osmResults = await osmBuildings.fetchNearbyFromOSM(parsedLat, parsedLng, parsedRadius);
+      } catch (err) {
+        console.warn('[nearby] OSM 조회 실패:', err.message);
+        osmResults = [];
+      }
+    }
+
+    // 2. DB: 보조 소스 (있으면 우선 적용)
     let dbBuildings = [];
     try {
       dbBuildings = await geospatial.findNearbyBuildings(parsedLat, parsedLng, parsedRadius, parsedHeading);
     } catch (err) {
-      console.warn('[nearby] DB 조회 실패:', err.message);
+      // DB 없어도 정상 — OSM이 primary
+      console.warn('[nearby] DB 조회 실패 (무시):', err.message);
     }
 
-    // 2. OSM: 캐시 히트면 즉시 사용, 미스면 비동기 fetch (응답 안 기다림)
-    let osmResults = osmBuildings.getCachedNearby(parsedLat, parsedLng, parsedRadius);
-    if (!osmResults) {
-      // 백그라운드에서 OSM 데이터 가져오기 (다음 요청에 캐시 히트)
-      osmBuildings.fetchNearbyFromOSM(parsedLat, parsedLng, parsedRadius).catch(() => {});
-      osmResults = [];
-    }
+    // 3. Naver: 이름 보강 (캐시 활용, 실패해도 무시)
+    try {
+      const naverResults = await naverBuildings.searchNearbyBuildings(parsedLat, parsedLng, parsedRadius);
+      if (naverResults.length > 0) {
+        osmResults = naverBuildings.enrichWithNaver(osmResults, naverResults);
+      }
+    } catch {}
 
-    // OSM 결과에 heading 필터 적용
+    // heading 필터 적용 (도심 나침반 오차 고려: ±90°)
     if (parsedHeading !== null && osmResults.length > 0) {
       osmResults = osmResults.filter((b) => {
         const diff = geospatial.angleDifference(parsedHeading, b.bearing);
-        return diff <= 60;
+        return diff <= 90;
       });
     }
 
     // 중복 제거: DB 건물 50m 이내 OSM 건물은 제외 (DB 우선)
     const uniqueOsm = osmResults.filter((osm) => {
-      return !dbBuildings.some((db) => {
-        const dist = haversineQuick(db.lat, db.lng, osm.lat, osm.lng);
+      return !dbBuildings.some((dbB) => {
+        const dist = haversineQuick(dbB.lat, dbB.lng, osm.lat, osm.lng);
         return dist < 50;
       });
     });
 
-    // 병합 + 거리순 정렬
+    // 병합: DB 건물 우선 + OSM 보충, 거리순 정렬
     const merged = [...dbBuildings, ...uniqueOsm]
       .sort((a, b) => (a.distanceMeters || 0) - (b.distanceMeters || 0))
       .slice(0, 30);

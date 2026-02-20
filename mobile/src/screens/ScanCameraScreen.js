@@ -44,7 +44,7 @@ import XRayOverlay from '../components/XRayOverlay';
 const { width: SW, height: SH } = Dimensions.get('window');
 const RECENT_SCANS_KEY = '@scanpang_recent_scans';
 const CAMERA_HFOV = 60;
-const FOCUS_ANGLE = Math.round((CAMERA_HFOV * 0.65) / 2); // 포커스 가이드 65% 기반 ≈ 19°
+const FOCUS_ANGLE = 35; // 도심 밀집 지역 대응: ±35° (기존 ±19°)
 const GAUGE_DURATION = 3000; // 3초
 const GAUGE_TICK = 50; // 50ms마다 업데이트
 const FOCUS_RESET_THRESHOLD = 8; // 연속 8틱(400ms) 벗어나야 게이지 리셋
@@ -394,7 +394,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
 
   const { buildings } = useNearbyBuildings({
     latitude: userLocation?.lat, longitude: userLocation?.lng,
-    heading, radius: 300, enabled: gpsStatus === 'active' && !sheetOpen,
+    heading, radius: 200, enabled: gpsStatus === 'active' && !sheetOpen,
   });
 
   const { building: buildingDetail, loading: detailLoading } = useBuildingDetail(selectedBuildingId);
@@ -570,15 +570,24 @@ const ScanCameraScreen = ({ route, navigation }) => {
       if (data) {
         setProfileData(prev => {
           if (!prev) return data;
-          return {
-            ...prev,
-            ...Object.fromEntries(
-              Object.entries(data).filter(([_, v]) =>
-                v !== null && v !== undefined && v !== '' &&
-                !(Array.isArray(v) && v.length === 0)
-              )
-            ),
-          };
+          // 비어있지 않은 필드만 덮어쓰기 (meta 보호)
+          const merged = { ...prev };
+          for (const [key, value] of Object.entries(data)) {
+            if (value === null || value === undefined || value === '') continue;
+            if (Array.isArray(value) && value.length === 0) continue;
+            if (key === 'meta') {
+              // meta는 병합 (덮어쓰기 방지), 실제 데이터 기준으로 재계산
+              const mergedMeta = { ...prev.meta, ...value };
+              mergedMeta.hasFloors = (merged.floors || data.floors || []).length > 0;
+              mergedMeta.hasRestaurants = (merged.restaurants || data.restaurants || []).length > 0;
+              mergedMeta.hasRealEstate = (merged.realEstate || data.realEstate || []).length > 0;
+              mergedMeta.hasTourism = !!(merged.tourism || data.tourism);
+              merged.meta = mergedMeta;
+              continue;
+            }
+            merged[key] = value;
+          }
+          return merged;
         });
       }
     }).catch(() => {});

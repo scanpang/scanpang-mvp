@@ -24,30 +24,31 @@ const WEIGHTS = {
 
 /**
  * Factor 1: GPS 거리 점수 (0~1)
- * 가까울수록 높은 점수
+ * 200m 반경 기준 세밀한 구간 설정
  */
 function scoreGpsDistance(distanceMeters) {
   if (distanceMeters == null || distanceMeters < 0) return 0;
-  if (distanceMeters <= 30) return 1.0;
-  if (distanceMeters <= 100) return 0.9 - (distanceMeters - 30) * 0.003;
-  if (distanceMeters <= 300) return 0.7 - (distanceMeters - 100) * 0.002;
-  if (distanceMeters <= 500) return 0.3 - (distanceMeters - 300) * 0.001;
-  return Math.max(0, 0.1 - (distanceMeters - 500) * 0.0002);
+  if (distanceMeters <= 20) return 1.0;                                      // 바로 앞
+  if (distanceMeters <= 50) return 0.95 + (50 - distanceMeters) / 600;       // ≤50m: ~0.95
+  if (distanceMeters <= 100) return 0.8 + (100 - distanceMeters) * 0.003;    // ≤100m: ~0.8
+  if (distanceMeters <= 150) return 0.6 + (150 - distanceMeters) * 0.004;    // ≤150m: ~0.6
+  if (distanceMeters <= 200) return 0.4 + (200 - distanceMeters) * 0.004;    // ≤200m: ~0.4
+  // >200m: 급감
+  return Math.max(0.05, 0.4 - (distanceMeters - 200) * 0.003);
 }
 
 /**
  * Factor 2: 나침반 방위각 일치도 (0~1)
- * 디바이스 heading과 건물 bearing의 차이가 작을수록 높은 점수
+ * 200m 범위에서는 건물이 더 가까우므로 각도 정확도가 중요
  */
 function scoreCompassBearing(deviceHeading, buildingBearing) {
   if (deviceHeading == null || buildingBearing == null) return 0.5;
   let diff = Math.abs(buildingBearing - deviceHeading);
   if (diff > 180) diff = 360 - diff;
-  // 0° 차이 = 1.0, 30° = 0.7, 60° = 0.3, 90°+ = 0
   if (diff <= 15) return 1.0;
-  if (diff <= 30) return 1.0 - (diff - 15) * 0.02;
-  if (diff <= 60) return 0.7 - (diff - 30) * 0.013;
-  if (diff <= 90) return 0.3 - (diff - 60) * 0.01;
+  if (diff <= 30) return 0.8 + (30 - diff) * (0.2 / 15);   // 30°에서 0.8
+  if (diff <= 60) return 0.5 + (60 - diff) * (0.3 / 30);   // 60°에서 0.5
+  if (diff <= 90) return 0.2 + (90 - diff) * (0.3 / 30);   // 90°에서 0.2
   return 0;
 }
 
