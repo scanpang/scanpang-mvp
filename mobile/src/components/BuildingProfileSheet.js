@@ -41,16 +41,38 @@ const C = {
 
 const TAG_COLORS = [C.green, C.blue, C.purple, C.amber, C.cyan, C.red];
 
-// 만원 → 억 변환 헬퍼
-const formatManToEok = (man) => {
-  if (!man && man !== 0) return '미정';
-  const num = Number(man);
+// 만원 → "N억 M천" 변환 헬퍼
+const formatPrice = (manwon) => {
+  if (!manwon && manwon !== 0) return '-';
+  const num = Number(manwon);
   if (num >= 10000) {
     const eok = Math.floor(num / 10000);
-    const rest = num % 10000;
-    return rest > 0 ? `${eok}억 ${rest.toLocaleString()}만` : `${eok}억`;
+    const remainder = num % 10000;
+    if (remainder === 0) return `${eok}억`;
+    const cheon = Math.floor(remainder / 1000);
+    if (remainder % 1000 === 0) return `${eok}억 ${cheon}천`;
+    return `${eok}억 ${remainder.toLocaleString()}`;
   }
-  return `${num.toLocaleString()}만`;
+  if (num >= 1000) {
+    const cheon = Math.floor(num / 1000);
+    const remainder = num % 1000;
+    if (remainder === 0) return `${cheon}천`;
+    return `${num.toLocaleString()}`;
+  }
+  return `${num}`;
+};
+
+// room_type 한글 매핑
+const formatRoomType = (type) => {
+  const map = { studio: '원룸', one_room: '원룸', two_room: '투룸', three_room: '쓰리룸', office: '오피스', retail: '상가', 오피스: '오피스', 상가: '상가', 레지던스: '레지던스' };
+  return map[type] || type || '기타';
+};
+
+// 카테고리 아이콘 매핑
+const getCategoryIcon = (category) => {
+  const lower = (category || '').toLowerCase();
+  const map = { korean: '🍲', 한식: '🍲', japanese: '🍣', 일식: '🍣', chinese: '🥟', 중식: '🥟', western: '🍕', 양식: '🍕', cafe: '☕', 카페: '☕', bakery: '🥐', 베이커리: '🥐', bar: '🍸', 주점: '🍸', fastfood: '🍔', convenience: '🏪', 편의점: '🏪' };
+  return map[lower] || '🍽️';
 };
 
 // 혼잡도 색상 헬퍼
@@ -419,15 +441,19 @@ const BuildingProfileSheet = ({ buildingProfile, loading, error, onClose, onRetr
                 : (r.wait_teams > 0)
                   ? { text: `대기 ${r.wait_teams}팀`, bg: 'rgba(239,68,68,0.15)', color: '#ef4444' }
                   : { text: '즉각 입장', bg: 'rgba(34,197,94,0.15)', color: '#22c55e' };
-              const catIcon = r.category?.includes('카페') ? '\u2615' : r.category?.includes('주점') || r.category?.includes('바') ? '\uD83C\uDF78' : '\uD83C\uDF72';
               return (
                 <View key={i} style={s.foodCard}>
                   <View style={s.foodIconBox}>
-                    <Text style={s.foodIconText}>{catIcon}</Text>
+                    <Text style={s.foodIconText}>{getCategoryIcon(r.category)}</Text>
                   </View>
                   <View style={s.foodCenter}>
                     <Text style={s.foodName} numberOfLines={1}>{r.name}</Text>
                     <Text style={s.foodCategory}>{r.sub_category || r.category || ''}</Text>
+                    {r.rating != null && (
+                      <Text style={s.foodRating}>
+                        {'\u2B50'} {r.rating}{r.review_count != null ? ` (${r.review_count})` : ''}
+                      </Text>
+                    )}
                     {r.signature_menu && (
                       <View style={s.foodMenuPill}>
                         <Text style={s.foodMenuText}>대표: {r.signature_menu}{r.signature_price ? ` ${r.signature_price}` : ''}</Text>
@@ -455,16 +481,18 @@ const BuildingProfileSheet = ({ buildingProfile, loading, error, onClose, onRetr
           ) : (
             (profile.realEstate || []).map((r, i) => {
               const priceStr = r.listing_type === 'monthly_rent' || r.listing_type === '월세'
-                ? `월세 ${r.monthly_rent || 0}만 / 보증금 ${formatManToEok(r.deposit)}`
+                ? `월세 ${r.monthly_rent || 0}만 / 보증금 ${formatPrice(r.deposit)}`
                 : r.listing_type === 'jeonse' || r.listing_type === '전세'
-                  ? `전세 ${formatManToEok(r.deposit)}`
-                  : `매매 ${formatManToEok(r.sale_price)}`;
+                  ? `전세 ${formatPrice(r.deposit)}`
+                  : r.listing_type === 'sale' || r.listing_type === '매매'
+                    ? `매매 ${formatPrice(r.sale_price)}`
+                    : `${r.listing_type} ${formatPrice(r.deposit || r.sale_price)}`;
               return (
                 <View key={i} style={s.estateCard}>
                   <View style={s.estateTop}>
                     <View style={s.estateTopLeft}>
                       <View style={s.estateTypeBadge}>
-                        <Text style={s.estateTypeText}>{r.room_type || r.listing_type}</Text>
+                        <Text style={s.estateTypeText}>{formatRoomType(r.room_type)}</Text>
                       </View>
                       <Text style={s.estateLink}>상세보기 {'>'}</Text>
                     </View>
@@ -722,7 +750,8 @@ const s = StyleSheet.create({
   foodIconText: { fontSize: 20 },
   foodCenter: { flex: 1 },
   foodName: { fontSize: 14, fontWeight: '600', color: C.text1, marginBottom: 2 },
-  foodCategory: { fontSize: 11, color: 'rgba(255,255,255,0.5)', marginBottom: 4 },
+  foodCategory: { fontSize: 11, color: 'rgba(255,255,255,0.5)', marginBottom: 2 },
+  foodRating: { fontSize: 12, color: '#fbbf24', marginBottom: 4 },
   foodMenuPill: {
     alignSelf: 'flex-start',
     backgroundColor: 'rgba(255,255,255,0.04)',

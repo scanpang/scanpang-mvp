@@ -285,52 +285,57 @@ export const getBuildingsSortedByDistance = () => {
 
 const DUMMY_RESTAURANTS_MAP = {
   bld_001: [
-    { name: '어니언 카페', category: '카페', sub_category: '베이커리 카페', signature_menu: '팡도르', signature_price: '5,000', wait_teams: 0, is_open: true, rating: 4.6 },
-    { name: '소문난 감자탕', category: '한식', sub_category: '한식당', signature_menu: '감자탕(중)', signature_price: '30,000', wait_teams: 12, is_open: true, rating: 4.2 },
-    { name: '서브웨이', category: '양식', sub_category: '샌드위치', signature_menu: 'BMT', signature_price: '6,900', wait_teams: 0, is_open: true, rating: 3.8 },
+    { name: '어니언 카페', category: '카페', sub_category: '베이커리 카페', signature_menu: '팡도르', signature_price: '5,000', wait_teams: 0, is_open: true, rating: 4.6, review_count: 234, hours: '08:00-22:00' },
+    { name: '소문난 감자탕', category: '한식', sub_category: '한식당', signature_menu: '감자탕(중)', signature_price: '30,000', wait_teams: 12, is_open: true, rating: 4.2, review_count: 512, hours: '11:00-22:00' },
+    { name: '서브웨이', category: '양식', sub_category: '샌드위치', signature_menu: 'BMT', signature_price: '6,900', wait_teams: 0, is_open: true, rating: 3.8, review_count: 189, hours: '08:00-21:00' },
   ],
   bld_002: [
-    { name: '삼성 구내식당', category: '한식', sub_category: '구내식당', signature_menu: '오늘의 정식', signature_price: '6,000', wait_teams: 5, is_open: true, rating: 4.0 },
-    { name: 'CU 델리', category: '편의점', sub_category: '간편식', signature_menu: '도시락', signature_price: '4,500', wait_teams: 0, is_open: true, rating: 3.5 },
+    { name: '삼성 구내식당', category: '한식', sub_category: '구내식당', signature_menu: '오늘의 정식', signature_price: '6,000', wait_teams: 5, is_open: true, rating: 4.0, review_count: 1024, hours: '11:30-13:30' },
+    { name: 'CU 델리', category: '편의점', sub_category: '간편식', signature_menu: '도시락', signature_price: '4,500', wait_teams: 0, is_open: true, rating: 3.5, review_count: 67, hours: '24시간' },
   ],
   bld_003: [
-    { name: '맘스터치', category: '양식', sub_category: '버거', signature_menu: '싸이버거', signature_price: '5,200', wait_teams: 3, is_open: true, rating: 4.1 },
-    { name: '재즈 라운지', category: '주점', sub_category: '요리주점', signature_menu: '칵테일', signature_price: '15,000', wait_teams: 0, is_open: false, rating: 4.5 },
-    { name: '코엑스 푸드코트', category: '한식', sub_category: '푸드코트', signature_menu: '비빔밥', signature_price: '9,000', wait_teams: 8, is_open: true, rating: 3.9 },
+    { name: '맘스터치', category: '양식', sub_category: '버거', signature_menu: '싸이버거', signature_price: '5,200', wait_teams: 3, is_open: true, rating: 4.1, review_count: 342, hours: '10:00-22:00' },
+    { name: '재즈 라운지', category: '주점', sub_category: '요리주점', signature_menu: '칵테일', signature_price: '15,000', wait_teams: 0, is_open: false, rating: 4.5, review_count: 156, hours: '18:00-02:00' },
+    { name: '코엑스 푸드코트', category: '한식', sub_category: '푸드코트', signature_menu: '비빔밥', signature_price: '9,000', wait_teams: 8, is_open: true, rating: 3.9, review_count: 891, hours: '10:30-21:30' },
   ],
   bld_004: [
-    { name: '한우리', category: '한식', sub_category: '한우전문', signature_menu: '한우등심세트', signature_price: '89,000', wait_teams: 15, is_open: true, rating: 4.7 },
-    { name: '스시 오마카세 히든', category: '일식', sub_category: '오마카세', signature_menu: '런치 코스', signature_price: '65,000', wait_teams: 8, is_open: true, rating: 4.8 },
-    { name: '빕스 프리미어', category: '양식', sub_category: '뷔페', signature_menu: '프리미엄 뷔페', signature_price: '45,900', wait_teams: 6, is_open: true, rating: 4.2 },
+    { name: '한우리', category: '한식', sub_category: '한우전문', signature_menu: '한우등심세트', signature_price: '89,000', wait_teams: 15, is_open: true, rating: 4.7, review_count: 723, hours: '11:30-22:00' },
+    { name: '스시 오마카세 히든', category: '일식', sub_category: '오마카세', signature_menu: '런치 코스', signature_price: '65,000', wait_teams: 8, is_open: true, rating: 4.8, review_count: 412, hours: '12:00-21:30' },
+    { name: '빕스 프리미어', category: '양식', sub_category: '뷔페', signature_menu: '프리미엄 뷔페', signature_price: '45,900', wait_teams: 6, is_open: true, rating: 4.2, review_count: 567, hours: '11:00-22:00' },
   ],
   bld_005: [
-    { name: '더현대 푸드홀', category: '한식', sub_category: '푸드홀', signature_menu: '한우 덮밥', signature_price: '18,000', wait_teams: 10, is_open: true, rating: 4.4 },
-    { name: '폴 바셋', category: '카페', sub_category: '스페셜티 카페', signature_menu: '플랫 화이트', signature_price: '6,500', wait_teams: 2, is_open: true, rating: 4.5 },
-    { name: '치폴레', category: '양식', sub_category: '멕시칸', signature_menu: '부리또 볼', signature_price: '12,500', wait_teams: 0, is_open: true, rating: 4.0 },
+    { name: '더현대 푸드홀', category: '한식', sub_category: '푸드홀', signature_menu: '한우 덮밥', signature_price: '18,000', wait_teams: 10, is_open: true, rating: 4.4, review_count: 945, hours: '10:30-20:00' },
+    { name: '폴 바셋', category: '카페', sub_category: '스페셜티 카페', signature_menu: '플랫 화이트', signature_price: '6,500', wait_teams: 2, is_open: true, rating: 4.5, review_count: 378, hours: '10:00-21:00' },
+    { name: '치폴레', category: '양식', sub_category: '멕시칸', signature_menu: '부리또 볼', signature_price: '12,500', wait_teams: 0, is_open: true, rating: 4.0, review_count: 213, hours: '11:00-21:00' },
   ],
 };
 
 const DUMMY_REALESTATE_MAP = {
   bld_001: [
-    { listing_type: '월세', room_type: '오피스', deposit: 5000, monthly_rent: 150, unit_number: '1201호', size_pyeong: 25, size_sqm: 82.6 },
-    { listing_type: '월세', room_type: '오피스', deposit: 3000, monthly_rent: 80, unit_number: '803호', size_pyeong: 12, size_sqm: 39.6 },
+    { listing_type: 'monthly_rent', room_type: 'office', deposit: 5000, monthly_rent: 150, unit_number: '1201호', size_pyeong: 25, size_sqm: 82.6 },
+    { listing_type: 'monthly_rent', room_type: 'office', deposit: 3000, monthly_rent: 80, unit_number: '803호', size_pyeong: 12, size_sqm: 39.6 },
+    { listing_type: 'sale', room_type: 'office', deposit: null, monthly_rent: null, sale_price: 85000, unit_number: '2001호', size_pyeong: 45, size_sqm: 148.7 },
   ],
   bld_002: [
-    { listing_type: '월세', room_type: '오피스', deposit: 10000, monthly_rent: 300, unit_number: '1505호', size_pyeong: 40, size_sqm: 132.2 },
-    { listing_type: '월세', room_type: '오피스', deposit: 7000, monthly_rent: 200, unit_number: '1002호', size_pyeong: 30, size_sqm: 99.2 },
+    { listing_type: 'monthly_rent', room_type: 'office', deposit: 10000, monthly_rent: 300, unit_number: '1505호', size_pyeong: 40, size_sqm: 132.2 },
+    { listing_type: 'monthly_rent', room_type: 'office', deposit: 7000, monthly_rent: 200, unit_number: '1002호', size_pyeong: 30, size_sqm: 99.2 },
+    { listing_type: 'sale', room_type: 'office', deposit: null, monthly_rent: null, sale_price: 120000, unit_number: '3201호', size_pyeong: 55, size_sqm: 181.8 },
   ],
   bld_003: [
-    { listing_type: '월세', room_type: '상가', deposit: 15000, monthly_rent: 500, unit_number: '1F-A08호', size_pyeong: 22, size_sqm: 72.7 },
-    { listing_type: '월세', room_type: '상가', deposit: 8000, monthly_rent: 250, unit_number: '2F-B03호', size_pyeong: 15, size_sqm: 49.6 },
+    { listing_type: 'monthly_rent', room_type: 'retail', deposit: 15000, monthly_rent: 500, unit_number: '1F-A08호', size_pyeong: 22, size_sqm: 72.7 },
+    { listing_type: 'monthly_rent', room_type: 'retail', deposit: 8000, monthly_rent: 250, unit_number: '2F-B03호', size_pyeong: 15, size_sqm: 49.6 },
+    { listing_type: 'jeonse', room_type: 'retail', deposit: 35000, monthly_rent: null, unit_number: '3F-D02호', size_pyeong: 28, size_sqm: 92.5 },
   ],
   bld_004: [
-    { listing_type: '월세', room_type: '오피스', deposit: 20000, monthly_rent: 600, unit_number: '4502호', size_pyeong: 55, size_sqm: 181.8 },
-    { listing_type: '전세', room_type: '레지던스', deposit: 150000, monthly_rent: null, unit_number: '7801호', size_pyeong: 62, size_sqm: 204.9 },
-    { listing_type: '월세', room_type: '상가', deposit: 30000, monthly_rent: 800, unit_number: '3F-C12호', size_pyeong: 35, size_sqm: 115.7 },
+    { listing_type: 'monthly_rent', room_type: 'office', deposit: 20000, monthly_rent: 600, unit_number: '4502호', size_pyeong: 55, size_sqm: 181.8 },
+    { listing_type: 'jeonse', room_type: 'three_room', deposit: 150000, monthly_rent: null, unit_number: '7801호', size_pyeong: 62, size_sqm: 204.9 },
+    { listing_type: 'monthly_rent', room_type: 'retail', deposit: 30000, monthly_rent: 800, unit_number: '3F-C12호', size_pyeong: 35, size_sqm: 115.7 },
+    { listing_type: 'sale', room_type: 'three_room', deposit: null, monthly_rent: null, sale_price: 250000, unit_number: '8502호', size_pyeong: 72, size_sqm: 237.9 },
   ],
   bld_005: [
-    { listing_type: '월세', room_type: '상가', deposit: 10000, monthly_rent: 350, unit_number: 'B1-12호', size_pyeong: 18, size_sqm: 59.5 },
-    { listing_type: '전세', room_type: '상가', deposit: 25000, monthly_rent: null, unit_number: '2F-05호', size_pyeong: 30, size_sqm: 99.2 },
+    { listing_type: 'monthly_rent', room_type: 'retail', deposit: 10000, monthly_rent: 350, unit_number: 'B1-12호', size_pyeong: 18, size_sqm: 59.5 },
+    { listing_type: 'jeonse', room_type: 'retail', deposit: 25000, monthly_rent: null, unit_number: '2F-05호', size_pyeong: 30, size_sqm: 99.2 },
+    { listing_type: 'sale', room_type: 'retail', deposit: null, monthly_rent: null, sale_price: 52000, unit_number: '1F-03호', size_pyeong: 20, size_sqm: 66.1 },
   ],
 };
 
