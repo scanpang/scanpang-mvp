@@ -173,7 +173,14 @@ const TAB_DEFS = [
 const TabBar = ({ activeTab, onChangeTab, meta }) => {
   const visibleTabs = TAB_DEFS.filter(t => t.alwaysShow || meta?.[t.metaKey]);
   return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.tabBar} contentContainerStyle={s.tabBarContent}>
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      nestedScrollEnabled
+      directionalLockEnabled
+      style={s.tabBar}
+      contentContainerStyle={s.tabBarContent}
+    >
       {visibleTabs.map(t => (
         <TouchableOpacity
           key={t.key}
@@ -192,7 +199,7 @@ const TabBar = ({ activeTab, onChangeTab, meta }) => {
 const AmenityTags = ({ amenities = [] }) => {
   if (!amenities.length) return null;
   return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.amenityScroll} contentContainerStyle={s.amenityContent}>
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} nestedScrollEnabled directionalLockEnabled style={s.amenityScroll} contentContainerStyle={s.amenityContent}>
       {amenities.map((item, i) => (
         <View key={i} style={s.amenityTag}>
           <View style={[s.amenityDot, { backgroundColor: TAG_COLORS[i % TAG_COLORS.length] }]} />
