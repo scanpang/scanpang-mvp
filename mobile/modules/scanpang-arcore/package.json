@@ -1,0 +1,10 @@
+{
+  "name": "scanpang-arcore",
+  "version": "1.0.0",
+  "main": "src/index",
+  "types": "src/index.d.ts",
+  "scripts": {},
+  "peerDependencies": {
+    "expo": "*"
+  }
+}

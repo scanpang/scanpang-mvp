@@ -37,9 +37,13 @@ import useBuildingDetail from '../hooks/useBuildingDetail';
 import useSensorData from '../hooks/useSensorData';
 import { formatDistance } from '../utils/coordinate';
 import { rankBuildings } from '../services/detectionEngine';
+import { matchBuildings as matchBuildingsGeo, GEO_PARAMS } from '../services/geospatialEngine';
 import { behaviorTracker } from '../services/behaviorTracker';
 import BuildingProfileSheet from '../components/BuildingProfileSheet';
 import XRayOverlay from '../components/XRayOverlay';
+import { ARCameraView } from 'scanpang-arcore';
+import useGeospatialTracking from '../hooks/useGeospatialTracking';
+import useGeospatialAnchors from '../hooks/useGeospatialAnchors';
 
 const { width: SW, height: SH } = Dimensions.get('window');
 const RECENT_SCANS_KEY = '@scanpang_recent_scans';
@@ -150,7 +154,7 @@ const FocusedLabel = ({ building, confidence, gaugeProgress, onPress }) => {
 };
 
 // ===== 상단 HUD =====
-const CameraHUD = ({ points, gpsStatus, onBack, buildingCount, factorScore }) => {
+const CameraHUD = ({ points, gpsStatus, onBack, buildingCount, factorScore, arTierInfo }) => {
   const gpsColor = gpsStatus === 'active' ? Colors.successGreen : gpsStatus === 'error' ? Colors.liveRed : Colors.accentAmber;
   const gpsLabel = gpsStatus === 'active' ? 'GPS 활성' : gpsStatus === 'error' ? '위치 오류' : 'GPS...';
 
@@ -161,8 +165,8 @@ const CameraHUD = ({ points, gpsStatus, onBack, buildingCount, factorScore }) =>
       </TouchableOpacity>
 
       <View style={styles.hudModePill}>
-        <View style={[styles.hudDot, { backgroundColor: Colors.successGreen }]} />
-        <Text style={styles.hudModeText}>일반 모드</Text>
+        <View style={[styles.hudDot, { backgroundColor: arTierInfo?.color || '#888' }]} />
+        <Text style={styles.hudModeText}>{arTierInfo?.label || 'GPS 모드'}</Text>
       </View>
 
       {factorScore > 0 && (
@@ -390,11 +394,26 @@ const ScanCameraScreen = ({ route, navigation }) => {
   const sessionIdRef = useRef(`session_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`);
 
   const { gyroscope, accelerometer, cameraAngle, isStable, motionState, getSnapshot } = useSensorData({ enabled: gpsStatus === 'active' });
+
+  // ARCore Geospatial 추적 (3-Tier 폴백)
+  const {
+    geoPose, vpsAvailable, trackingState, isLocalized, isARMode, tier, tierInfo, arError,
+    handlePoseUpdate, handleTrackingStateChanged, handleReady, handleError,
+  } = useGeospatialTracking({ enabled: true });
+
+  // AR 앵커 관리 (Geospatial localized 시에만)
   const snapPoints = useMemo(() => ['1%', '50%', '90%'], []);
 
   const { buildings } = useNearbyBuildings({
     latitude: userLocation?.lat, longitude: userLocation?.lng,
     heading, radius: 200, enabled: gpsStatus === 'active' && !sheetOpen,
+  });
+
+  // AR 앵커 관리 (Geospatial localized + 바텀시트 닫혀있을 때)
+  const { anchors: arAnchors, handleAnchorPositionsUpdate } = useGeospatialAnchors({
+    buildings,
+    isLocalized,
+    enabled: isARMode && isLocalized && !sheetOpen,
   });
 
   const { building: buildingDetail, loading: detailLoading } = useBuildingDetail(selectedBuildingId);
@@ -403,24 +422,38 @@ const ScanCameraScreen = ({ route, navigation }) => {
     ? { ...(buildings.find(b => b.id === selectedBuildingId) || {}), ...(buildingDetail || {}) }
     : null;
 
-  // 7-Factor: 건물별 confidence 계산 + 정렬
+  // 건물별 confidence 계산 + 정렬 (Geospatial / 7-Factor 조건 분기)
   const rankedBuildings = useMemo(() => {
     if (!buildings.length) return [];
+    if (isARMode && isLocalized && geoPose) {
+      // Geospatial 엔진: ARCore 위치/heading 기반
+      return matchBuildingsGeo(geoPose, buildings, timeContext, geminiResults);
+    }
+    // 7-Factor 폴백: 기존 센서 기반
     const sensorData = { heading, gyroscope, accelerometer, cameraAngle };
     return rankBuildings(buildings, sensorData, timeContext, geminiResults);
-  }, [buildings, heading, gyroscope, accelerometer, cameraAngle, timeContext, geminiResults]);
+  }, [buildings, heading, gyroscope, accelerometer, cameraAngle, timeContext, geminiResults, isARMode, isLocalized, geoPose]);
 
   // 포커스 영역 내 중심에 가장 가까운 건물 1개 계산 (바텀시트 열리면 중단)
+  // Geospatial 모드: 좁은 FOV(25°) + 빠른 전환
+  // Tier별 포커스 파라미터
+  const geoMode = isARMode && isLocalized;
+  const focusAngle = tier === 1 ? GEO_PARAMS.FOCUS_ANGLE     // Tier 1: 25°
+    : tier === 2 ? 30                                         // Tier 2: 30°
+    : FOCUS_ANGLE;                                            // Tier 3: 35°
+  const stickinessBonus = geoMode ? GEO_PARAMS.STICKINESS_BONUS : STICKINESS_BONUS;
+  const switchThreshold = geoMode ? GEO_PARAMS.SWITCH_THRESHOLD : SWITCH_THRESHOLD;
+
   const focusedBuilding = useMemo(() => {
     if (sheetOpen) return null; // 바텀시트 열려있으면 감지 중단
     if (!rankedBuildings.length) return null;
-    // heading ± FOCUS_ANGLE 범위 내 건물만 필터
+    // heading ± focusAngle 범위 내 건물만 필터
     const inFocus = rankedBuildings.filter(b => {
       const bearing = b.bearing ?? 0;
       let diff = bearing - heading;
       if (diff > 180) diff -= 360;
       if (diff < -180) diff += 360;
-      return Math.abs(diff) <= FOCUS_ANGLE;
+      return Math.abs(diff) <= focusAngle;
     });
     if (!inFocus.length) return null;
 
@@ -429,26 +462,26 @@ const ScanCameraScreen = ({ route, navigation }) => {
     const scored = inFocus.map(b => {
       const bearingDiff = Math.abs(((b.bearing ?? 0) - heading + 540) % 360 - 180);
       const isCurrentFocus = b.id === currentFocusedId;
-      const adjustedDiff = isCurrentFocus ? Math.max(0, bearingDiff - STICKINESS_BONUS) : bearingDiff;
+      const adjustedDiff = isCurrentFocus ? Math.max(0, bearingDiff - stickinessBonus) : bearingDiff;
       return { building: b, bearingDiff, adjustedDiff };
     });
 
     scored.sort((a, b) => a.adjustedDiff - b.adjustedDiff);
     const best = scored[0]?.building ?? null;
 
-    // 현재 포커스 건물이 아직 inFocus 안에 있으면, 새 건물이 SWITCH_THRESHOLD 이상 더 가까울 때만 전환
+    // 현재 포커스 건물이 아직 inFocus 안에 있으면, 새 건물이 switchThreshold 이상 더 가까울 때만 전환
     if (currentFocusedId && best?.id !== currentFocusedId) {
       const currentInList = scored.find(s => s.building.id === currentFocusedId);
       if (currentInList) {
         const bestRaw = scored.find(s => s.building.id === best?.id);
-        if (bestRaw && currentInList.bearingDiff - bestRaw.bearingDiff < SWITCH_THRESHOLD) {
+        if (bestRaw && currentInList.bearingDiff - bestRaw.bearingDiff < switchThreshold) {
           return currentInList.building;
         }
       }
     }
 
     return best;
-  }, [rankedBuildings, heading, sheetOpen]);
+  }, [rankedBuildings, heading, sheetOpen, focusAngle, stickinessBonus, switchThreshold]);
 
   // focusedBuilding이 유효할 때 ref에 캡처 (scanComplete effect에서 안전하게 참조)
   useEffect(() => {
@@ -456,6 +489,10 @@ const ScanCameraScreen = ({ route, navigation }) => {
   }, [focusedBuilding]);
 
   // ===== 게이지 시스템 (디바운스 리셋) =====
+  // Geospatial 모드: 더 빠른 전환/리셋
+  const focusResetThreshold = geoMode ? GEO_PARAMS.FOCUS_RESET : FOCUS_RESET_THRESHOLD;
+  const switchConfirmThreshold = geoMode ? GEO_PARAMS.SWITCH_CONFIRM : SWITCH_CONFIRM_THRESHOLD;
+
   useEffect(() => {
     const newId = focusedBuilding?.id || null;
 
@@ -466,7 +503,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
         outOfFocusCountRef.current += 1;
         pendingSwitchRef.current = null;
         switchCountRef.current = 0;
-        if (outOfFocusCountRef.current >= FOCUS_RESET_THRESHOLD) {
+        if (outOfFocusCountRef.current >= focusResetThreshold) {
           focusedIdRef.current = null;
           outOfFocusCountRef.current = 0;
           setGaugeProgress(0);
@@ -481,7 +518,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
         // 다른 건물로 전환 → 디바운스 (연속 N틱 같은 건물이어야 전환 확정)
         if (pendingSwitchRef.current === newId) {
           switchCountRef.current++;
-          if (switchCountRef.current >= SWITCH_CONFIRM_THRESHOLD) {
+          if (switchCountRef.current >= switchConfirmThreshold) {
             // 전환 확정
             focusedIdRef.current = newId;
             outOfFocusCountRef.current = 0;
@@ -602,6 +639,19 @@ const ScanCameraScreen = ({ route, navigation }) => {
     return () => clearTimeout(msgTimer);
   }, [scanComplete]);
 
+  // AR 모드: geoPose → userLocation/heading 브릿지
+  useEffect(() => {
+    if (!isARMode || !geoPose) return;
+    setUserLocation({ lat: geoPose.latitude, lng: geoPose.longitude });
+    if (Math.abs(geoPose.heading - lastHeadingRef.current) >= 3) {
+      lastHeadingRef.current = geoPose.heading;
+      setHeading(geoPose.heading);
+    }
+    if (trackingState === 'tracking') {
+      setGpsStatus('active');
+    }
+  }, [isARMode, geoPose, trackingState]);
+
   // ===== GPS 캐시 → 빠른 초기 위치 =====
   useEffect(() => {
     (async () => {
@@ -682,8 +732,9 @@ const ScanCameraScreen = ({ route, navigation }) => {
     })();
   }, [cameraPermission]);
 
-  // 위치 추적
+  // 위치 추적 (GPS 폴백 모드에서만)
   useEffect(() => {
+    if (isARMode) return; // AR 모드에서는 geoPose 사용
     let cancelled = false;
     (async () => {
       try {
@@ -702,10 +753,11 @@ const ScanCameraScreen = ({ route, navigation }) => {
       } catch { if (!cancelled) setGpsStatus('error'); }
     })();
     return () => { cancelled = true; locationSubRef.current?.remove(); };
-  }, []);
+  }, [isARMode]);
 
-  // 나침반
+  // 나침반 (GPS 폴백 모드에서만)
   useEffect(() => {
+    if (isARMode) return; // AR 모드에서는 geoPose.heading 사용
     Magnetometer.setUpdateInterval(200);
     const sub = Magnetometer.addListener((data) => {
       if (isMountedRef.current && data) {
@@ -715,7 +767,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
     });
     magnetSubRef.current = sub;
     return () => magnetSubRef.current?.remove();
-  }, []);
+  }, [isARMode]);
 
   // AppState
   useEffect(() => {
@@ -852,10 +904,46 @@ const ScanCameraScreen = ({ route, navigation }) => {
         </View>
       ) : (
         <>
-          <CameraView ref={cameraRef} style={StyleSheet.absoluteFillObject} facing="back" />
+          {isARMode ? (
+            <ARCameraView
+              style={StyleSheet.absoluteFillObject}
+              onGeospatialPoseUpdate={handlePoseUpdate}
+              onTrackingStateChanged={handleTrackingStateChanged}
+              onAnchorPositionsUpdate={handleAnchorPositionsUpdate}
+              onReady={handleReady}
+              onError={handleError}
+            />
+          ) : (
+            <CameraView ref={cameraRef} style={StyleSheet.absoluteFillObject} facing="back" />
+          )}
 
           {/* Layer 1: 포커스 가이드 */}
           <FocusGuide isActive={!!focusedBuilding} buildingCount={buildings.length} />
+
+          {/* Layer 1.5: AR 앵커 라벨 (Geospatial 모드) */}
+          {isARMode && isLocalized && !sheetOpen && arAnchors.length > 0 && (
+            <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+              {arAnchors.map(anchor => {
+                const isFocused = focusedBuilding?.id === anchor.buildingId;
+                return (
+                  <View
+                    key={anchor.buildingId}
+                    style={[
+                      styles.arLabel,
+                      { left: anchor.screenX - 60, top: anchor.screenY - 20 },
+                      isFocused && styles.arLabelFocused,
+                    ]}
+                    pointerEvents="none"
+                  >
+                    <Text style={[styles.arLabelName, isFocused && styles.arLabelNameFocused]} numberOfLines={1}>
+                      {anchor.buildingName || '건물'}
+                    </Text>
+                    <Text style={styles.arLabelDist}>{formatDistance(anchor.distance || 0)}</Text>
+                  </View>
+                );
+              })}
+            </View>
+          )}
 
           {/* Layer 2: 포커스된 건물 라벨 (바텀시트 열리면 숨김) */}
           {focusedBuilding && !sheetOpen && (
@@ -885,6 +973,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
         onBack={() => navigation.goBack()}
         buildingCount={buildings.length}
         factorScore={rankedBuildings[0]?.confidencePercent || 0}
+        arTierInfo={tierInfo}
       />
 
       {/* Layer 3.5: X-Ray 오버레이 */}
@@ -972,6 +1061,13 @@ const styles = StyleSheet.create({
   // GPS 에러
   gpsErrorBanner: { position: 'absolute', top: 100, left: SPACING.lg, right: SPACING.lg, backgroundColor: 'rgba(239,68,68,0.9)', borderRadius: 12, paddingHorizontal: SPACING.lg, paddingVertical: SPACING.sm, zIndex: 100 },
   gpsErrorText: { fontSize: 13, fontWeight: '600', color: '#FFF', textAlign: 'center' },
+
+  // AR 앵커 라벨
+  arLabel: { position: 'absolute', backgroundColor: 'rgba(0,0,0,0.65)', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5, alignItems: 'center', minWidth: 80 },
+  arLabelFocused: { backgroundColor: 'rgba(59,130,246,0.8)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.5)' },
+  arLabelName: { fontSize: 12, fontWeight: '600', color: 'rgba(255,255,255,0.85)' },
+  arLabelNameFocused: { color: '#FFF', fontWeight: '700' },
+  arLabelDist: { fontSize: 10, color: 'rgba(255,255,255,0.6)', marginTop: 1 },
 
   // 스켈레톤
   skeletonContainer: { paddingHorizontal: SPACING.lg, paddingTop: SPACING.md },
