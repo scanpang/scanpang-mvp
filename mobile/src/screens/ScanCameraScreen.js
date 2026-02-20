@@ -461,9 +461,12 @@ const ScanCameraScreen = ({ route, navigation }) => {
       setScanCompleteMessage(`${focusedBuilding.name} 스캔 완료!`);
       const msgTimer = setTimeout(() => setScanCompleteMessage(null), 500);
 
-      // 3. scan-complete API 호출 + 바텀시트 열기
+      // 3. 바텀시트 즉시 열기 + scan-complete API 호출
       setSelectedBuildingId(focusedBuilding.id);
       setProfileError(null);
+
+      // 바텀시트를 API 응답 대기 없이 즉시 열기
+      setTimeout(() => bottomSheetRef.current?.snapToIndex(1), 50);
 
       const buildingId = focusedBuilding.id;
       postScanComplete(buildingId, {
@@ -475,12 +478,8 @@ const ScanCameraScreen = ({ route, navigation }) => {
       }).then(res => {
         const data = res?.data || res;
         if (data) setProfileData(data);
-        // 4. 바텀시트 열기 (snap to index 1 = 50%)
-        bottomSheetRef.current?.snapToIndex(1);
       }).catch(() => {
         setProfileError(true);
-        // API 실패해도 바텀시트는 열기
-        bottomSheetRef.current?.snapToIndex(1);
       });
 
       // scan log + behavior
@@ -666,8 +665,8 @@ const ScanCameraScreen = ({ route, navigation }) => {
     setProfileError(null);
     setProfileData(null);
 
-    // GET /api/buildings/:id/profile → 바텀시트 즉시 열기
-    bottomSheetRef.current?.snapToIndex(1);
+    // 바텀시트 즉시 열기 (state flush 후 snap 보장)
+    setTimeout(() => bottomSheetRef.current?.snapToIndex(1), 50);
 
     postScanLog({ sessionId: sessionIdRef.current, buildingId: building.id, eventType: 'pin_tapped', userLat: userLocation?.lat, userLng: userLocation?.lng, deviceHeading: heading, metadata: { confidence: building.confidence } }).catch(() => {});
     behaviorTracker.trackEvent('pin_click', { buildingId: building.id, metadata: { confidence: building.confidence } });
@@ -787,7 +786,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
       {/* Layer 4: 바텀시트 */}
       <BottomSheet
         ref={bottomSheetRef}
-        index={selectedBuilding ? 1 : 0}
+        index={0}
         snapPoints={snapPoints}
         backgroundStyle={styles.bsBackground}
         handleIndicatorStyle={styles.bsHandle}
