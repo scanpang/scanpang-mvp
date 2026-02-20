@@ -7,7 +7,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { getBuildingProfile } from '../services/api';
-import { DUMMY_BUILDINGS } from '../constants/dummyData';
+import { DUMMY_BUILDINGS, buildDummyProfile } from '../constants/dummyData';
 
 // 모듈 레벨 캐시 (훅 인스턴스 간 공유)
 const buildingCache = new Map();
@@ -85,11 +85,11 @@ const useBuildingDetail = (buildingId, { enabled = true, useCache = true } = {})
       console.warn(`[useBuildingDetail] API 실패 (${id}), 더미 데이터로 폴백:`, err.message);
 
       if (isMounted.current && currentRequestId.current === id) {
-        // API 실패 시 더미 데이터에서 검색
-        const fallback = DUMMY_BUILDINGS.find((b) => b.id === id) || null;
+        // API 실패 시 더미 데이터에서 검색 → 프로필 형식으로 변환
+        const rawBuilding = DUMMY_BUILDINGS.find((b) => b.id === id);
+        const fallback = rawBuilding ? buildDummyProfile(rawBuilding) : buildDummyProfile({ id, name: `건물 ${id}`, distance: 0, amenities: [], floors: [], stats: {} });
 
         if (fallback) {
-          // 더미 데이터도 캐시에 저장
           buildingCache.set(id, {
             data: fallback,
             timestamp: Date.now(),
@@ -98,10 +98,8 @@ const useBuildingDetail = (buildingId, { enabled = true, useCache = true } = {})
 
         setBuilding(fallback);
         setError({
-          message: fallback
-            ? 'API 연결 실패. 더미 데이터를 표시합니다.'
-            : `건물 정보를 찾을 수 없습니다. (ID: ${id})`,
-          isFallback: !!fallback,
+          message: '오프라인 모드 - 더미 데이터를 표시합니다.',
+          isFallback: true,
         });
         setLoading(false);
       }

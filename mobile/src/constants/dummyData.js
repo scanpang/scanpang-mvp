@@ -281,10 +281,176 @@ export const getBuildingsSortedByDistance = () => {
   return [...DUMMY_BUILDINGS].sort((a, b) => a.distance - b.distance);
 };
 
+// ===== 더미 프로필 빌더 (BuildingProfileSheet 호환 형식) =====
+
+const DUMMY_RESTAURANTS_MAP = {
+  bld_001: [
+    { name: '어니언 카페', category: '카페', sub_category: '베이커리 카페', signature_menu: '팡도르', signature_price: '5,000', wait_teams: 0, is_open: true, rating: 4.6 },
+    { name: '소문난 감자탕', category: '한식', sub_category: '한식당', signature_menu: '감자탕(중)', signature_price: '30,000', wait_teams: 12, is_open: true, rating: 4.2 },
+    { name: '서브웨이', category: '양식', sub_category: '샌드위치', signature_menu: 'BMT', signature_price: '6,900', wait_teams: 0, is_open: true, rating: 3.8 },
+  ],
+  bld_002: [
+    { name: '삼성 구내식당', category: '한식', sub_category: '구내식당', signature_menu: '오늘의 정식', signature_price: '6,000', wait_teams: 5, is_open: true, rating: 4.0 },
+    { name: 'CU 델리', category: '편의점', sub_category: '간편식', signature_menu: '도시락', signature_price: '4,500', wait_teams: 0, is_open: true, rating: 3.5 },
+  ],
+  bld_003: [
+    { name: '맘스터치', category: '양식', sub_category: '버거', signature_menu: '싸이버거', signature_price: '5,200', wait_teams: 3, is_open: true, rating: 4.1 },
+    { name: '재즈 라운지', category: '주점', sub_category: '요리주점', signature_menu: '칵테일', signature_price: '15,000', wait_teams: 0, is_open: false, rating: 4.5 },
+    { name: '코엑스 푸드코트', category: '한식', sub_category: '푸드코트', signature_menu: '비빔밥', signature_price: '9,000', wait_teams: 8, is_open: true, rating: 3.9 },
+  ],
+};
+
+const DUMMY_REALESTATE_MAP = {
+  bld_001: [
+    { listing_type: '월세', room_type: '오피스', deposit: 5000, monthly_rent: 150, unit_number: '1201호', size_pyeong: 25, size_sqm: 82.6 },
+    { listing_type: '월세', room_type: '오피스', deposit: 3000, monthly_rent: 80, unit_number: '803호', size_pyeong: 12, size_sqm: 39.6 },
+  ],
+  bld_005: [
+    { listing_type: '월세', room_type: '상가', deposit: 10000, monthly_rent: 350, unit_number: 'B1-12호', size_pyeong: 18, size_sqm: 59.5 },
+    { listing_type: '전세', room_type: '상가', deposit: 25000, monthly_rent: null, unit_number: '2F-05호', size_pyeong: 30, size_sqm: 99.2 },
+  ],
+};
+
+const DUMMY_TOURISM_MAP = {
+  bld_003: {
+    attraction_name: '코엑스 아쿠아리움',
+    attraction_name_en: 'COEX Aquarium',
+    category: '수족관',
+    rating: 4.3,
+    review_count: 8420,
+    congestion: '보통',
+    hours: '10:00 - 20:00',
+    admission_fee: '성인 33,000원 / 어린이 29,000원',
+    description: '650여 종 4만여 마리의 해양생물을 만날 수 있는 도심 속 수족관. 오션킹덤, 심해왕국 등 다양한 테마존으로 구성되어 있습니다.',
+  },
+  bld_004: {
+    attraction_name: '서울스카이',
+    attraction_name_en: 'Seoul Sky Observatory',
+    category: '전망대',
+    rating: 4.8,
+    review_count: 15230,
+    congestion: '여유로움',
+    hours: '10:30 - 22:00',
+    admission_fee: '성인 29,000원 / 어린이 25,000원',
+    description: '555m 높이의 대한민국 최고 전망대. 117~123층에서 서울 시내를 360도 파노라마로 감상할 수 있습니다. 스카이데크 투명 유리 바닥 체험 가능.',
+  },
+};
+
+const DUMMY_PROMOTIONS_MAP = {
+  bld_001: { title: '첫 스캔 보너스 이벤트', reward_points: 500, condition_text: '이 건물 첫 스캔 시 보너스 포인트 지급' },
+  bld_003: { title: '코엑스 스캔 챌린지', reward_points: 1000, condition_text: '코엑스 내 3개 층 이상 스캔 시 보너스' },
+  bld_004: { title: '랜드마크 스캔 리워드', reward_points: 800, condition_text: '롯데월드타워 스캔 완료 시 특별 리워드' },
+};
+
+/**
+ * 건물 객체를 BuildingProfileSheet 호환 프로필로 변환
+ * @param {Object} building - DUMMY_BUILDINGS 항목 또는 API nearby 건물
+ * @returns {Object} BuildingProfileSheet 호환 프로필
+ */
+export const buildDummyProfile = (building) => {
+  if (!building) return null;
+  const id = building.id;
+
+  // 층별 정보 변환
+  const floors = [];
+  if (building.floors) {
+    building.floors.forEach(f => {
+      const floorLabel = f.floor || f.floor_number || '';
+      const tenants = f.tenants || [];
+      // "B5-B1" 같은 범위는 펼쳐서 개별 층으로
+      const rangeMatch = floorLabel.match(/^([B]?\d+)[F]?\s*[-~]\s*([B]?\d+)[F]?$/i);
+      if (rangeMatch) {
+        const isBasement = floorLabel.startsWith('B');
+        const start = parseInt(rangeMatch[1].replace('B', ''));
+        const end = parseInt(rangeMatch[2].replace('B', ''));
+        const [lo, hi] = start <= end ? [start, end] : [end, start];
+        for (let n = hi; n >= lo; n--) {
+          floors.push({
+            floor_number: isBasement ? `B${n}` : `${n}F`,
+            tenant_name: f.usage || tenants[0] || '',
+            is_vacant: false,
+            has_reward: false,
+            icons: '',
+          });
+        }
+      } else {
+        floors.push({
+          floor_number: floorLabel,
+          tenant_name: tenants.join(', ') || f.usage || '',
+          is_vacant: false,
+          has_reward: floorLabel === '1F',
+          icons: '',
+        });
+      }
+    });
+  }
+
+  // 편의시설 변환
+  const amenityIcons = { '주차장': '🅿️', '편의점': '🏪', '카페': '☕', 'ATM': '🏧', '회의실': '📋', '구내식당': '🍱', '피트니스': '🏋️', '은행': '🏦', '영화관': '🎬', '수족관': '🐠', '서점': '📚', '푸드코트': '🍽️', '전망대': '🔭', '호텔': '🏨', '쇼핑몰': '🛍️', '오피스': '💼', '레지던스': '🏠', '식품관': '🥖', 'VIP라운지': '👑', '문화센터': '🎨' };
+  const amenities = (building.amenities || []).map(a => ({
+    type: `${amenityIcons[a] || '🏢'} ${a}`,
+    location: '',
+    hours: '',
+  }));
+
+  // 스탯 변환
+  const bStats = building.stats || {};
+  const statsRaw = [
+    { type: 'total_floors', value: `${building.totalFloors || floors.length}층` },
+    { type: 'occupancy', value: `${Math.round(85 + Math.random() * 10)}%` },
+    { type: 'tenants', value: `${Math.max(floors.length, 3)}개` },
+    { type: 'operating', value: `${Math.max(floors.length - 1, 2)}개` },
+  ];
+
+  // LIVE 피드 변환
+  const rawFeeds = getLiveFeedsByBuilding(id);
+  const feedTypeMap = { event: 'event', promo: 'promotion', alert: 'congestion', news: 'update' };
+  const liveFeeds = rawFeeds.map(f => ({
+    feed_type: feedTypeMap[f.type] || 'update',
+    title: f.title,
+    subtitle: f.description?.slice(0, 40) || '',
+    time_label: f.isLive ? '방금' : '이전',
+  }));
+
+  const restaurants = DUMMY_RESTAURANTS_MAP[id] || [];
+  const realEstate = DUMMY_REALESTATE_MAP[id] || [];
+  const tourism = DUMMY_TOURISM_MAP[id] || null;
+  const promotion = DUMMY_PROMOTIONS_MAP[id] || null;
+
+  return {
+    building: {
+      id: building.id,
+      name: building.name,
+      address: building.address,
+      lat: building.latitude || building.lat,
+      lng: building.longitude || building.lng,
+      distance: building.distance || 0,
+      building_use: building.buildingType,
+      completion_year: building.yearBuilt,
+    },
+    stats: { raw: statsRaw },
+    floors,
+    amenities,
+    realEstate,
+    restaurants,
+    tourism,
+    liveFeeds,
+    promotion,
+    meta: {
+      hasFloors: floors.length > 0,
+      hasRestaurants: restaurants.length > 0,
+      hasRealEstate: realEstate.length > 0,
+      hasTourism: !!tourism,
+      dataCompleteness: 75,
+    },
+  };
+};
+
 export default {
   DUMMY_POINTS,
   DUMMY_BUILDINGS,
   DUMMY_LIVE_FEEDS,
   getLiveFeedsByBuilding,
   getBuildingsSortedByDistance,
+  buildDummyProfile,
 };

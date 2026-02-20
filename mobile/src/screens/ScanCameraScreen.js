@@ -31,6 +31,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Colors, SPACING, TOUCH } from '../constants/theme';
 import { DUMMY_POINTS } from '../constants/dummyData';
 import { postScanLog, postScanComplete, getServerTimeContext, analyzeFrame } from '../services/api';
+import { buildDummyProfile } from '../constants/dummyData';
 import useNearbyBuildings from '../hooks/useNearbyBuildings';
 import useBuildingDetail from '../hooks/useBuildingDetail';
 import useSensorData from '../hooks/useSensorData';
@@ -480,7 +481,9 @@ const ScanCameraScreen = ({ route, navigation }) => {
         const data = res?.data || res;
         if (data) setProfileData(data);
       }).catch(() => {
-        setProfileError(true);
+        // API 실패 시 더미 프로필로 폴백
+        const dummy = buildDummyProfile(focusedBuilding);
+        if (dummy) setProfileData(dummy);
       });
 
       // scan log + behavior
