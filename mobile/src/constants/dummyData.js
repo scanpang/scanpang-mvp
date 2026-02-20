@@ -405,22 +405,84 @@ const DUMMY_PROMOTIONS_MAP = {
   bld_005: { title: '판교 쇼핑 스캔 이벤트', reward_points: 600, condition_text: '현대백화점 스캔 후 매장 방문 시 쿠폰 지급' },
 };
 
+// ===== 매칭 안 되는 건물용 제네릭 폴백 데이터 =====
+// md 스펙: "이매동 C동 주상복합" 스타일의 현실적인 주상복합 데이터
+
+const FALLBACK_FLOORS = [
+  { floor_number: 'B2', tenant_name: '주차장 · 기계실', is_vacant: false, has_reward: false, icons: '🅿️ ⚙️' },
+  { floor_number: 'B1', tenant_name: '주차장 (60대)', is_vacant: false, has_reward: false, icons: '🅿️' },
+  { floor_number: '1F', tenant_name: '로비 · 관리사무소 · 택배함', is_vacant: false, has_reward: false, icons: '🏛️ 📦' },
+  { floor_number: '2F', tenant_name: '편의점CU · 세탁소', is_vacant: false, has_reward: true, icons: '🏪 👕' },
+  { floor_number: '3F', tenant_name: '부동산 · 학원', is_vacant: false, has_reward: false, icons: '🏪 📝' },
+  { floor_number: '4F', tenant_name: '내과 · 치과', is_vacant: false, has_reward: false, icons: '🏥 💊' },
+  { floor_number: '5F', tenant_name: '필라테스 · 헬스', is_vacant: false, has_reward: true, icons: '💪 🏋️' },
+  { floor_number: '6F', tenant_name: '스터디카페', is_vacant: false, has_reward: false, icons: '📚 ☕' },
+  { floor_number: '7F', tenant_name: '공실', is_vacant: true, has_reward: false, icons: '' },
+  { floor_number: '8F', tenant_name: '주거 세대', is_vacant: false, has_reward: false, icons: '🏠' },
+  { floor_number: '9F', tenant_name: '주거 세대', is_vacant: false, has_reward: false, icons: '🏠' },
+  { floor_number: '10F', tenant_name: '주거 세대', is_vacant: false, has_reward: false, icons: '🏠' },
+  { floor_number: '11F', tenant_name: '주거 세대', is_vacant: false, has_reward: false, icons: '🏠' },
+  { floor_number: '12F', tenant_name: '주거 세대', is_vacant: false, has_reward: false, icons: '🏠' },
+  { floor_number: '13F', tenant_name: '주거 세대', is_vacant: false, has_reward: false, icons: '🏠' },
+  { floor_number: '14F', tenant_name: '주거 세대', is_vacant: false, has_reward: false, icons: '🏠' },
+  { floor_number: '15F', tenant_name: '펜트하우스', is_vacant: false, has_reward: false, icons: '🏠' },
+  { floor_number: 'RF', tenant_name: '옥상 정원 & 휴게공간', is_vacant: false, has_reward: false, icons: '🌿 ☀️' },
+];
+
+const FALLBACK_RESTAURANTS = [
+  { name: '카페 모먼트', category: '카페', sub_category: '로스터리 카페', signature_menu: '아인슈페너', signature_price: '6,500', wait_teams: 0, is_open: true, rating: 4.5, review_count: 156, hours: '08:00-22:00' },
+  { name: '이매정 순두부', category: '한식', sub_category: '한식 · 순두부', signature_menu: '순두부찌개', signature_price: '9,000', wait_teams: 3, is_open: true, rating: 4.3, review_count: 312, hours: '11:00-21:00' },
+  { name: '맘스터치', category: '양식', sub_category: '패스트푸드', signature_menu: '싸이버거', signature_price: '5,900', wait_teams: 0, is_open: true, rating: 4.1, review_count: 287, hours: '10:00-22:00' },
+  { name: 'CU 편의점', category: '편의점', sub_category: '편의점', signature_menu: '삼각김밥', signature_price: '1,200', wait_teams: 0, is_open: true, rating: 3.5, review_count: 89, hours: '24시간' },
+];
+
+const FALLBACK_REALESTATE = [
+  { listing_type: 'monthly_rent', room_type: 'one_room', deposit: 500, monthly_rent: 55, unit_number: '301호', size_pyeong: 8, size_sqm: 26.4 },
+  { listing_type: 'monthly_rent', room_type: 'two_room', deposit: 1000, monthly_rent: 80, unit_number: '502호', size_pyeong: 15, size_sqm: 49.5 },
+  { listing_type: 'jeonse', room_type: 'two_room', deposit: 22000, monthly_rent: null, unit_number: '801호', size_pyeong: 18, size_sqm: 59.4 },
+  { listing_type: 'sale', room_type: 'three_room', deposit: null, monthly_rent: null, sale_price: 42000, unit_number: '1201호', size_pyeong: 32, size_sqm: 105.6 },
+];
+
+const FALLBACK_TOURISM = {
+  attraction_name: '둘레길 산책코스',
+  attraction_name_en: 'Neighborhood Trail',
+  category: '산책로',
+  rating: 4.0,
+  review_count: 230,
+  congestion: '여유로움',
+  hours: '24시간 개방',
+  admission_fee: '무료',
+  description: '인근 하천과 연결되는 둘레길 코스. 주변 공원과 산책로를 따라 자연을 즐길 수 있는 도심 속 휴식 공간입니다.',
+};
+
+const FALLBACK_FEEDS = [
+  { feed_type: 'update', title: '2F 편의점 24시간 영업중', subtitle: '간편식/도시락/음료 구비', time_label: '방금' },
+  { feed_type: 'event', title: '5F 필라테스 무료체험 이벤트', subtitle: '신규 등록 시 1개월 무료', time_label: '1시간 전' },
+  { feed_type: 'congestion', title: '엘리베이터 1호기 점검', subtitle: '14:00-16:00 사용 불가', time_label: '2시간 전' },
+];
+
+const FALLBACK_AMENITIES = ['주차장', '편의점', '카페', '세탁소', '피트니스'];
+
+const FALLBACK_PROMOTION = { title: '건물 첫 스캔 보너스', reward_points: 200, condition_text: '이 건물을 처음 스캔하면 200P 적립!' };
+
 /**
  * 건물 객체를 BuildingProfileSheet 호환 프로필로 변환
+ * - ID 매칭되는 건물: DUMMY_*_MAP에서 데이터 사용
+ * - ID 매칭 안 되는 건물 (실제 AR 감지): 제네릭 폴백 데이터 사용
  * @param {Object} building - DUMMY_BUILDINGS 항목 또는 API nearby 건물
  * @returns {Object} BuildingProfileSheet 호환 프로필
  */
 export const buildDummyProfile = (building) => {
   if (!building) return null;
   const id = building.id;
+  const isKnown = DUMMY_RESTAURANTS_MAP[id] || DUMMY_REALESTATE_MAP[id] || DUMMY_TOURISM_MAP[id];
 
   // 층별 정보 변환
-  const floors = [];
-  if (building.floors) {
+  let floors = [];
+  if (building.floors && building.floors.length > 0) {
     building.floors.forEach(f => {
       const floorLabel = f.floor || f.floor_number || '';
       const tenants = f.tenants || [];
-      // "B5-B1" 같은 범위는 펼쳐서 개별 층으로
       const rangeMatch = floorLabel.match(/^([B]?\d+)[F]?\s*[-~]\s*([B]?\d+)[F]?$/i);
       if (rangeMatch) {
         const isBasement = floorLabel.startsWith('B');
@@ -431,54 +493,63 @@ export const buildDummyProfile = (building) => {
           floors.push({
             floor_number: isBasement ? `B${n}` : `${n}F`,
             tenant_name: f.usage || tenants[0] || '',
-            is_vacant: false,
-            has_reward: false,
-            icons: '',
+            is_vacant: false, has_reward: false, icons: '',
           });
         }
       } else {
         floors.push({
           floor_number: floorLabel,
           tenant_name: tenants.join(', ') || f.usage || '',
-          is_vacant: false,
-          has_reward: floorLabel === '1F',
-          icons: '',
+          is_vacant: false, has_reward: floorLabel === '1F', icons: '',
         });
       }
     });
   }
+  // 층 정보 없으면 폴백 사용
+  if (floors.length === 0) {
+    floors = [...FALLBACK_FLOORS];
+  }
 
-  // 편의시설 변환
-  const amenityIcons = { '주차장': '🅿️', '편의점': '🏪', '카페': '☕', 'ATM': '🏧', '회의실': '📋', '구내식당': '🍱', '피트니스': '🏋️', '은행': '🏦', '영화관': '🎬', '수족관': '🐠', '서점': '📚', '푸드코트': '🍽️', '전망대': '🔭', '호텔': '🏨', '쇼핑몰': '🛍️', '오피스': '💼', '레지던스': '🏠', '식품관': '🥖', 'VIP라운지': '👑', '문화센터': '🎨' };
-  const amenities = (building.amenities || []).map(a => ({
+  // 편의시설
+  const amenityIcons = { '주차장': '🅿️', '편의점': '🏪', '카페': '☕', 'ATM': '🏧', '회의실': '📋', '구내식당': '🍱', '피트니스': '🏋️', '은행': '🏦', '영화관': '🎬', '수족관': '🐠', '서점': '📚', '푸드코트': '🍽️', '전망대': '🔭', '호텔': '🏨', '쇼핑몰': '🛍️', '오피스': '💼', '레지던스': '🏠', '식품관': '🥖', 'VIP라운지': '👑', '문화센터': '🎨', '세탁소': '👕' };
+  const amenityList = (building.amenities && building.amenities.length > 0)
+    ? building.amenities
+    : FALLBACK_AMENITIES;
+  const amenities = amenityList.map(a => ({
     type: `${amenityIcons[a] || '🏢'} ${a}`,
     location: '',
     hours: '',
   }));
 
-  // 스탯 변환
-  const bStats = building.stats || {};
+  // 스탯
+  const totalFloors = building.totalFloors || building.total_floors || floors.length;
   const statsRaw = [
-    { type: 'total_floors', value: `${building.totalFloors || floors.length}층` },
-    { type: 'occupancy', value: `${Math.round(85 + Math.random() * 10)}%` },
-    { type: 'tenants', value: `${Math.max(floors.length, 3)}개` },
-    { type: 'operating', value: `${Math.max(floors.length - 1, 2)}개` },
+    { type: 'total_floors', value: `${totalFloors}층` },
+    { type: 'occupancy', value: `${building.occupancy_rate || Math.round(85 + Math.random() * 10)}%` },
+    { type: 'tenants', value: `${building.total_tenants || Math.max(floors.length, 3)}개` },
+    { type: 'operating', value: `${building.open_tenants || Math.max(floors.length - 1, 2)}개` },
   ];
 
-  // LIVE 피드 변환
+  // LIVE 피드
   const rawFeeds = getLiveFeedsByBuilding(id);
-  const feedTypeMap = { event: 'event', promo: 'promotion', alert: 'congestion', news: 'update' };
-  const liveFeeds = rawFeeds.map(f => ({
-    feed_type: feedTypeMap[f.type] || 'update',
-    title: f.title,
-    subtitle: f.description?.slice(0, 40) || '',
-    time_label: f.isLive ? '방금' : '이전',
-  }));
+  let liveFeeds;
+  if (rawFeeds.length > 0) {
+    const feedTypeMap = { event: 'event', promo: 'promotion', alert: 'congestion', news: 'update' };
+    liveFeeds = rawFeeds.map(f => ({
+      feed_type: feedTypeMap[f.type] || 'update',
+      title: f.title,
+      subtitle: f.description?.slice(0, 40) || '',
+      time_label: f.isLive ? '방금' : '이전',
+    }));
+  } else {
+    liveFeeds = [...FALLBACK_FEEDS];
+  }
 
-  const restaurants = DUMMY_RESTAURANTS_MAP[id] || [];
-  const realEstate = DUMMY_REALESTATE_MAP[id] || [];
-  const tourism = DUMMY_TOURISM_MAP[id] || null;
-  const promotion = DUMMY_PROMOTIONS_MAP[id] || null;
+  // 탭 데이터: ID 매칭 우선, 없으면 폴백
+  const restaurants = DUMMY_RESTAURANTS_MAP[id] || (isKnown ? [] : FALLBACK_RESTAURANTS);
+  const realEstate = DUMMY_REALESTATE_MAP[id] || (isKnown ? [] : FALLBACK_REALESTATE);
+  const tourism = DUMMY_TOURISM_MAP[id] || (isKnown ? null : FALLBACK_TOURISM);
+  const promotion = DUMMY_PROMOTIONS_MAP[id] || (isKnown ? null : FALLBACK_PROMOTION);
 
   return {
     building: {
@@ -488,8 +559,8 @@ export const buildDummyProfile = (building) => {
       lat: building.latitude || building.lat,
       lng: building.longitude || building.lng,
       distance: building.distance || 0,
-      building_use: building.buildingType,
-      completion_year: building.yearBuilt,
+      building_use: building.buildingType || building.building_use || building.sub_type || '주상복합',
+      completion_year: building.yearBuilt || building.built_year,
     },
     stats: { raw: statsRaw },
     floors,
