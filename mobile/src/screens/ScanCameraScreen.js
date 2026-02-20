@@ -401,8 +401,9 @@ const ScanCameraScreen = ({ route, navigation }) => {
     return rankBuildings(buildings, sensorData, timeContext, geminiResults);
   }, [buildings, heading, gyroscope, accelerometer, cameraAngle, timeContext, geminiResults]);
 
-  // 포커스 영역 내 가장 가까운 건물 1개 계산
+  // 포커스 영역 내 가장 가까운 건물 1개 계산 (바텀시트 열리면 중단)
   const focusedBuilding = useMemo(() => {
+    if (sheetOpen) return null; // 바텀시트 열려있으면 감지 중단
     if (!rankedBuildings.length) return null;
     // heading ± FOCUS_ANGLE 범위 내 건물만 필터
     const inFocus = rankedBuildings.filter(b => {
@@ -415,7 +416,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
     // 거리순 → 가장 가까운 1개
     if (!inFocus.length) return null;
     return inFocus.sort((a, b) => (a.distance || 999) - (b.distance || 999))[0];
-  }, [rankedBuildings, heading]);
+  }, [rankedBuildings, heading, sheetOpen]);
 
   // ===== 게이지 시스템 =====
   useEffect(() => {
@@ -431,8 +432,8 @@ const ScanCameraScreen = ({ route, navigation }) => {
       gaugeTimerRef.current = null;
     }
 
-    // 포커스 건물 있으면 게이지 시작
-    if (newId && !scanComplete) {
+    // 포커스 건물 있으면 게이지 시작 (바텀시트 열려있으면 중단)
+    if (newId && !scanComplete && !sheetOpen) {
       gaugeTimerRef.current = setInterval(() => {
         setGaugeProgress(prev => {
           const next = prev + (GAUGE_TICK / GAUGE_DURATION);
@@ -451,7 +452,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
     return () => {
       if (gaugeTimerRef.current) clearInterval(gaugeTimerRef.current);
     };
-  }, [focusedBuilding?.id, scanComplete]);
+  }, [focusedBuilding?.id, scanComplete, sheetOpen]);
 
   // 게이지 완료 시 → 햅틱 + 0.5초 메시지 + scan-complete API + 바텀시트
   useEffect(() => {
@@ -548,9 +549,9 @@ const ScanCameraScreen = ({ route, navigation }) => {
     behaviorTracker.updateVisibleBuildings(ids);
   }, [focusedBuilding]);
 
-  // Gemini Vision: 주기적 (안정 + 선택 건물)
+  // Gemini Vision: 주기적 (안정 + 선택 건물, 바텀시트 열려있으면 중단)
   useEffect(() => {
-    if (!isStable || !selectedBuildingId || !cameraRef.current) return;
+    if (!isStable || !selectedBuildingId || !cameraRef.current || sheetOpen) return;
     const run = async () => {
       if (geminiAnalyzingRef.current) return;
       geminiAnalyzingRef.current = true;
@@ -571,7 +572,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
     geminiTimerRef.current = setInterval(run, 15000);
     const init = setTimeout(run, 3000);
     return () => { clearInterval(geminiTimerRef.current); clearTimeout(init); };
-  }, [isStable, selectedBuildingId, buildings, userLocation, heading]);
+  }, [isStable, selectedBuildingId, buildings, userLocation, heading, sheetOpen]);
 
   // 카메라 권한
   useEffect(() => {
