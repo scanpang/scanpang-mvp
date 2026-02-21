@@ -535,22 +535,22 @@ const ScanCameraScreen = ({ route, navigation }) => {
         // 임계값 미달 → 기존 게이지 유지 (일시적 흔들림 무시)
         return;
       } else if (focusedIdRef.current && newId !== focusedIdRef.current) {
-        // 다른 건물로 전환 → 디바운스 (연속 N틱 같은 건물이어야 전환 확정)
+        // 다른 건물로 전환 → 즉시 게이지 리셋 + 디바운스 확정
+        if (gaugeTimerRef.current) clearInterval(gaugeTimerRef.current);
+        gaugeTimerRef.current = null;
+        setGaugeProgress(0);
+        setScanComplete(false);
+        setScanCompleteMessage(null);
+
         if (pendingSwitchRef.current === newId) {
           switchCountRef.current++;
           if (switchCountRef.current >= switchConfirmThreshold) {
             // 전환 확정
             focusedIdRef.current = newId;
             outOfFocusCountRef.current = 0;
-            setGaugeProgress(0);
-            setScanComplete(false);
-            setScanCompleteMessage(null);
-            if (gaugeTimerRef.current) clearInterval(gaugeTimerRef.current);
-            gaugeTimerRef.current = null;
             pendingSwitchRef.current = null;
             switchCountRef.current = 0;
           }
-          // 아직 확정 안 됨 → focusedIdRef.current 유지, 기존 게이지 계속
         } else {
           // 새로운 후보 건물 등장 → 카운트 시작
           pendingSwitchRef.current = newId;

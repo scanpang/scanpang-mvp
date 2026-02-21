@@ -37,13 +37,31 @@ const useNearbyBuildings = ({
   enabled = true,
 } = {}) => {
   const [buildings, setBuildings] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true); // 초기 로딩 상태
   const [error, setError] = useState(null);
 
   const debounceTimer = useRef(null);
   const lastParams = useRef(null);
   const isMounted = useRef(true);
   const retryDoneRef = useRef(false);
+  const cacheLoadedRef = useRef(false);
+
+  // 마운트 즉시 캐시 로드 → API 응답 전에도 감지 가능
+  useEffect(() => {
+    if (cacheLoadedRef.current) return;
+    cacheLoadedRef.current = true;
+    (async () => {
+      try {
+        const cached = await AsyncStorage.getItem(BUILDINGS_CACHE_KEY);
+        if (cached && isMounted.current) {
+          const parsed = JSON.parse(cached);
+          if (parsed.length > 0) {
+            setBuildings(prev => prev.length === 0 ? parsed : prev);
+          }
+        }
+      } catch {}
+    })();
+  }, []);
 
   /**
    * API 호출 실행 함수
