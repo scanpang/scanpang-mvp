@@ -4,7 +4,7 @@
  * - X레이 탭: 층별 투시 리스트
  * - 다크 테마 (#141428 배경)
  */
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -364,22 +364,55 @@ const ErrorView = ({ onRetry }) => (
   </View>
 );
 
+// ===== 보강 중 인디케이터 =====
+const EnrichingBanner = () => (
+  <View style={s.enrichingBanner}>
+    <ActivityIndicator size="small" color={C.cyan} />
+    <Text style={s.enrichingText}>정보 수집 중...</Text>
+  </View>
+);
+
+// ===== Lazy 로딩 스피너 =====
+const LazySpinner = () => (
+  <View style={s.lazySpinner}>
+    <ActivityIndicator size="small" color={C.blue} />
+    <Text style={s.lazySpinnerText}>데이터 불러오는 중...</Text>
+  </View>
+);
+
 // ===== 메인 컴포넌트 =====
-const BuildingProfileSheet = ({ buildingProfile, loading, error, onClose, onRetry, onXrayToggle, xrayActive }) => {
+const BuildingProfileSheet = ({ buildingProfile, loading, enriching, error, onClose, onRetry, onXrayToggle, xrayActive, onLazyLoad }) => {
   const [activeTab, setActiveTab] = useState('overview');
+  // lazy 탭 로딩 상태
+  const [lazyLoading, setLazyLoading] = useState({});
+  // lazy 탭 이미 로드한 탭 추적
+  const lazyLoadedRef = useRef(new Set());
 
   const profile = buildingProfile;
   const building = profile?.building;
   const meta = profile?.meta;
 
-  // 탭 변경 시 데이터 없으면 개요로 폴백
+  // 탭 변경 시 lazy 데이터 로드
   const handleTabChange = (tab) => {
     setActiveTab(tab);
+
+    // lazy 대상 탭: food, estate, tourism
+    const lazyTabs = ['food', 'estate', 'tourism'];
+    if (lazyTabs.includes(tab) && onLazyLoad && !lazyLoadedRef.current.has(tab)) {
+      lazyLoadedRef.current.add(tab);
+      setLazyLoading(prev => ({ ...prev, [tab]: true }));
+      // onLazyLoad는 비동기, 완료 후 profile이 업데이트되면 자동 렌더
+      Promise.resolve(onLazyLoad(tab)).finally(() => {
+        setLazyLoading(prev => ({ ...prev, [tab]: false }));
+      });
+    }
   };
 
-  // 프로필 바뀌면 개요탭으로 리셋
+  // 프로필 바뀌면 개요탭으로 리셋 + lazy 추적 초기화
   useEffect(() => {
     setActiveTab('overview');
+    lazyLoadedRef.current.clear();
+    setLazyLoading({});
   }, [building?.id]);
 
   // 로딩 중
@@ -427,11 +460,12 @@ const BuildingProfileSheet = ({ buildingProfile, loading, error, onClose, onRetr
 
       {activeTab === 'overview' && (
         <View>
+          {enriching && <EnrichingBanner />}
           <AmenityTags amenities={profile.amenities} />
           <StatGrid stats={profile.stats} />
           <LiveFeedSection feeds={profile.liveFeeds} />
           <PromotionBanner promotion={profile.promotion} />
-          {isDataSparse && <CollectingMessage />}
+          {isDataSparse && !enriching && <CollectingMessage />}
         </View>
       )}
 
@@ -442,7 +476,8 @@ const BuildingProfileSheet = ({ buildingProfile, loading, error, onClose, onRetr
       {activeTab === 'food' && (
         <View style={s.tabContent}>
           <Text style={s.tabSectionTitle}>{'\uD83C\uDF7D\uFE0F'} 맛집 {'\u00B7'} 카페</Text>
-          {(profile.restaurants || []).length === 0 ? (
+          {lazyLoading.food && <LazySpinner />}
+          {(profile.restaurants || []).length === 0 && !lazyLoading.food ? (
             <View style={s.tabEmptyWrap}>
               <Text style={s.tabEmptyIcon}>{'\uD83C\uDF7D\uFE0F'}</Text>
               <Text style={s.tabEmptyText}>이 건물의 맛집 정보를 아직 수집하지 못했어요</Text>
@@ -486,7 +521,8 @@ const BuildingProfileSheet = ({ buildingProfile, loading, error, onClose, onRetr
       {activeTab === 'estate' && (
         <View style={s.tabContent}>
           <Text style={s.tabSectionTitle}>{'\uD83C\uDFE0'} 매물 정보</Text>
-          {(profile.realEstate || []).length === 0 ? (
+          {lazyLoading.estate && <LazySpinner />}
+          {(profile.realEstate || []).length === 0 && !lazyLoading.estate ? (
             <View style={s.tabEmptyWrap}>
               <Text style={s.tabEmptyIcon}>{'\uD83C\uDFE0'}</Text>
               <Text style={s.tabEmptyText}>현재 등록된 매물이 없습니다</Text>
@@ -530,7 +566,8 @@ const BuildingProfileSheet = ({ buildingProfile, loading, error, onClose, onRetr
 
       {activeTab === 'tourism' && (
         <View style={s.tabContent}>
-          {!profile.tourism ? (
+          {lazyLoading.tourism && <LazySpinner />}
+          {!profile.tourism && !lazyLoading.tourism ? (
             <View style={s.tabEmptyWrap}>
               <Text style={s.tabEmptyIcon}>{'\u2708\uFE0F'}</Text>
               <Text style={s.tabEmptyText}>관광 정보가 등록되지 않은 건물입니다</Text>
@@ -856,6 +893,22 @@ const s = StyleSheet.create({
   // 빈 상태
   emptyWrap: { alignItems: 'center', paddingVertical: SPACING.xxl },
   emptyText: { fontSize: 15, color: C.text2 },
+
+  // enriching 배너
+  enrichingBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: 'rgba(6,182,212,0.1)',
+    paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8,
+    marginBottom: SPACING.md,
+  },
+  enrichingText: { fontSize: 12, color: C.cyan, fontWeight: '600' },
+
+  // lazy 스피너
+  lazySpinner: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 8, paddingVertical: SPACING.lg,
+  },
+  lazySpinnerText: { fontSize: 13, color: C.text2 },
 });
 
 export default BuildingProfileSheet;

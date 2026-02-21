@@ -1,15 +1,14 @@
 /**
- * useNearbyBuildings - 주변 건물 조회 커스텀 훅
+ * useNearbyBuildings - 주변 건물 조회 커스텀 훅 (v2 — 더미 의존 제거)
  * - 위치/heading 변경 시 자동 API 호출
- * - 500ms 디바운싱
- * - 로딩/에러 상태 관리
- * - API 실패 시 더미 데이터 폴백
+ * - 200ms 디바운싱
+ * - 폴백: AsyncStorage 캐시만, 더미 없음
+ * - kakao_ prefix ID 인식
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getNearbyBuildings } from '../services/api';
-import { DUMMY_BUILDINGS } from '../constants/dummyData';
 
 const BUILDINGS_CACHE_KEY = '@scanpang_nearby_cache';
 
@@ -41,20 +40,15 @@ const useNearbyBuildings = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  // 디바운싱 타이머 ref
   const debounceTimer = useRef(null);
-  // 마지막 요청 파라미터 (불필요한 중복 요청 방지)
   const lastParams = useRef(null);
-  // 마운트 상태 추적
   const isMounted = useRef(true);
-  // 자동 재시도 1회 제한
   const retryDoneRef = useRef(false);
 
   /**
    * API 호출 실행 함수
    */
   const fetchBuildings = useCallback(async (lat, lng, hd, rad) => {
-    // 마운트 상태 확인
     if (!isMounted.current) return;
 
     setLoading(true);
@@ -63,11 +57,10 @@ const useNearbyBuildings = ({
     try {
       const response = await getNearbyBuildings(lat, lng, rad, hd);
       if (isMounted.current) {
-        // API 응답: { success, data: [...], meta } (인터셉터가 response.data 반환)
         const rawBuildings = Array.isArray(response) ? response
           : response?.data ? (Array.isArray(response.data) ? response.data : [])
           : [];
-        // API 필드명 정규화 (distanceMeters → distance)
+        // API 필드명 정규화
         const normalized = rawBuildings.map((b) => ({
           ...b,
           distance: b.distance ?? b.distanceMeters ?? null,
@@ -81,28 +74,23 @@ const useNearbyBuildings = ({
         } catch {}
       }
     } catch (err) {
-      console.warn('[useNearbyBuildings] API 실패, 캐시/더미 데이터로 폴백:', err.message);
+      console.warn('[useNearbyBuildings] API 실패, 캐시 데이터로 폴백:', err.message);
 
       if (isMounted.current) {
-        // 캐시된 데이터가 있으면 사용, 없으면 더미
-        let fallback;
+        // 캐시된 데이터 사용 (더미 데이터 폴백 제거)
+        let fallback = [];
         try {
           const cached = await AsyncStorage.getItem(BUILDINGS_CACHE_KEY);
           if (cached) {
             fallback = JSON.parse(cached);
           }
         } catch {}
-        if (!fallback || !fallback.length) {
-          fallback = filterOutApartments(
-            DUMMY_BUILDINGS
-              .filter((b) => b.distance <= rad)
-              .sort((a, b) => a.distance - b.distance)
-          );
-        }
 
         setBuildings(fallback);
         setError({
-          message: 'API 연결 실패. 캐시 데이터를 표시합니다.',
+          message: fallback.length > 0
+            ? 'API 연결 실패. 캐시 데이터를 표시합니다.'
+            : 'API 연결 실패. 건물 데이터를 불러올 수 없습니다.',
           isFallback: true,
         });
         setLoading(false);
@@ -112,7 +100,7 @@ const useNearbyBuildings = ({
           retryDoneRef.current = true;
           setTimeout(() => {
             if (isMounted.current) {
-              lastParams.current = null; // 캐시 무시
+              lastParams.current = null;
               fetchBuildings(lat, lng, hd, rad);
             }
           }, 3000);
@@ -125,16 +113,13 @@ const useNearbyBuildings = ({
    * 디바운싱된 fetch 함수
    */
   const debouncedFetch = useCallback((lat, lng, hd, rad) => {
-    // 기존 타이머 취소
     if (debounceTimer.current) {
       clearTimeout(debounceTimer.current);
     }
 
-    // 파라미터 변경 여부 확인
     const paramsKey = `${lat?.toFixed(5)}_${lng?.toFixed(5)}_${Math.round(hd)}_${rad}`;
     if (lastParams.current === paramsKey) return;
 
-    // 200ms 디바운싱 (빠른 감지)
     debounceTimer.current = setTimeout(() => {
       lastParams.current = paramsKey;
       fetchBuildings(lat, lng, hd, rad);
@@ -146,7 +131,6 @@ const useNearbyBuildings = ({
    */
   useEffect(() => {
     if (!enabled || latitude === null || longitude === null) return;
-
     debouncedFetch(latitude, longitude, heading, radius);
   }, [latitude, longitude, heading, radius, enabled, debouncedFetch]);
 
@@ -155,18 +139,12 @@ const useNearbyBuildings = ({
    */
   const refetch = useCallback(() => {
     if (latitude === null || longitude === null) return;
-
-    // 디바운싱 무시하고 즉시 호출
     lastParams.current = null;
     fetchBuildings(latitude, longitude, heading, radius);
   }, [latitude, longitude, heading, radius, fetchBuildings]);
 
-  /**
-   * 컴포넌트 언마운트 시 정리
-   */
   useEffect(() => {
     isMounted.current = true;
-
     return () => {
       isMounted.current = false;
       if (debounceTimer.current) {

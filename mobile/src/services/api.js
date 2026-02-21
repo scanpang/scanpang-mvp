@@ -87,8 +87,16 @@ export const getNearbyBuildings = async (lat, lng, radius = 500, heading = 0) =>
   );
 };
 
-export const getBuildingProfile = async (id) => {
-  return withRetry(() => apiClient.get(`/buildings/${id}/profile`));
+export const getBuildingProfile = async (id, params = {}) => {
+  return withRetry(() => apiClient.get(`/buildings/${id}/profile`, { params }));
+};
+
+export const getBuildingEnrich = async (id, params = {}) => {
+  return withRetry(() => apiClient.get(`/buildings/${id}/profile/enrich`, { params }));
+};
+
+export const getBuildingLazy = async (id, params = {}) => {
+  return withRetry(() => apiClient.get(`/buildings/${id}/profile/lazy`, { params }));
 };
 
 export const getBuildingFloors = async (id) => {
@@ -227,6 +235,8 @@ export { apiClient };
 export default {
   getNearbyBuildings,
   getBuildingProfile,
+  getBuildingEnrich,
+  getBuildingLazy,
   getBuildingFloors,
   postScanComplete,
   postScanLog,

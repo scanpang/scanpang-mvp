@@ -370,20 +370,15 @@ async function getProfile(buildingId) {
       }
     : null;
 
-  // ===== 폴백 더미 데이터: 빈 테이블 감지 시 building_use 기반 생성 =====
-  const buildingUse = b.building_use || '오피스';
-  const totalFloors = b.total_floors || 10;
-  const basementFloors = b.basement_floors || Math.min(3, Math.max(1, Math.floor(totalFloors / 5)));
-  const fallback = generateFallbackData(buildingUse, totalFloors, basementFloors, b.name);
-
-  const floors = dbFloors.length > 0 ? dbFloors : fallback.floors;
-  const amenities = dbAmenities.length > 0 ? dbAmenities : fallback.amenities;
-  const restaurants = dbRestaurants.length > 0 ? dbRestaurants : fallback.restaurants;
-  const realEstate = dbRealEstate.length > 0 ? dbRealEstate : fallback.realEstate;
-  const tourism = dbTourism || fallback.tourism;
-  const liveFeeds = dbLiveFeeds.length > 0 ? dbLiveFeeds : fallback.liveFeeds;
-  const promotion = dbPromotion || fallback.promotion;
-  const stats = dbStats || fallback.stats;
+  // ===== DB 데이터 그대로 사용 (더미 폴백 제거) =====
+  const floors = dbFloors;
+  const amenities = dbAmenities;
+  const restaurants = dbRestaurants;
+  const realEstate = dbRealEstate;
+  const tourism = dbTourism;
+  const liveFeeds = dbLiveFeeds;
+  const promotion = dbPromotion;
+  const stats = dbStats;
 
   // meta: 폴백 포함 실제 데이터 기준으로 계산
   const hasFloors = floors.length > 0;
@@ -432,7 +427,8 @@ async function getProfile(buildingId) {
       hasRealEstate,
       hasTourism,
       dataCompleteness,
-      isFallback: dbFloors.length === 0 && dbRestaurants.length === 0,
+      enrichAvailable: true,
+      source: 'db',
     },
   };
 }
@@ -468,8 +464,146 @@ async function getFloors(buildingId) {
   }));
 }
 
+/**
+ * Phase1 프로필 빌더 — 카카오 데이터 → BuildingProfileSheet 호환 구조
+ * 빠른 1차 응답용 (DB + 카카오 기반)
+ * @param {Object} kakaoData - 카카오 검색 결과 (coordToAddress + searchByKeyword)
+ * @param {Object|null} dbProfile - DB 프로필 (있으면 병합)
+ * @param {Array} inBuildingPlaces - 동일 건물 내 카카오 장소 목록
+ * @returns {Object} BuildingProfileSheet 호환 프로필
+ */
+function buildProfile_Phase1(kakaoData, dbProfile, inBuildingPlaces = []) {
+  const building = {
+    id: kakaoData.id || dbProfile?.building?.id,
+    name: kakaoData.name || dbProfile?.building?.name || '건물',
+    address: kakaoData.roadAddress || kakaoData.address || dbProfile?.building?.address || '',
+    type: kakaoData.categoryDetail || dbProfile?.building?.type || '',
+    total_floors: dbProfile?.building?.total_floors || null,
+    basement_floors: dbProfile?.building?.basement_floors || null,
+    built_year: dbProfile?.building?.built_year || null,
+    parking_count: dbProfile?.building?.parking_count || null,
+    description: dbProfile?.building?.description || null,
+    lat: kakaoData.lat || dbProfile?.building?.lat,
+    lng: kakaoData.lng || dbProfile?.building?.lng,
+    thumbnail_url: dbProfile?.building?.thumbnail_url || null,
+  };
+
+  // 카카오 장소 → 맛집/카페 분리
+  const restaurants = inBuildingPlaces
+    .filter(p => ['FD6', 'CE7'].includes(p.categoryCode) || ['음식점', '카페'].includes(p.category))
+    .map(p => ({
+      name: p.name,
+      category: p.category || '',
+      sub_category: p.categoryDetail || '',
+      signature_menu: null,
+      price_range: null,
+      wait_teams: null,
+      rating: null,
+      review_count: null,
+      is_open: null,
+      phone: p.phone || null,
+      kakaoUrl: p.placeUrl || null,
+    }));
+
+  // 기본 통계 (카카오 장소 수 기반)
+  const stats = dbProfile?.stats || {
+    occupancy_rate: null,
+    tenant_count: inBuildingPlaces.length || null,
+    operating_count: null,
+    raw: [
+      { type: 'tenants', value: `${inBuildingPlaces.length}개`, icon: 'store', displayOrder: 1 },
+    ],
+  };
+
+  return {
+    building,
+    stats,
+    floors: dbProfile?.floors || [],
+    amenities: dbProfile?.amenities || extractAmenities(inBuildingPlaces),
+    realEstate: dbProfile?.realEstate || [],
+    restaurants: dbProfile?.restaurants?.length > 0 ? dbProfile.restaurants : restaurants,
+    tourism: dbProfile?.tourism || null,
+    liveFeeds: dbProfile?.liveFeeds || [],
+    promotion: dbProfile?.promotion || null,
+    meta: {
+      hasFloors: (dbProfile?.floors || []).length > 0,
+      hasRestaurants: restaurants.length > 0 || (dbProfile?.restaurants || []).length > 0,
+      hasRealEstate: (dbProfile?.realEstate || []).length > 0,
+      hasTourism: !!dbProfile?.tourism,
+      dataCompleteness: calculateCompleteness(dbProfile, inBuildingPlaces),
+      enrichAvailable: true,
+      source: 'kakao',
+    },
+  };
+}
+
+/**
+ * 카카오 장소 목록에서 편의시설 추출
+ */
+function extractAmenities(places) {
+  const amenityCategories = {
+    'BK9': { type: '은행', label: '은행' },
+    'MT1': { type: '마트', label: '마트' },
+    'CS2': { type: '편의점', label: '편의점' },
+    'HP8': { type: '병원', label: '병원' },
+    'PM9': { type: '약국', label: '약국' },
+    'CE7': { type: '카페', label: '카페' },
+  };
+
+  const seen = new Set();
+  return places
+    .filter(p => amenityCategories[p.categoryCode] && !seen.has(p.categoryCode) && seen.add(p.categoryCode))
+    .map(p => ({
+      type: amenityCategories[p.categoryCode].type,
+      label: `${amenityCategories[p.categoryCode].label} (${p.name})`,
+      location: '',
+      is_free: true,
+      hours: '',
+    }));
+}
+
+/**
+ * 데이터 완성도 계산
+ */
+function calculateCompleteness(dbProfile, places) {
+  let score = 0;
+  if (dbProfile?.floors?.length > 0) score += 25;
+  if (dbProfile?.restaurants?.length > 0 || places.filter(p => ['FD6', 'CE7'].includes(p.categoryCode)).length > 0) score += 20;
+  if (dbProfile?.amenities?.length > 0 || places.length > 0) score += 15;
+  if (dbProfile?.stats?.raw?.length > 0) score += 15;
+  if (dbProfile?.realEstate?.length > 0) score += 15;
+  if (dbProfile?.tourism) score += 10;
+  return score;
+}
+
+/**
+ * 외부 ID (카카오/OSM)로 DB 건물 매칭
+ * @param {string} externalId - "kakao_12345" 또는 "osm_67890"
+ * @returns {Object|null} DB 프로필 (없으면 null)
+ */
+async function getProfileByExternalId(externalId) {
+  if (!externalId) return null;
+
+  // 먼저 source_mappings 테이블 확인 (있으면)
+  try {
+    const mappingRes = await db.query(
+      `SELECT building_id FROM source_mappings WHERE external_id = $1 LIMIT 1`,
+      [externalId]
+    );
+    if (mappingRes.rows.length > 0) {
+      return getProfile(mappingRes.rows[0].building_id);
+    }
+  } catch {
+    // source_mappings 테이블 없어도 무시
+  }
+
+  return null;
+}
+
 module.exports = {
   getProfile,
   getFloors,
   generateFallbackData,
+  buildProfile_Phase1,
+  getProfileByExternalId,
 };

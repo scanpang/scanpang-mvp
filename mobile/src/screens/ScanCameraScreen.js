@@ -31,7 +31,6 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Colors, SPACING, TOUCH } from '../constants/theme';
 import { DUMMY_POINTS } from '../constants/dummyData';
 import { postScanLog, postScanComplete, getServerTimeContext, analyzeFrame } from '../services/api';
-import { buildDummyProfile } from '../constants/dummyData';
 import useNearbyBuildings from '../hooks/useNearbyBuildings';
 import useBuildingDetail from '../hooks/useBuildingDetail';
 import useSensorData from '../hooks/useSensorData';
@@ -416,7 +415,25 @@ const ScanCameraScreen = ({ route, navigation }) => {
     enabled: isARMode && isLocalized && !sheetOpen,
   });
 
-  const { building: buildingDetail, loading: detailLoading } = useBuildingDetail(selectedBuildingId);
+  // 선택된 건물의 메타 정보 (nearby에서 전달 → profile 쿼리 파라미터용)
+  const selectedBuildingMeta = useMemo(() => {
+    if (!selectedBuildingId) return null;
+    const found = buildings.find(b => b.id === selectedBuildingId);
+    if (!found) return null;
+    return {
+      lat: found.lat,
+      lng: found.lng,
+      name: found.name,
+      address: found.address || found.roadAddress || '',
+      category: found.category || '',
+      categoryDetail: found.categoryDetail || '',
+    };
+  }, [selectedBuildingId, buildings]);
+
+  const { building: buildingDetail, loading: detailLoading, enriching, fetchLazyTab } = useBuildingDetail(
+    selectedBuildingId,
+    { buildingMeta: selectedBuildingMeta },
+  );
 
   const selectedBuilding = selectedBuildingId
     ? { ...(buildings.find(b => b.id === selectedBuildingId) || {}), ...(buildingDetail || {}) }
@@ -585,49 +602,24 @@ const ScanCameraScreen = ({ route, navigation }) => {
     setScanCompleteMessage(`${building.name} 스캔 완료!`);
     const msgTimer = setTimeout(() => setScanCompleteMessage(null), 500);
 
-    // 3. 바텀시트 즉시 열기 + 더미 프로필 즉시 세팅
+    // 3. 바텀시트 즉시 열기 (스켈레톤 표시 → useBuildingDetail이 프로필 로드)
     setSelectedBuildingId(building.id);
     setProfileError(null);
-
-    const dummyProfile = buildDummyProfile(building);
-    if (dummyProfile) setProfileData(dummyProfile);
+    setProfileData(null); // 스켈레톤 표시
 
     setTimeout(() => bottomSheetRef.current?.snapToIndex(1), 50);
 
-    // 백그라운드에서 API 호출 (성공 시 덮어쓰기)
+    // 백그라운드에서 scan-complete API 호출 (DB 건물만)
     const buildingId = building.id;
-    postScanComplete(buildingId, {
-      confidence: building.confidencePercent || building.confidence || 50,
-      sensorData: {
-        gps: { lat: userLocation?.lat, lng: userLocation?.lng, accuracy: 10 },
-        compass: { heading },
-      },
-    }).then(res => {
-      const data = res?.data || res;
-      if (data) {
-        setProfileData(prev => {
-          if (!prev) return data;
-          // 비어있지 않은 필드만 덮어쓰기 (meta 보호)
-          const merged = { ...prev };
-          for (const [key, value] of Object.entries(data)) {
-            if (value === null || value === undefined || value === '') continue;
-            if (Array.isArray(value) && value.length === 0) continue;
-            if (key === 'meta') {
-              // meta는 병합 (덮어쓰기 방지), 실제 데이터 기준으로 재계산
-              const mergedMeta = { ...prev.meta, ...value };
-              mergedMeta.hasFloors = (merged.floors || data.floors || []).length > 0;
-              mergedMeta.hasRestaurants = (merged.restaurants || data.restaurants || []).length > 0;
-              mergedMeta.hasRealEstate = (merged.realEstate || data.realEstate || []).length > 0;
-              mergedMeta.hasTourism = !!(merged.tourism || data.tourism);
-              merged.meta = mergedMeta;
-              continue;
-            }
-            merged[key] = value;
-          }
-          return merged;
-        });
-      }
-    }).catch(() => {});
+    if (!buildingId.startsWith('kakao_') && !buildingId.startsWith('osm_')) {
+      postScanComplete(buildingId, {
+        confidence: building.confidencePercent || building.confidence || 50,
+        sensorData: {
+          gps: { lat: userLocation?.lat, lng: userLocation?.lng, accuracy: 10 },
+          compass: { heading },
+        },
+      }).catch(() => {});
+    }
 
     // scan log + behavior
     postScanLog({ sessionId: sessionIdRef.current, buildingId, eventType: 'gaze_scan', userLat: userLocation?.lat, userLng: userLocation?.lng, deviceHeading: heading, metadata: { confidence: building.confidence } }).catch(() => {});
@@ -821,10 +813,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
     setSelectedBuildingId(building.id);
     setScanComplete(true);
     setProfileError(null);
-
-    // 더미 프로필 즉시 세팅
-    const dummyProfile = buildDummyProfile(building);
-    if (dummyProfile) setProfileData(dummyProfile);
+    setProfileData(null); // 스켈레톤 표시
 
     // 바텀시트 즉시 열기
     setTimeout(() => bottomSheetRef.current?.snapToIndex(1), 50);
@@ -1011,21 +1000,18 @@ const ScanCameraScreen = ({ route, navigation }) => {
           {selectedBuildingId ? (
             <BuildingProfileSheet
               buildingProfile={profileData || buildingDetail}
-              loading={detailLoading && !profileData}
+              loading={detailLoading && !profileData && !buildingDetail}
+              enriching={enriching}
               error={profileError}
               onClose={handleCloseSheet}
               onXrayToggle={handleXrayToggle}
               xrayActive={xrayActive}
+              onLazyLoad={fetchLazyTab}
               onRetry={() => {
                 setProfileError(null);
                 if (selectedBuildingId) {
-                  postScanComplete(selectedBuildingId, {
-                    confidence: 50,
-                    sensorData: { gps: { lat: userLocation?.lat, lng: userLocation?.lng }, compass: { heading } },
-                  }).then(res => {
-                    const data = res?.data || res;
-                    if (data) setProfileData(data);
-                  }).catch(() => setProfileError(true));
+                  setProfileData(null);
+                  // refetch는 useBuildingDetail이 처리
                 }
               }}
             />

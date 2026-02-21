@@ -5,7 +5,6 @@
  * - DB에 없는 건물도 AR 라벨로 표시 가능
  */
 const axios = require('axios');
-const { generateFallbackData } = require('./buildingProfile');
 
 const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
 
@@ -178,21 +177,18 @@ function getOsmBuildingData(osmId) {
 
 /**
  * OSM 건물의 프로필 생성 (BuildingProfileSheet 호환 형식)
- * buildingProfile.getProfile()과 동일한 nested 구조 반환
+ * 더미 데이터 없이 실제 OSM 태그 기반 최소 프로필 반환
  */
 function generateOsmProfile(building) {
-  const buildingUse = building.buildingUse || '건물';
-  const totalFloors = building.totalFloors || 10;
-  const basementFloors = building.basementFloors || Math.min(3, Math.max(1, Math.floor(totalFloors / 5)));
+  const buildingUse = building.buildingUse || '';
+  const totalFloors = building.totalFloors || null;
+  const basementFloors = building.basementFloors || null;
   const buildingName = building.name || '건물';
 
-  // buildingProfile의 폴백 생성기 활용 (동일 형식 보장)
-  const fallback = generateFallbackData(buildingUse, totalFloors, basementFloors, buildingName);
-
-  const hasFloors = fallback.floors.length > 0;
-  const hasRestaurants = fallback.restaurants.length > 0;
-  const hasRealEstate = fallback.realEstate.length > 0;
-  const hasTourism = fallback.tourism !== null;
+  // 스탯: OSM 태그에서 추출 가능한 것만
+  const statsRaw = [];
+  if (totalFloors) statsRaw.push({ type: 'total_floors', value: `${totalFloors}층`, displayOrder: 1 });
+  if (buildingUse) statsRaw.push({ type: 'type', value: buildingUse, displayOrder: 2 });
 
   return {
     building: {
@@ -209,21 +205,22 @@ function generateOsmProfile(building) {
       lng: building.lng,
       thumbnail_url: null,
     },
-    stats: fallback.stats,
-    floors: fallback.floors,
-    amenities: fallback.amenities,
-    restaurants: fallback.restaurants,
-    realEstate: fallback.realEstate,
-    tourism: fallback.tourism,
-    liveFeeds: fallback.liveFeeds,
-    promotion: fallback.promotion,
+    stats: statsRaw.length > 0 ? { raw: statsRaw } : null,
+    floors: [],
+    amenities: [],
+    restaurants: [],
+    realEstate: [],
+    tourism: null,
+    liveFeeds: [],
+    promotion: null,
     meta: {
-      hasFloors,
-      hasRestaurants,
-      hasRealEstate,
-      hasTourism,
-      dataCompleteness: 50,
-      isFallback: true,
+      hasFloors: false,
+      hasRestaurants: false,
+      hasRealEstate: false,
+      hasTourism: false,
+      dataCompleteness: 10,
+      enrichAvailable: true,
+      source: 'osm',
     },
   };
 }

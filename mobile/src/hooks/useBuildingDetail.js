@@ -1,25 +1,20 @@
 /**
- * useBuildingDetail - 건물 상세 조회 커스텀 훅
- * - getBuildingProfile(id) API 호출
- * - 캐싱: 같은 건물 반복 조회 방지
- * - 로딩/에러 상태 관리
+ * useBuildingDetail - 건물 상세 조회 커스텀 훅 (v2 — 프로그레시브 로딩)
+ * - 3단계 상태: loading → enriching → 완료
+ * - 1차: getBuildingProfile → 즉시 UI 갱신
+ * - 2차: enrichProfile (meta.enrichAvailable → 자동 트리거)
+ * - Lazy: fetchLazyTab (탭 전환 시 호출)
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { getBuildingProfile } from '../services/api';
-import { DUMMY_BUILDINGS, buildDummyProfile } from '../constants/dummyData';
+import { getBuildingProfile, getBuildingEnrich, getBuildingLazy } from '../services/api';
 
 // 모듈 레벨 캐시 (훅 인스턴스 간 공유)
 const buildingCache = new Map();
 
-// 캐시 TTL: 5분 (밀리초)
+// 캐시 TTL: 5분
 const CACHE_TTL = 5 * 60 * 1000;
 
-/**
- * 캐시 엔트리가 유효한지 확인
- * @param {Object} entry - 캐시 엔트리 { data, timestamp }
- * @returns {boolean} 유효 여부
- */
 const isCacheValid = (entry) => {
   if (!entry) return false;
   return Date.now() - entry.timestamp < CACHE_TTL;
@@ -28,27 +23,29 @@ const isCacheValid = (entry) => {
 /**
  * @param {string|null} buildingId - 조회할 건물 ID
  * @param {Object} options
- * @param {boolean} options.enabled - 훅 활성화 여부 (기본 true)
- * @param {boolean} options.useCache - 캐시 사용 여부 (기본 true)
- * @returns {Object} { building, loading, error, refetch, clearCache }
+ * @param {boolean} options.enabled - 훅 활성화 여부
+ * @param {boolean} options.useCache - 캐시 사용 여부
+ * @param {Object} options.buildingMeta - 건물 기본 정보 (nearby에서 전달, profile 호출 시 쿼리 파라미터용)
+ * @returns {Object} { building, loading, enriching, error, refetch, clearCache, fetchLazyTab }
  */
-const useBuildingDetail = (buildingId, { enabled = true, useCache = true } = {}) => {
+const useBuildingDetail = (buildingId, { enabled = true, useCache = true, buildingMeta = null } = {}) => {
   const [building, setBuilding] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [enriching, setEnriching] = useState(false);
   const [error, setError] = useState(null);
 
-  // 마운트 상태 추적
   const isMounted = useRef(true);
-  // 현재 요청 중인 ID (중복 요청 방지)
   const currentRequestId = useRef(null);
+  // enrich 호출 여부 추적 (중복 방지)
+  const enrichCalledRef = useRef(new Set());
 
   /**
-   * API 호출 또는 캐시에서 건물 상세 조회
+   * 1차: 빠른 프로필 조회 + 자동 2차 보강
    */
   const fetchBuildingDetail = useCallback(async (id, forceRefresh = false) => {
     if (!id || !isMounted.current) return;
 
-    // 캐시 확인 (강제 새로고침이 아닌 경우)
+    // 캐시 확인
     if (useCache && !forceRefresh) {
       const cached = buildingCache.get(id);
       if (isCacheValid(cached)) {
@@ -59,42 +56,131 @@ const useBuildingDetail = (buildingId, { enabled = true, useCache = true } = {})
       }
     }
 
-    // 같은 ID로 이미 요청 중인 경우 스킵
     if (currentRequestId.current === id && !forceRefresh) return;
-
     currentRequestId.current = id;
+    setLoading(true);
     setError(null);
 
-    // 즉시 더미 프로필 표시 (API 응답 대기 없이)
-    const rawBuilding = DUMMY_BUILDINGS.find((b) => b.id === id);
-    const dummyProfile = rawBuilding
-      ? buildDummyProfile(rawBuilding)
-      : buildDummyProfile({ id, name: `건물 ${id}`, distance: 0, amenities: [], floors: [], stats: {} });
-
-    if (dummyProfile && isMounted.current) {
-      setBuilding(dummyProfile);
-      setLoading(false);
-      // 캐시에도 저장
-      buildingCache.set(id, { data: dummyProfile, timestamp: Date.now() });
-    } else {
-      setLoading(true);
-    }
-
-    // 백그라운드에서 API 호출 시도 (성공 시 덮어쓰기)
     try {
-      const response = await getBuildingProfile(id);
+      // 쿼리 파라미터 구성 (카카오 건물용)
+      const params = {};
+      if (buildingMeta) {
+        if (buildingMeta.lat) params.lat = buildingMeta.lat;
+        if (buildingMeta.lng) params.lng = buildingMeta.lng;
+        if (buildingMeta.name) params.name = buildingMeta.name;
+        if (buildingMeta.address) params.address = buildingMeta.address;
+        if (buildingMeta.category) params.category = buildingMeta.category;
+        if (buildingMeta.categoryDetail) params.categoryDetail = buildingMeta.categoryDetail;
+      }
+
+      const response = await getBuildingProfile(id, params);
       const profile = response?.data || response;
 
       if (isMounted.current && currentRequestId.current === id && profile) {
         buildingCache.set(id, { data: profile, timestamp: Date.now() });
         setBuilding(profile);
         setLoading(false);
+
+        // 2차 자동 보강 트리거
+        if (profile.meta?.enrichAvailable && !enrichCalledRef.current.has(id)) {
+          enrichCalledRef.current.add(id);
+          enrichProfile(id, profile);
+        }
       }
     } catch (err) {
-      // API 실패해도 이미 더미 데이터 표시 중이므로 무시
-      console.warn(`[useBuildingDetail] API 실패 (${id}), 더미 데이터 유지:`, err.message);
+      console.warn(`[useBuildingDetail] API 실패 (${id}):`, err.message);
+      if (isMounted.current) {
+        setError(err.message || '데이터를 불러올 수 없습니다');
+        setLoading(false);
+      }
     }
-  }, [useCache]);
+  }, [useCache, buildingMeta]);
+
+  /**
+   * 2차: 건축물대장 + 네이버블로그 보강
+   */
+  const enrichProfile = useCallback(async (id, currentProfile) => {
+    if (!id || !isMounted.current) return;
+    setEnriching(true);
+
+    try {
+      const params = {};
+      const meta = currentProfile?.meta;
+      const bldg = currentProfile?.building;
+
+      // 건축물대장 파라미터
+      if (meta?.regionCode) {
+        const rc = meta.regionCode;
+        params.sigunguCd = rc.sigunguCd || '';
+        params.bjdongCd = rc.bjdongCd || '';
+        // 주소에서 번지 추출
+        const addr = rc.address || bldg?.address || '';
+        const bunjiMatch = addr.match(/(\d+)(?:-(\d+))?$/);
+        if (bunjiMatch) {
+          params.bun = bunjiMatch[1].padStart(4, '0');
+          params.ji = bunjiMatch[2] ? bunjiMatch[2].padStart(4, '0') : '0000';
+        }
+      }
+      params.name = bldg?.name || '';
+      params.address = bldg?.address || '';
+      params.lat = bldg?.lat || '';
+      params.lng = bldg?.lng || '';
+
+      const response = await getBuildingEnrich(id, params);
+      const enrichData = response?.data || response;
+
+      if (isMounted.current && enrichData) {
+        setBuilding(prev => mergeEnrichData(prev, enrichData));
+        // 캐시 업데이트
+        const cached = buildingCache.get(id);
+        if (cached) {
+          cached.data = mergeEnrichData(cached.data, enrichData);
+        }
+      }
+    } catch (err) {
+      console.warn(`[useBuildingDetail] enrich 실패 (${id}):`, err.message);
+      // enrich 실패해도 1차 데이터는 유지
+    } finally {
+      if (isMounted.current) setEnriching(false);
+    }
+  }, []);
+
+  /**
+   * Lazy 탭 데이터 로드 (탭 전환 시 호출)
+   * @param {string} tab - 'food' | 'estate' | 'tourism'
+   */
+  const fetchLazyTab = useCallback(async (tab) => {
+    if (!buildingId || !isMounted.current) return;
+
+    const bldg = building?.building;
+    const params = {
+      tab,
+      lat: bldg?.lat || buildingMeta?.lat || '',
+      lng: bldg?.lng || buildingMeta?.lng || '',
+      name: bldg?.name || buildingMeta?.name || '',
+    };
+
+    // 실거래가용 시군구코드
+    if (tab === 'estate' && building?.meta?.regionCode?.sigunguCd) {
+      params.sigunguCd = building.meta.regionCode.sigunguCd;
+    }
+
+    try {
+      const response = await getBuildingLazy(buildingId, params);
+      const lazyData = response?.data || response;
+
+      if (isMounted.current && lazyData) {
+        setBuilding(prev => mergeLazyData(prev, lazyData, tab));
+        // 캐시 업데이트
+        const cached = buildingCache.get(buildingId);
+        if (cached) {
+          cached.data = mergeLazyData(cached.data, lazyData, tab);
+        }
+      }
+    } catch (err) {
+      console.warn(`[useBuildingDetail] lazy 실패 (${tab}):`, err.message);
+    }
+  }, [buildingId, building, buildingMeta]);
 
   /**
    * buildingId 변경 시 자동 호출
@@ -103,38 +189,37 @@ const useBuildingDetail = (buildingId, { enabled = true, useCache = true } = {})
     if (!enabled || !buildingId) {
       setBuilding(null);
       setLoading(false);
+      setEnriching(false);
       setError(null);
       return;
     }
-
     fetchBuildingDetail(buildingId);
   }, [buildingId, enabled, fetchBuildingDetail]);
 
   /**
-   * 수동 리페치 (캐시 무시)
+   * 수동 리페치
    */
   const refetch = useCallback(() => {
     if (!buildingId) return;
+    enrichCalledRef.current.delete(buildingId);
     fetchBuildingDetail(buildingId, true);
   }, [buildingId, fetchBuildingDetail]);
 
   /**
-   * 특정 건물 또는 전체 캐시 클리어
+   * 캐시 클리어
    */
   const clearCache = useCallback((id = null) => {
     if (id) {
       buildingCache.delete(id);
+      enrichCalledRef.current.delete(id);
     } else {
       buildingCache.clear();
+      enrichCalledRef.current.clear();
     }
   }, []);
 
-  /**
-   * 컴포넌트 언마운트 시 정리
-   */
   useEffect(() => {
     isMounted.current = true;
-
     return () => {
       isMounted.current = false;
       currentRequestId.current = null;
@@ -144,10 +229,90 @@ const useBuildingDetail = (buildingId, { enabled = true, useCache = true } = {})
   return {
     building,
     loading,
+    enriching,
     error,
     refetch,
     clearCache,
+    fetchLazyTab,
   };
 };
+
+/**
+ * enrich 데이터를 기존 프로필에 병합
+ */
+function mergeEnrichData(prev, enrichData) {
+  if (!prev) return prev;
+  const merged = { ...prev };
+
+  // 건축물대장 기본 정보
+  if (enrichData.buildingInfo) {
+    merged.building = {
+      ...merged.building,
+      total_floors: enrichData.buildingInfo.total_floors || merged.building.total_floors,
+      basement_floors: enrichData.buildingInfo.basement_floors || merged.building.basement_floors,
+      built_year: enrichData.buildingInfo.built_year || merged.building.built_year,
+      type: enrichData.buildingInfo.type || merged.building.type,
+      parking_count: enrichData.buildingInfo.parking_count || merged.building.parking_count,
+    };
+  }
+
+  // 건축물대장 스탯
+  if (enrichData.stats?.raw?.length > 0) {
+    merged.stats = enrichData.stats;
+  }
+
+  // 건축물대장 층별 정보 (기존 없을 때만)
+  if (enrichData.floors?.length > 0 && (!merged.floors || merged.floors.length === 0)) {
+    merged.floors = enrichData.floors;
+    merged.meta = { ...merged.meta, hasFloors: true };
+  }
+
+  // 블로그 리뷰
+  if (enrichData.blogReviews?.length > 0) {
+    merged.blogReviews = enrichData.blogReviews;
+    merged.reviewSummary = enrichData.reviewSummary;
+  }
+
+  // 썸네일
+  if (enrichData.thumbnail_url) {
+    merged.building = { ...merged.building, thumbnail_url: enrichData.thumbnail_url };
+  }
+
+  // enrichAvailable 해제 (다시 호출 방지)
+  merged.meta = { ...merged.meta, enrichAvailable: false, enriched: true };
+
+  return merged;
+}
+
+/**
+ * lazy 탭 데이터를 기존 프로필에 병합
+ */
+function mergeLazyData(prev, lazyData, tab) {
+  if (!prev) return prev;
+  const merged = { ...prev };
+
+  if (tab === 'food' && lazyData.restaurants?.length > 0) {
+    // 기존 카카오 결과 + Google Places 병합 (중복 제거)
+    const existing = merged.restaurants || [];
+    const existingNames = new Set(existing.map(r => r.name));
+    const newPlaces = lazyData.restaurants.filter(r => !existingNames.has(r.name));
+    merged.restaurants = [...existing, ...newPlaces];
+    merged.meta = { ...merged.meta, hasRestaurants: true };
+  }
+
+  if (tab === 'estate' && lazyData.realEstate?.length > 0) {
+    // 기존 DB 매물 + 실거래가 병합
+    const existing = merged.realEstate || [];
+    merged.realEstate = [...existing, ...lazyData.realEstate];
+    merged.meta = { ...merged.meta, hasRealEstate: true };
+  }
+
+  if (tab === 'tourism' && lazyData.tourism) {
+    merged.tourism = lazyData.tourism;
+    merged.meta = { ...merged.meta, hasTourism: true };
+  }
+
+  return merged;
+}
 
 export default useBuildingDetail;
