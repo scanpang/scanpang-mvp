@@ -626,7 +626,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
 
     // scan log + behavior
     postScanLog({ sessionId: sessionIdRef.current, buildingId, eventType: 'gaze_scan', userLat: userLocation?.lat, userLng: userLocation?.lng, deviceHeading: heading, metadata: { confidence: building.confidence } }).catch(() => {});
-    behaviorTracker.trackEvent('gaze_scan', { buildingId, metadata: { confidence: building.confidence } });
+    behaviorTracker.trackEvent('gaze_scan', { buildingId, buildingName: building.name, metadata: { confidence: building.confidence, tier } });
 
     saveRecentScan(building);
     triggerGeminiAnalysis(building);
@@ -842,7 +842,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
     setTimeout(() => bottomSheetRef.current?.snapToIndex(1), 50);
 
     postScanLog({ sessionId: sessionIdRef.current, buildingId: building.id, eventType: 'pin_tapped', userLat: userLocation?.lat, userLng: userLocation?.lng, deviceHeading: heading, metadata: { confidence: building.confidence } }).catch(() => {});
-    behaviorTracker.trackEvent('pin_click', { buildingId: building.id, metadata: { confidence: building.confidence } });
+    behaviorTracker.trackEvent('pin_click', { buildingId: building.id, buildingName: building.name, metadata: { confidence: building.confidence, tier } });
     saveRecentScan(building);
     triggerGeminiAnalysis(building);
   }, [userLocation, heading, saveRecentScan, triggerGeminiAnalysis]);

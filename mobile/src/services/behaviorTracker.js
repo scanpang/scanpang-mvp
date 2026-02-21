@@ -212,6 +212,7 @@ class BehaviorTracker {
       sessionId: this.bhdbSessionId || this.sessionId,
       eventType,
       buildingId: data.buildingId || null,
+      buildingName: data.buildingName || null,
       durationMs: data.durationMs || null,
       gpsLat: this.userLocation?.lat || null,
       gpsLng: this.userLocation?.lng || null,
