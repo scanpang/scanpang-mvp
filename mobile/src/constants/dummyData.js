@@ -403,6 +403,80 @@ function generateRealEstate(type) {
   return data[type] || data.generic;
 }
 
+// ===== LIVE 피드 생성 =====
+function generateLiveFeeds(type, buildingName) {
+  const now = new Date();
+  const common = [
+    {
+      feed_type: 'congestion',
+      title: `${buildingName} 현재 혼잡도: 보통`,
+      subtitle: '평소보다 방문객이 적은 편이에요',
+      time_label: '방금 전',
+    },
+    {
+      feed_type: 'event',
+      title: '1층 편의시설 정상 운영 중',
+      subtitle: '영업시간 09:00 - 22:00',
+      time_label: '10분 전',
+    },
+  ];
+
+  const typeFeeds = {
+    office: [
+      { feed_type: 'update', title: '주차장 여유 공간 있음', subtitle: 'B1-B2 주차 가능', time_label: '5분 전' },
+      { feed_type: 'event', title: '공유오피스 무료 체험 이벤트', subtitle: '이번 주 한정 데이 패스 무료', time_label: '1시간 전' },
+    ],
+    commercial: [
+      { feed_type: 'promotion', title: '2층 카페 아메리카노 20% 할인', subtitle: '오후 2시~5시 한정', time_label: '15분 전' },
+      { feed_type: 'congestion', title: '점심시간 혼잡 예상', subtitle: '11:30~13:00 방문자 증가', time_label: '30분 전' },
+    ],
+    residential: [
+      { feed_type: 'update', title: '택배 보관함 수거 가능', subtitle: '1층 무인택배함 확인', time_label: '20분 전' },
+    ],
+    hotel: [
+      { feed_type: 'event', title: '2층 레스토랑 런치 뷔페', subtitle: '11:30~14:00 / 성인 35,000원', time_label: '1시간 전' },
+    ],
+    hospital: [
+      { feed_type: 'congestion', title: '외래 진료 대기 약 20분', subtitle: '오전 진료 혼잡', time_label: '5분 전' },
+    ],
+  };
+
+  const extra = typeFeeds[type] || [];
+  return [...extra, ...common].slice(0, 3);
+}
+
+// ===== 프로모션 생성 =====
+function generatePromotion(type, buildingName) {
+  const promos = {
+    office: {
+      title: `${buildingName} 첫 스캔 보너스!`,
+      reward_points: 100,
+      condition_text: '이 건물을 처음 스캔하면 추가 포인트를 받을 수 있어요',
+    },
+    commercial: {
+      title: '주변 맛집 리뷰 작성 이벤트',
+      reward_points: 200,
+      condition_text: '이 건물 내 매장 리뷰 작성 시 포인트 2배 적립',
+    },
+    residential: {
+      title: '우리 동네 스캔 챌린지',
+      reward_points: 150,
+      condition_text: '주변 건물 5곳 스캔 완료 시 보너스 지급',
+    },
+    mixed: {
+      title: `${buildingName} 탐험 보너스`,
+      reward_points: 120,
+      condition_text: '모든 층 정보 확인 시 추가 포인트 적립',
+    },
+    generic: {
+      title: `${buildingName} 스캔 보너스!`,
+      reward_points: 100,
+      condition_text: '이 건물을 스캔하고 포인트를 받으세요',
+    },
+  };
+  return promos[type] || promos.generic;
+}
+
 // ===== 관광 데이터 생성 =====
 function generateTourism(type, buildingName) {
   return {
@@ -431,6 +505,8 @@ export function generateFallbackData(buildingUse = '', buildingName = '건물') 
     restaurants: generateRestaurants(type),
     realEstate: generateRealEstate(type),
     tourism: generateTourism(type, buildingName),
+    liveFeeds: generateLiveFeeds(type, buildingName),
+    promotion: generatePromotion(type, buildingName),
   };
 }
 

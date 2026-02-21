@@ -11,6 +11,9 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { checkVPSAvailability } from 'scanpang-arcore';
 
+// ARCore 초기화 타임아웃 (5초 내 onReady 안 오면 CameraView 폴백)
+const AR_INIT_TIMEOUT = 5000;
+
 const useGeospatialTracking = ({ enabled = true } = {}) => {
   // Geospatial pose
   const [geoPose, setGeoPose] = useState(null);
@@ -24,6 +27,9 @@ const useGeospatialTracking = ({ enabled = true } = {}) => {
   const [arError, setArError] = useState(null);
   // VPS 체크 완료 여부
   const vpsCheckedRef = useRef(false);
+  // AR 초기화 타임아웃 (onReady 수신 전 폴백)
+  const arTimeoutRef = useRef(null);
+  const arReadyRef = useRef(false);
 
   // 위치 정확도 기반 localized 판정 (horizontalAccuracy < 10m)
   const isLocalized = geoPose != null && geoPose.horizontalAccuracy < 10;
@@ -83,6 +89,11 @@ const useGeospatialTracking = ({ enabled = true } = {}) => {
   }, []);
 
   const handleReady = useCallback(() => {
+    arReadyRef.current = true;
+    if (arTimeoutRef.current) {
+      clearTimeout(arTimeoutRef.current);
+      arTimeoutRef.current = null;
+    }
     setIsARMode(true);
     setArError(null);
   }, []);
@@ -92,6 +103,25 @@ const useGeospatialTracking = ({ enabled = true } = {}) => {
     setArError(data?.error || 'unknown_error');
     setIsARMode(false);
   }, []);
+
+  // AR 초기화 타임아웃: N초 내 onReady 안 오면 CameraView 폴백
+  useEffect(() => {
+    if (!enabled) return;
+    arReadyRef.current = false;
+    arTimeoutRef.current = setTimeout(() => {
+      if (!arReadyRef.current) {
+        console.warn('[useGeospatialTracking] AR 초기화 타임아웃 → CameraView 폴백');
+        setIsARMode(false);
+        setArError('ar_init_timeout');
+      }
+    }, AR_INIT_TIMEOUT);
+    return () => {
+      if (arTimeoutRef.current) {
+        clearTimeout(arTimeoutRef.current);
+        arTimeoutRef.current = null;
+      }
+    };
+  }, [enabled]);
 
   // 비활성화 시 상태 리셋
   useEffect(() => {

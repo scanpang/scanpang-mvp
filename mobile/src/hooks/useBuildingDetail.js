@@ -81,6 +81,18 @@ function fillFallbackData(profile) {
     dummyFields.push('tourism');
   }
 
+  // LIVE 피드
+  if (!filled.liveFeeds?.length) {
+    filled.liveFeeds = fallback.liveFeeds;
+    dummyFields.push('liveFeeds');
+  }
+
+  // 프로모션
+  if (!filled.promotion) {
+    filled.promotion = fallback.promotion;
+    dummyFields.push('promotion');
+  }
+
   filled._dummyFields = dummyFields;
 
   // meta: 탭 표시를 위해 has* 플래그 업데이트
