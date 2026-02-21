@@ -153,7 +153,7 @@ const FocusedLabel = ({ building, confidence, gaugeProgress, onPress }) => {
 };
 
 // ===== 상단 HUD =====
-const CameraHUD = ({ points, gpsStatus, onBack, buildingCount, factorScore, arTierInfo }) => {
+const CameraHUD = ({ points, gpsStatus, onBack, buildingCount, factorScore, arTierInfo, debugInfo }) => {
   const gpsColor = gpsStatus === 'active' ? Colors.successGreen : gpsStatus === 'error' ? Colors.liveRed : Colors.accentAmber;
   const gpsLabel = gpsStatus === 'active' ? 'GPS 활성' : gpsStatus === 'error' ? '위치 오류' : 'GPS...';
 
@@ -162,6 +162,11 @@ const CameraHUD = ({ points, gpsStatus, onBack, buildingCount, factorScore, arTi
       <TouchableOpacity style={styles.hudBackBtn} onPress={onBack} hitSlop={TOUCH.hitSlop}>
         <Text style={styles.hudBackText}>{'\u2039'}</Text>
       </TouchableOpacity>
+
+      {/* Tier 배지 (1/2/3 + 색상) */}
+      <View style={[styles.hudTierBadge, { backgroundColor: arTierInfo?.color || '#888' }]}>
+        <Text style={styles.hudTierText}>T{debugInfo?.tier || 3}</Text>
+      </View>
 
       <View style={styles.hudModePill}>
         <View style={[styles.hudDot, { backgroundColor: arTierInfo?.color || '#888' }]} />
@@ -183,6 +188,22 @@ const CameraHUD = ({ points, gpsStatus, onBack, buildingCount, factorScore, arTi
         <View style={[styles.hudDot, { backgroundColor: gpsColor }]} />
         <Text style={[styles.hudGpsText, { color: gpsColor }]}>{gpsLabel}</Text>
       </View>
+
+      {/* 디버그 패널: Tier 상세 */}
+      {debugInfo && (
+        <View style={styles.hudDebugPanel}>
+          <Text style={styles.hudDebugText}>
+            VPS: {debugInfo.vps === null ? '...' : debugInfo.vps ? 'ON' : 'OFF'}
+            {' | '}H: {debugInfo.hAcc != null ? `${debugInfo.hAcc.toFixed(1)}m` : '-'}
+            {' | '}HD: {debugInfo.hdAcc != null ? `${debugInfo.hdAcc.toFixed(1)}°` : '-'}
+          </Text>
+          <Text style={styles.hudDebugText}>
+            FOV: ±{debugInfo.fov}°
+            {' | '}건물: {debugInfo.buildingCount}
+            {' | '}AR: {debugInfo.arMode ? 'Y' : 'N'}
+          </Text>
+        </View>
+      )}
     </View>
   );
 };
@@ -963,6 +984,15 @@ const ScanCameraScreen = ({ route, navigation }) => {
         buildingCount={buildings.length}
         factorScore={rankedBuildings[0]?.confidencePercent || 0}
         arTierInfo={tierInfo}
+        debugInfo={{
+          tier,
+          vps: vpsAvailable,
+          hAcc: geoPose?.horizontalAccuracy ?? null,
+          hdAcc: geoPose?.headingAccuracy ?? null,
+          fov: focusAngle,
+          buildingCount: buildings.length,
+          arMode: isARMode,
+        }}
       />
 
       {/* Layer 3.5: X-Ray 오버레이 */}
@@ -1134,6 +1164,10 @@ const styles = StyleSheet.create({
   hudPointsText: { fontSize: 13, fontWeight: '700', color: '#FFF' },
   hudGps: { marginLeft: 'auto', flexDirection: 'row', alignItems: 'center', gap: SPACING.xs },
   hudGpsText: { fontSize: 11, fontWeight: '500' },
+  hudTierBadge: { width: 28, height: 28, borderRadius: 14, justifyContent: 'center', alignItems: 'center' },
+  hudTierText: { fontSize: 12, fontWeight: '900', color: '#FFF' },
+  hudDebugPanel: { position: 'absolute', top: '100%', left: SPACING.lg, right: SPACING.lg, marginTop: SPACING.xs, backgroundColor: 'rgba(0,0,0,0.7)', borderRadius: 8, paddingHorizontal: SPACING.sm, paddingVertical: SPACING.xs },
+  hudDebugText: { fontSize: 10, fontWeight: '500', color: 'rgba(255,255,255,0.85)', lineHeight: 14 },
 
   // 안내 텍스트
   guideTextWrap: { position: 'absolute', bottom: SH * 0.14, left: 0, right: 0, alignItems: 'center', zIndex: 5 },

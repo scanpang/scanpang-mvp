@@ -21,7 +21,7 @@ const StatusCard = ({ nearbyCount = 0, stats, locationName }) => {
     ]).start();
   }, []);
 
-  const limitProgress = stats ? stats.todayEarned / stats.dailyLimit : 0;
+  const usedRatio = stats ? stats.scanCount / (stats.dailyLimit || 500) : 0;
 
   return (
     <Animated.View style={[styles.card, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
@@ -40,14 +40,14 @@ const StatusCard = ({ nearbyCount = 0, stats, locationName }) => {
               <Text style={styles.statLabel}>오늘 스캔</Text>
             </View>
             <View style={styles.statBox}>
-              <Text style={styles.statValue}>{stats.todayEarned}</Text>
+              <Text style={styles.statValue}>{stats.todayEarned}P</Text>
               <Text style={styles.statLabel}>획득 포인트</Text>
             </View>
             <View style={styles.statBox}>
-              <Text style={styles.statValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>{stats.todayEarned}/{stats.dailyLimit}</Text>
+              <Text style={styles.statValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>{stats.remaining ?? stats.dailyLimit}/{stats.dailyLimit}</Text>
               <Text style={styles.statLabel}>남은 한도</Text>
               <View style={styles.progressBg}>
-                <View style={[styles.progressFill, { width: `${Math.min(limitProgress * 100, 100)}%` }]} />
+                <View style={[styles.progressFill, { width: `${Math.min(usedRatio * 100, 100)}%` }]} />
               </View>
             </View>
           </View>

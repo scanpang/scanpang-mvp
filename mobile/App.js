@@ -11,12 +11,14 @@ import React from 'react';
 import { StatusBar, View, Text, ScrollView, StyleSheet } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 // 화면 컴포넌트
 import HomeScreen from './src/screens/HomeScreen';
 import ScanCameraScreen from './src/screens/ScanCameraScreen';
 import BehaviorReportScreen from './src/screens/BehaviorReportScreen';
 import FlywheelDashboardScreen from './src/screens/FlywheelDashboardScreen';
+import NearbyBuildingsScreen from './src/screens/NearbyBuildingsScreen';
 
 import { Colors } from './src/constants/theme';
 
@@ -76,6 +78,7 @@ const navigationTheme = {
 export default function App() {
   return (
     <ErrorBoundary>
+      <SafeAreaProvider>
       <NavigationContainer theme={navigationTheme}>
         <Stack.Navigator
           initialRouteName="Home"
@@ -109,6 +112,14 @@ export default function App() {
             }}
           />
           <Stack.Screen
+            name="NearbyBuildings"
+            component={NearbyBuildingsScreen}
+            options={{
+              title: '주변 건물',
+              gestureEnabled: true,
+            }}
+          />
+          <Stack.Screen
             name="FlywheelDashboard"
             component={FlywheelDashboardScreen}
             options={{
@@ -118,6 +129,7 @@ export default function App() {
           />
         </Stack.Navigator>
       </NavigationContainer>
+      </SafeAreaProvider>
     </ErrorBoundary>
   );
 }

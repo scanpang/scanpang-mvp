@@ -12,14 +12,13 @@ import {
   StyleSheet,
   ScrollView,
   StatusBar,
-  SafeAreaView,
   TouchableOpacity,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { Colors, SPACING } from '../constants/theme';
-import { DUMMY_POINTS } from '../constants/dummyData';
 import useNearbyBuildings from '../hooks/useNearbyBuildings';
 
 import StatusCard from '../components/home/StatusCard';
@@ -27,12 +26,47 @@ import ScanStartCard from '../components/home/ScanStartCard';
 import NearbyBuildings from '../components/home/NearbyBuildings';
 import RecentActivity from '../components/home/RecentActivity';
 
-const RECENT_SCANS_KEY = '@scanpang_recent_scans';
+const RECENT_SCANS_KEY_HOME = '@scanpang_recent_scans';
+const POINTS_PER_SCAN = 50;
+const DAILY_LIMIT = 500;
+
+// AsyncStorage에서 오늘 스캔 통계 계산
+const getTodayStats = (scans) => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const todayTs = today.getTime();
+
+  // 오늘 스캔한 항목만 필터
+  const todayScans = scans.filter(s => (s.timestamp || 0) >= todayTs);
+
+  // 중복 건물 제거 (같은 날 같은 건물 = 1회)
+  const uniqueBuildings = new Set();
+  todayScans.forEach(s => {
+    const baseId = s.id?.split('_').slice(0, -1).join('_') || s.id; // 타임스탬프 suffix 제거
+    uniqueBuildings.add(baseId);
+  });
+
+  const scanCount = uniqueBuildings.size;
+  const todayEarned = scanCount * POINTS_PER_SCAN;
+  const remaining = Math.max(0, DAILY_LIMIT - scanCount);
+
+  return {
+    scanCount,
+    todayEarned,
+    dailyLimit: DAILY_LIMIT,
+    remaining,
+    totalPoints: scans.length * POINTS_PER_SCAN, // 전체 누적 (간이 계산)
+  };
+};
 
 const HomeScreen = ({ navigation }) => {
+  const insets = useSafeAreaInsets();
   const [userLocation, setUserLocation] = useState(null);
   const [locationName, setLocationName] = useState(null);
   const [recentActivities, setRecentActivities] = useState([]);
+  const [todayStats, setTodayStats] = useState({
+    scanCount: 0, todayEarned: 0, dailyLimit: DAILY_LIMIT, remaining: DAILY_LIMIT, totalPoints: 0,
+  });
 
   // 위치 가져오기 + 역지오코딩
   useEffect(() => {
@@ -60,18 +94,29 @@ const HomeScreen = ({ navigation }) => {
     })();
   }, []);
 
-  // 최근 스캔 기록 로드
+  // 최근 스캔 기록 로드 + 오늘 통계 계산
+  const loadScanData = async () => {
+    try {
+      const raw = await AsyncStorage.getItem(RECENT_SCANS_KEY_HOME);
+      if (raw) {
+        const scans = JSON.parse(raw);
+        setRecentActivities(scans.slice(0, 3));
+        setTodayStats(getTodayStats(scans));
+      }
+    } catch {}
+  };
+
   useEffect(() => {
-    (async () => {
-      try {
-        const raw = await AsyncStorage.getItem(RECENT_SCANS_KEY);
-        if (raw) {
-          const scans = JSON.parse(raw);
-          setRecentActivities(scans.slice(0, 3));
-        }
-      } catch {}
-    })();
+    loadScanData();
   }, []);
+
+  // 화면 포커스 시 데이터 새로고침 (스캔 후 복귀 시)
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', () => {
+      loadScanData();
+    });
+    return unsubscribe;
+  }, [navigation]);
 
   const { buildings, loading, error: nearbyError, refetch: refetchNearby } = useNearbyBuildings({
     latitude: userLocation?.lat,
@@ -86,7 +131,8 @@ const HomeScreen = ({ navigation }) => {
   };
 
   const handleBuildingPress = (building) => {
-    navigation.navigate('ScanCamera', { focusBuildingId: building.id });
+    // 바텀시트로 건물 프로필 표시 (NearbyBuildingsScreen에서)
+    navigation.navigate('NearbyBuildings', { selectedBuildingId: building.id, buildings });
   };
 
   const handleBuildingReport = (building) => {
@@ -96,31 +142,35 @@ const HomeScreen = ({ navigation }) => {
     });
   };
 
+  const handleSeeAllBuildings = () => {
+    navigation.navigate('NearbyBuildings', { buildings });
+  };
+
   const handleFlywheelDashboard = () => {
     navigation.navigate('FlywheelDashboard');
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
       <StatusBar barStyle="dark-content" backgroundColor={Colors.bgWhite} />
 
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + SPACING.xxl }]}
       >
         {/* 상단 네비게이션 바 */}
         <View style={styles.navBar}>
           <Text style={styles.logo}>ScanPang</Text>
           <TouchableOpacity style={styles.pointsPill}>
             <Text style={styles.pointsIcon}>P</Text>
-            <Text style={styles.pointsText}>{DUMMY_POINTS.totalPoints.toLocaleString()} P</Text>
+            <Text style={styles.pointsText}>{todayStats.totalPoints.toLocaleString()} P</Text>
           </TouchableOpacity>
         </View>
 
         {/* 인사 + 현황 카드 */}
         <StatusCard
           nearbyCount={buildings.length}
-          stats={DUMMY_POINTS}
+          stats={todayStats}
           locationName={locationName}
         />
 
@@ -134,12 +184,12 @@ const HomeScreen = ({ navigation }) => {
           error={nearbyError}
           onBuildingPress={handleBuildingPress}
           onBuildingLongPress={handleBuildingReport}
-          onSeeAll={handleStartScan}
+          onSeeAll={handleSeeAllBuildings}
           onRetry={refetchNearby}
         />
 
         {/* 최근 활동 */}
-        <RecentActivity activities={recentActivities.length > 0 ? recentActivities : undefined} onScanPress={handleStartScan} />
+        <RecentActivity activities={recentActivities.length > 0 ? recentActivities : []} onScanPress={handleStartScan} />
 
         {/* Flywheel 대시보드 */}
         <TouchableOpacity style={styles.flywheelCard} onPress={handleFlywheelDashboard} activeOpacity={0.7}>
@@ -150,7 +200,7 @@ const HomeScreen = ({ navigation }) => {
           <Text style={styles.flywheelArrow}>{'›'}</Text>
         </TouchableOpacity>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 };
 

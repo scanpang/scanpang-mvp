@@ -8,30 +8,40 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Colors, SPACING } from '../../constants/theme';
 
-const DUMMY_ACTIVITY = [
-  { id: 1, buildingName: '강남 파이낸스센터', points: 50, timeAgo: '2시간 전' },
-  { id: 2, buildingName: '삼성타운', points: 50, timeAgo: '어제' },
-  { id: 3, buildingName: '코엑스몰', points: 100, timeAgo: '3일 전' },
-];
+// 시간 표시 헬퍼
+const getTimeAgo = (timestamp) => {
+  if (!timestamp) return '';
+  const diff = Date.now() - timestamp;
+  const min = Math.floor(diff / 60000);
+  if (min < 1) return '방금 전';
+  if (min < 60) return `${min}분 전`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}시간 전`;
+  const day = Math.floor(hr / 24);
+  if (day === 1) return '어제';
+  if (day < 7) return `${day}일 전`;
+  return `${Math.floor(day / 7)}주 전`;
+};
 
 const ActivityItem = ({ item }) => {
   // 건물명 우선순위: name > buildingName > address
   const displayName = item.name || item.buildingName || item.address || '건물';
+  const timeDisplay = item.timeAgo || getTimeAgo(item.timestamp);
   return (
     <View style={styles.item}>
       <View style={styles.iconCircle}>
-        <Text style={styles.iconText}>B</Text>
+        <Text style={styles.iconText}>{displayName.charAt(0)}</Text>
       </View>
       <View style={styles.itemContent}>
         <Text style={styles.buildingName} numberOfLines={2} ellipsizeMode="tail">{displayName}</Text>
-        <Text style={styles.timeAgo}>{item.timeAgo}</Text>
+        <Text style={styles.timeAgo}>{timeDisplay}</Text>
       </View>
-      <Text style={styles.points}>+{item.points}P</Text>
+      <Text style={styles.points}>+{item.points || 50}P</Text>
     </View>
   );
 };
 
-const RecentActivity = ({ activities = DUMMY_ACTIVITY, onScanPress }) => (
+const RecentActivity = ({ activities = [], onScanPress }) => (
   <View style={styles.container}>
     <View style={styles.header}>
       <Text style={styles.sectionTitle}>최근 활동</Text>
