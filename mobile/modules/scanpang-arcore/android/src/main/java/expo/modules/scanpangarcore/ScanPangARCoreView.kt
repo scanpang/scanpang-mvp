@@ -28,6 +28,7 @@ class ScanPangARCoreView(context: Context, appContext: AppContext) : ExpoView(co
     private val backgroundRenderer = BackgroundRenderer()
     private var isSessionCreated = false
     private var isPaused = false
+    private var cameraTextureId = -1  // GL 스레드에서 생성된 텍스처 ID 캐시
 
     // 포즈 업데이트 쓰로틀링 (200ms 간격)
     private var lastPoseUpdateTime = 0L
@@ -77,6 +78,15 @@ class ScanPangARCoreView(context: Context, appContext: AppContext) : ExpoView(co
         // 세션 생성
         if (geospatialManager.createSession(activity)) {
             isSessionCreated = true
+
+            // 카메라 텍스처를 세션에 등록 (GL 스레드에서 이미 생성됨)
+            if (cameraTextureId >= 0) {
+                geospatialManager.setCameraTexture(cameraTextureId)
+            }
+
+            // 세션 resume → 카메라 피드 시작
+            geospatialManager.resume()
+
             onReady(mapOf("status" to "session_created"))
         } else {
             onError(mapOf("error" to "session_create_failed"))
@@ -128,10 +138,10 @@ class ScanPangARCoreView(context: Context, appContext: AppContext) : ExpoView(co
             GLES20.glClearColor(0f, 0f, 0f, 1f)
             backgroundRenderer.createOnGlThread()
 
-            // 세션에 카메라 텍스처 설정
-            geospatialManager.setCameraTexture(backgroundRenderer.getTextureId())
+            // 텍스처 ID 캐시 (세션 생성 후 등록됨)
+            cameraTextureId = backgroundRenderer.getTextureId()
 
-            // 메인 스레드에서 세션 시작
+            // 메인 스레드에서 세션 시작 (세션 생성 → 텍스처 등록 → resume 순서)
             post { startSession() }
         }
 
