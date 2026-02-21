@@ -388,6 +388,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
   const [points, setPoints] = useState(DUMMY_POINTS.totalPoints);
   const [cameraPermissionDenied, setCameraPermissionDenied] = useState(false);
   const [cameraReady, setCameraReady] = useState(false); // 네비게이션 애니메이션 완료 후 카메라 마운트
+  const [gpsAccuracy, setGpsAccuracy] = useState(null); // GPS 폴백 모드 수평 정확도(m)
 
   const [timeContext, setTimeContext] = useState(null);
   const [geminiResults, setGeminiResults] = useState(new Map());
@@ -662,10 +663,19 @@ const ScanCameraScreen = ({ route, navigation }) => {
       lastHeadingRef.current = geoPose.heading;
       setHeading(geoPose.heading);
     }
-    if (trackingState === 'tracking') {
-      setGpsStatus('active');
-    }
+    // geoPose가 있으면 위치 확보된 것이므로 active 전환 (tracking 상태 무관)
+    setGpsStatus('active');
   }, [isARMode, geoPose, trackingState]);
+
+  // ===== focusBuildingId로 진입 시 바텀시트 자동 오픈 =====
+  useEffect(() => {
+    if (focusBuildingId && selectedBuildingId === focusBuildingId && gpsStatus === 'active') {
+      setScanComplete(true);
+      setProfileError(null);
+      setProfileData(null);
+      setTimeout(() => bottomSheetRef.current?.snapToIndex(1), 200);
+    }
+  }, [focusBuildingId, gpsStatus]);
 
   // ===== 네비게이션 애니메이션 완료 후 카메라 마운트 =====
   // Cold start 시 Surface 레이아웃 전에 세션이 시작되는 문제 방지
@@ -676,7 +686,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
     return () => handle.cancel();
   }, []);
 
-  // ===== GPS 캐시 → 빠른 초기 위치 =====
+  // ===== GPS 캐시 → 빠른 초기 위치 + 상태 전환 =====
   useEffect(() => {
     (async () => {
       try {
@@ -685,6 +695,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
           const { lat, lng } = JSON.parse(cached);
           if (lat && lng && !userLocation) {
             setUserLocation({ lat, lng });
+            setGpsStatus('active'); // 캐시 위치로도 즉시 건물 탐색 시작
           }
         }
       } catch {}
@@ -769,6 +780,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
           (loc) => {
             if (!cancelled && isMountedRef.current) {
               setUserLocation({ lat: loc.coords.latitude, lng: loc.coords.longitude });
+              if (loc.coords.accuracy != null) setGpsAccuracy(loc.coords.accuracy);
               setGpsStatus('active');
             }
           }
@@ -998,7 +1010,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
         debugInfo={{
           tier,
           vps: vpsAvailable,
-          hAcc: geoPose?.horizontalAccuracy ?? null,
+          hAcc: geoPose?.horizontalAccuracy ?? gpsAccuracy ?? null,
           hdAcc: geoPose?.headingAccuracy ?? null,
           fov: focusAngle,
           buildingCount: buildings.length,
