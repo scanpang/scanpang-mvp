@@ -5,6 +5,7 @@
  * - DB에 없는 건물도 AR 라벨로 표시 가능
  */
 const axios = require('axios');
+const { generateFallbackData } = require('./buildingProfile');
 
 const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
 
@@ -176,97 +177,58 @@ function getOsmBuildingData(osmId) {
 }
 
 /**
- * OSM 건물의 더미 프로필 생성
+ * OSM 건물의 프로필 생성 (BuildingProfileSheet 호환 형식)
+ * buildingProfile.getProfile()과 동일한 nested 구조 반환
  */
 function generateOsmProfile(building) {
+  const buildingUse = building.buildingUse || '건물';
   const totalFloors = building.totalFloors || 10;
   const basementFloors = building.basementFloors || Math.min(3, Math.max(1, Math.floor(totalFloors / 5)));
-  const floors = [];
+  const buildingName = building.name || '건물';
 
-  // 지하층
-  for (let i = basementFloors; i >= 1; i--) {
-    floors.push({
-      id: `${building.id}_b${i}`,
-      floorNumber: `B${i}`,
-      floorOrder: -i,
-      tenantName: i === 1 ? '편의시설/주차장' : '주차장',
-      tenantCategory: i === 1 ? '편의시설' : '주차',
-      tenantIcon: i === 1 ? 'store' : 'local_parking',
-      isVacant: false,
-      hasReward: i === 1,
-      rewardPoints: i === 1 ? 30 : 0,
-    });
-  }
+  // buildingProfile의 폴백 생성기 활용 (동일 형식 보장)
+  const fallback = generateFallbackData(buildingUse, totalFloors, basementFloors, buildingName);
 
-  // 1층 로비
-  floors.push({
-    id: `${building.id}_1`,
-    floorNumber: '1F',
-    floorOrder: 1,
-    tenantName: '로비',
-    tenantCategory: '로비',
-    tenantIcon: 'business',
-    isVacant: false,
-    hasReward: false,
-    rewardPoints: 0,
-  });
-
-  // 2층 이상
-  for (let i = 2; i <= totalFloors; i++) {
-    const hasReward = i % 5 === 0;
-    floors.push({
-      id: `${building.id}_${i}`,
-      floorNumber: `${i}F`,
-      floorOrder: i,
-      tenantName: getFloorTenant(i, totalFloors, building.buildingUse),
-      tenantCategory: building.buildingUse || '오피스',
-      tenantIcon: 'business',
-      isVacant: false,
-      hasReward,
-      rewardPoints: hasReward ? 50 : 0,
-    });
-  }
+  const hasFloors = fallback.floors.length > 0;
+  const hasRestaurants = fallback.restaurants.length > 0;
+  const hasRealEstate = fallback.realEstate.length > 0;
+  const hasTourism = fallback.tourism !== null;
 
   return {
-    ...building,
-    totalFloors,
-    basementFloors,
-    occupancyRate: 85,
-    totalTenants: totalFloors,
-    operatingTenants: Math.round(totalFloors * 0.8),
-    floors,
-    facilities: [
-      { id: `${building.id}_f1`, type: '주차장', locationInfo: 'B1', isAvailable: true, statusText: '이용 가능' },
-      { id: `${building.id}_f2`, type: '편의점', locationInfo: '1F 근처', isAvailable: true, statusText: '운영중' },
-      { id: `${building.id}_f3`, type: '엘리베이터', locationInfo: '전층', isAvailable: true, statusText: '운행중' },
-    ],
-    stats: [
-      { id: `${building.id}_s1`, type: 'total_floors', value: `지상${totalFloors}층/지하${basementFloors}층`, icon: 'layers', displayOrder: 1 },
-      { id: `${building.id}_s2`, type: 'occupancy', value: '85%', icon: 'pie_chart', displayOrder: 2 },
-      { id: `${building.id}_s3`, type: 'tenants', value: `${totalFloors}개`, icon: 'store', displayOrder: 3 },
-    ],
-    liveFeeds: [
-      {
-        id: `${building.id}_l1`,
-        feedType: 'update',
-        title: `${building.name} 정보`,
-        description: '실시간 데이터가 곧 업데이트됩니다',
-        icon: 'info',
-        iconColor: '#2196F3',
-        timeLabel: '방금',
-      },
-    ],
+    building: {
+      id: building.id,
+      name: buildingName,
+      address: building.address || '',
+      type: buildingUse,
+      total_floors: totalFloors,
+      basement_floors: basementFloors,
+      built_year: building.completionYear || null,
+      parking_count: null,
+      description: null,
+      lat: building.lat,
+      lng: building.lng,
+      thumbnail_url: null,
+    },
+    stats: fallback.stats,
+    floors: fallback.floors,
+    amenities: fallback.amenities,
+    restaurants: fallback.restaurants,
+    realEstate: fallback.realEstate,
+    tourism: fallback.tourism,
+    liveFeeds: fallback.liveFeeds,
+    promotion: fallback.promotion,
+    meta: {
+      hasFloors,
+      hasRestaurants,
+      hasRealEstate,
+      hasTourism,
+      dataCompleteness: 50,
+      isFallback: true,
+    },
   };
 }
 
 // ===== 헬퍼 함수 =====
-
-function getFloorTenant(floor, totalFloors, buildingUse) {
-  if (floor === 2) return '상업시설';
-  if (floor <= Math.floor(totalFloors * 0.3)) return '저층 사무실';
-  if (floor <= Math.floor(totalFloors * 0.7)) return '중층 사무실';
-  return '고층 사무실';
-}
 
 function buildAddress(tags) {
   if (tags['addr:full']) return tags['addr:full'];

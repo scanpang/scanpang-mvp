@@ -471,4 +471,5 @@ async function getFloors(buildingId) {
 module.exports = {
   getProfile,
   getFloors,
+  generateFallbackData,
 };
