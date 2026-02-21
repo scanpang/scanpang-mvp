@@ -19,8 +19,9 @@ import javax.microedition.khronos.opengles.GL10
  * 초기화 순서 (GL Surface 기반):
  *   1. init: GLSurfaceView 생성 + 렌더러 등록
  *   2. GL thread: onSurfaceCreated → 텍스처 생성 → mainHandler로 세션 초기화 요청
- *   3. Main thread: initializeSession → 세션 생성 → 텍스처 등록 → displayGeometry 설정 → resume
- *   4. GL thread: onDrawFrame → session.update() → 카메라 렌더링
+ *   3. Main thread: initializeSession → 세션 생성 → displayGeometry 설정 → resume
+ *   4. GL thread: queueEvent → setCameraTexture (GL 컨텍스트 보장)
+ *   5. GL thread: onDrawFrame → session.update() → 카메라 렌더링
  *
  * EGL 컨텍스트 소실 시 (홈 복귀 등):
  *   onSurfaceCreated 재호출 → 새 텍스처 생성 → 기존 세션에 재등록
@@ -96,15 +97,15 @@ class ScanPangARCoreView(context: Context, appContext: AppContext) : ExpoView(co
         if (geospatialManager.createSession(activity)) {
             isSessionCreated = true
 
-            // 1. GL 텍스처 등록 (onSurfaceCreated에서 이미 생성됨)
-            geospatialManager.setCameraTexture(cameraTextureId)
+            // ※ setCameraTexture는 GL스레드에서만 호출해야 함
+            // → onSurfaceCreated에서 queueEvent로 처리
 
-            // 2. 디스플레이 지오메트리 설정 (onSurfaceChanged에서 캐시된 값)
+            // 1. 디스플레이 지오메트리 설정 (onSurfaceChanged에서 캐시된 값)
             if (viewWidth > 0 && viewHeight > 0) {
                 geospatialManager.setDisplayGeometry(displayRotation, viewWidth, viewHeight)
             }
 
-            // 3. 세션 시작 → 카메라 피드 활성화
+            // 2. 세션 시작 → 카메라 피드 활성화
             geospatialManager.resume()
 
             onReady(mapOf("status" to "session_created"))
@@ -172,8 +173,16 @@ class ScanPangARCoreView(context: Context, appContext: AppContext) : ExpoView(co
                 // 기존 세션은 살아있지만 GL 텍스처가 새로 만들어졌으므로 재등록
                 geospatialManager.setCameraTexture(cameraTextureId)
             } else {
-                // 최초 마운트: GL 준비 완료 → 메인 스레드에서 세션 생성
-                mainHandler.post { initializeSession() }
+                // 최초 마운트: 메인스레드에서 세션 생성 후, GL스레드로 돌아와서 텍스처 등록
+                mainHandler.post {
+                    initializeSession()
+                    // 세션 생성 완료 후 GL스레드에서 텍스처 등록
+                    glSurfaceView.queueEvent {
+                        if (isSessionCreated && cameraTextureId >= 0) {
+                            geospatialManager.setCameraTexture(cameraTextureId)
+                        }
+                    }
+                }
             }
         }
 
