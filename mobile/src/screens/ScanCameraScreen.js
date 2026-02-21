@@ -838,7 +838,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
     focusedBuildingRef.current = null;
     pendingSwitchRef.current = null;
     switchCountRef.current = 0;
-    bottomSheetRef.current?.snapToIndex(0);
+    bottomSheetRef.current?.close();
   }, [selectedBuildingId]);
 
   const handleXrayToggle = useCallback(() => {
@@ -977,22 +977,27 @@ const ScanCameraScreen = ({ route, navigation }) => {
       {/* Layer 4: 바텀시트 */}
       <BottomSheet
         ref={bottomSheetRef}
-        index={0}
+        index={-1}
         snapPoints={snapPoints}
         backgroundStyle={styles.bsBackground}
         handleIndicatorStyle={styles.bsHandle}
-        enablePanDownToClose={false}
+        enablePanDownToClose={true}
         onChange={(index) => {
           const isOpen = index >= 1;
           setSheetOpen(isOpen);
           if (selectedBuildingId && isOpen) {
             behaviorTracker.trackEvent('card_open', { buildingId: selectedBuildingId });
           }
-          // 데이터가 있는데 시트가 1%로 내려갔으면 → 다시 50%로 올리기
-          if (index === 0 && selectedBuildingId && profileData) {
-            setTimeout(() => {
-              bottomSheetRef.current?.snapToIndex(1);
-            }, 100);
+          // 드래그로 완전히 닫힌 경우 상태 정리
+          if (index === -1 && selectedBuildingId) {
+            setSelectedBuildingId(null);
+            setScanComplete(false);
+            setGaugeProgress(0);
+            setProfileData(null);
+            setProfileError(null);
+            setXrayActive(false);
+            focusedIdRef.current = null;
+            focusedBuildingRef.current = null;
           }
         }}
       >
