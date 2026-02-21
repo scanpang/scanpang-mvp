@@ -30,7 +30,6 @@ import BottomSheet, { BottomSheetView, BottomSheetScrollView } from '@gorhom/bot
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { Colors, SPACING, TOUCH } from '../constants/theme';
-import { DUMMY_POINTS } from '../constants/dummyData';
 import { postScanLog, postScanComplete, getServerTimeContext, analyzeFrame } from '../services/api';
 import useNearbyBuildings from '../hooks/useNearbyBuildings';
 import useBuildingDetail from '../hooks/useBuildingDetail';
@@ -154,7 +153,7 @@ const FocusedLabel = ({ building, confidence, gaugeProgress, onPress }) => {
 };
 
 // ===== 상단 HUD =====
-const CameraHUD = ({ points, gpsStatus, onBack, buildingCount, factorScore, arTierInfo, debugInfo }) => {
+const CameraHUD = ({ gpsStatus, onBack, buildingCount, factorScore, arTierInfo, debugInfo }) => {
   const gpsColor = gpsStatus === 'active' ? Colors.successGreen : gpsStatus === 'error' ? Colors.liveRed : Colors.accentAmber;
   const gpsLabel = gpsStatus === 'active' ? 'GPS 활성' : gpsStatus === 'error' ? '위치 오류' : 'GPS...';
 
@@ -179,11 +178,6 @@ const CameraHUD = ({ points, gpsStatus, onBack, buildingCount, factorScore, arTi
           <Text style={styles.hudFactorText}>{factorScore}</Text>
         </View>
       )}
-
-      <View style={styles.hudPointsPill}>
-        <Text style={styles.hudPointsStar}>{'\u2605'}</Text>
-        <Text style={styles.hudPointsText}>{points.toLocaleString()}</Text>
-      </View>
 
       <View style={styles.hudGps}>
         <View style={[styles.hudDot, { backgroundColor: gpsColor }]} />
@@ -385,7 +379,6 @@ const ScanCameraScreen = ({ route, navigation }) => {
   const [heading, setHeading] = useState(0);
   const [selectedBuildingId, setSelectedBuildingId] = useState(focusBuildingId || null);
   const [gpsStatus, setGpsStatus] = useState('searching');
-  const [points, setPoints] = useState(DUMMY_POINTS.totalPoints);
   const [cameraPermissionDenied, setCameraPermissionDenied] = useState(false);
   const [cameraReady, setCameraReady] = useState(false); // 네비게이션 애니메이션 완료 후 카메라 마운트
   const [gpsAccuracy, setGpsAccuracy] = useState(null); // GPS 폴백 모드 수평 정확도(m)
@@ -905,13 +898,13 @@ const ScanCameraScreen = ({ route, navigation }) => {
 
   // 안내 텍스트 결정 (scanCompleteMessage는 0.5초 후 자동 소멸)
   const guideMessage = useMemo(() => {
+    if (sheetOpen || scanComplete) return scanCompleteMessage || null;
     if (scanCompleteMessage) return scanCompleteMessage;
     if (gpsStatus === 'searching') return '위치를 탐색하고 있습니다...';
     if (!buildings.length) return '건물을 향해 카메라를 비추세요';
     if (!focusedBuilding) return '건물에 카메라를 맞춰주세요';
-    if (scanComplete) return null; // 바텀시트가 올라왔으므로 숨김
     return `${focusedBuilding.name} 스캔 중...`;
-  }, [gpsStatus, buildings.length, focusedBuilding, scanComplete, scanCompleteMessage]);
+  }, [gpsStatus, buildings.length, focusedBuilding, scanComplete, scanCompleteMessage, sheetOpen]);
 
   return (
     <GestureHandlerRootView style={styles.container}>
@@ -1001,7 +994,6 @@ const ScanCameraScreen = ({ route, navigation }) => {
 
       {/* Layer 3: 상단 HUD */}
       <CameraHUD
-        points={points}
         gpsStatus={gpsStatus}
         onBack={() => navigation.goBack()}
         buildingCount={buildings.length}
@@ -1182,9 +1174,6 @@ const styles = StyleSheet.create({
   hudModeText: { fontSize: 13, fontWeight: '600', color: '#FFF' },
   hudFactorPill: { backgroundColor: 'rgba(255,255,255,0.15)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
   hudFactorText: { fontSize: 11, fontWeight: '700', color: 'rgba(255,255,255,0.7)' },
-  hudPointsPill: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.4)', paddingHorizontal: SPACING.sm + 2, paddingVertical: SPACING.xs + 1, borderRadius: 16, gap: 3 },
-  hudPointsStar: { fontSize: 12, color: Colors.accentAmber },
-  hudPointsText: { fontSize: 13, fontWeight: '700', color: '#FFF' },
   hudGps: { marginLeft: 'auto', flexDirection: 'row', alignItems: 'center', gap: SPACING.xs },
   hudGpsText: { fontSize: 11, fontWeight: '500' },
   hudTierBadge: { width: 28, height: 28, borderRadius: 14, justifyContent: 'center', alignItems: 'center' },
