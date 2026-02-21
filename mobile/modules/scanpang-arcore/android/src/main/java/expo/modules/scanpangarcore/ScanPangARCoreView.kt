@@ -29,14 +29,16 @@ class ScanPangARCoreView(context: Context, appContext: AppContext) : ExpoView(co
     private var isSessionCreated = false
     private var isPaused = false
     private var cameraTextureId = -1  // GL 스레드에서 생성된 텍스처 ID 캐시
+    private var hasRenderedFirstFrame = false  // 첫 유효 프레임 렌더링 여부 (깜빡임 방지)
 
     // 포즈 업데이트 쓰로틀링 (200ms 간격)
     private var lastPoseUpdateTime = 0L
     private val POSE_UPDATE_INTERVAL = 200L
 
-    // 뷰포트 크기 (앵커 투영용)
+    // 뷰포트 크기 + 디스플레이 회전 (세션 생성 후 재적용 필요)
     private var viewWidth = 0
     private var viewHeight = 0
+    private var displayRotation = 0
 
     init {
         geospatialManager = GeospatialManager(context)
@@ -84,6 +86,12 @@ class ScanPangARCoreView(context: Context, appContext: AppContext) : ExpoView(co
                 geospatialManager.setCameraTexture(cameraTextureId)
             }
 
+            // 디스플레이 지오메트리 설정 (onSurfaceChanged가 세션 생성 전에 호출되어 누락됨)
+            // 이 호출이 없으면 텍스처 좌표가 계산되지 않아 회색 화면 발생
+            if (viewWidth > 0 && viewHeight > 0) {
+                geospatialManager.setDisplayGeometry(displayRotation, viewWidth, viewHeight)
+            }
+
             // 세션 resume → 카메라 피드 시작
             geospatialManager.resume()
 
@@ -96,6 +104,7 @@ class ScanPangARCoreView(context: Context, appContext: AppContext) : ExpoView(co
     fun pauseSession() {
         if (!isPaused && isSessionCreated) {
             isPaused = true
+            hasRenderedFirstFrame = false  // resume 시 안정화 전까지 검은 화면 허용
             geospatialManager.pause()
             glSurfaceView.onPause()
         }
@@ -112,6 +121,7 @@ class ScanPangARCoreView(context: Context, appContext: AppContext) : ExpoView(co
     fun destroySession() {
         geospatialManager.destroy()
         isSessionCreated = false
+        hasRenderedFirstFrame = false
     }
 
     override fun onAttachedToWindow() {
@@ -150,20 +160,34 @@ class ScanPangARCoreView(context: Context, appContext: AppContext) : ExpoView(co
             viewWidth = width
             viewHeight = height
             val wm = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
-            val rotation = wm.defaultDisplay.rotation
-            geospatialManager.setDisplayGeometry(rotation, width, height)
+            displayRotation = wm.defaultDisplay.rotation
+            geospatialManager.setDisplayGeometry(displayRotation, width, height)
         }
 
         override fun onDrawFrame(gl: GL10?) {
-            GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT or GLES20.GL_DEPTH_BUFFER_BIT)
-
-            if (!isSessionCreated || isPaused) return
+            // 세션 미생성/일시정지: 검은 화면
+            if (!isSessionCreated || isPaused) {
+                GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT or GLES20.GL_DEPTH_BUFFER_BIT)
+                return
+            }
 
             // ARCore 프레임 업데이트
-            val frame = geospatialManager.update() ?: return
+            val frame = geospatialManager.update()
 
-            // 카메라 배경 렌더링
+            // 유효한 프레임이 없는 경우:
+            // - 첫 프레임 전: 검은 화면 (로딩 중)
+            // - 첫 프레임 후: glClear 스킵 → 이전 버퍼 유지 (깜빡임 방지)
+            if (frame == null || frame.timestamp == 0L) {
+                if (!hasRenderedFirstFrame) {
+                    GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT or GLES20.GL_DEPTH_BUFFER_BIT)
+                }
+                return
+            }
+
+            // 유효한 프레임: 클리어 + 카메라 배경 렌더링
+            GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT or GLES20.GL_DEPTH_BUFFER_BIT)
             backgroundRenderer.draw(frame)
+            hasRenderedFirstFrame = true
 
             // Tracking 상태 변화 이벤트
             if (geospatialManager.trackingStateChanged) {
