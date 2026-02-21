@@ -25,8 +25,9 @@ const useGeospatialTracking = ({ enabled = true } = {}) => {
   const [isARMode, setIsARMode] = useState(true);
   // AR 에러
   const [arError, setArError] = useState(null);
-  // VPS 체크 완료 여부
+  // VPS 체크 완료 여부 + 재시도 횟수
   const vpsCheckedRef = useRef(false);
+  const vpsRetryCountRef = useRef(0);
   // AR 초기화 타임아웃 (onReady 수신 전 폴백)
   const arTimeoutRef = useRef(null);
   const arReadyRef = useRef(false);
@@ -71,12 +72,23 @@ const useGeospatialTracking = ({ enabled = true } = {}) => {
         verticalAccuracy: data.verticalAccuracy,
       });
 
-      // 최초 위치 확보 시 VPS 가용성 1회 체크
+      // 위치 확보 시 VPS 가용성 체크 (실패 시 최대 2회 재시도)
       if (!vpsCheckedRef.current && data.latitude) {
         vpsCheckedRef.current = true;
         checkVPSAvailability(data.latitude, data.longitude)
-          .then(setVpsAvailable)
-          .catch(() => setVpsAvailable(false));
+          .then((available) => {
+            setVpsAvailable(available);
+            vpsRetryCountRef.current = 0; // 성공 시 리셋
+          })
+          .catch(() => {
+            // 세션 미준비 등으로 실패 시 재시도 허용
+            if (vpsRetryCountRef.current < 2) {
+              vpsRetryCountRef.current += 1;
+              vpsCheckedRef.current = false; // 다음 pose에서 재시도
+            } else {
+              setVpsAvailable(false);
+            }
+          });
       }
     }
   }, [enabled]);
@@ -122,6 +134,13 @@ const useGeospatialTracking = ({ enabled = true } = {}) => {
       }
     };
   }, [enabled]);
+
+  // AR 모드 폴백 시 VPS 상태 확정 (null → false)
+  useEffect(() => {
+    if (!isARMode && vpsAvailable === null) {
+      setVpsAvailable(false);
+    }
+  }, [isARMode, vpsAvailable]);
 
   // 비활성화 시 상태 리셋
   useEffect(() => {

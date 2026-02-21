@@ -19,6 +19,7 @@ import {
   ScrollView,
   AppState,
   Linking,
+  InteractionManager,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Location from 'expo-location';
@@ -386,6 +387,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
   const [gpsStatus, setGpsStatus] = useState('searching');
   const [points, setPoints] = useState(DUMMY_POINTS.totalPoints);
   const [cameraPermissionDenied, setCameraPermissionDenied] = useState(false);
+  const [cameraReady, setCameraReady] = useState(false); // 네비게이션 애니메이션 완료 후 카메라 마운트
 
   const [timeContext, setTimeContext] = useState(null);
   const [geminiResults, setGeminiResults] = useState(new Map());
@@ -665,6 +667,15 @@ const ScanCameraScreen = ({ route, navigation }) => {
     }
   }, [isARMode, geoPose, trackingState]);
 
+  // ===== 네비게이션 애니메이션 완료 후 카메라 마운트 =====
+  // Cold start 시 Surface 레이아웃 전에 세션이 시작되는 문제 방지
+  useEffect(() => {
+    const handle = InteractionManager.runAfterInteractions(() => {
+      if (isMountedRef.current) setCameraReady(true);
+    });
+    return () => handle.cancel();
+  }, []);
+
   // ===== GPS 캐시 → 빠른 초기 위치 =====
   useEffect(() => {
     (async () => {
@@ -907,7 +918,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
             <Text style={styles.permissionSettingsBtnText}>설정 열기</Text>
           </TouchableOpacity>
         </View>
-      ) : !cameraPermission?.granted ? (
+      ) : !cameraPermission?.granted || !cameraReady ? (
         <View style={styles.loadingView}>
           <ActivityIndicator size="large" color={Colors.primaryBlue} />
           <Text style={styles.loadingText}>카메라 준비 중...</Text>
