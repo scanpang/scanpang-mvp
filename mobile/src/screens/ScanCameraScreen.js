@@ -155,7 +155,9 @@ const FocusedLabel = ({ building, confidence, gaugeProgress, onPress }) => {
 // ===== 상단 HUD =====
 const CameraHUD = ({ gpsStatus, onBack, buildingCount, factorScore, arTierInfo, debugInfo }) => {
   const gpsColor = gpsStatus === 'active' ? Colors.successGreen : gpsStatus === 'error' ? Colors.liveRed : Colors.accentAmber;
-  const gpsLabel = gpsStatus === 'active' ? 'GPS 활성' : gpsStatus === 'error' ? '위치 오류' : 'GPS...';
+  const tierLabel = debugInfo?.vps ? 'VPS' : debugInfo?.arMode ? 'AR' : 'GPS';
+  const hAcc = debugInfo?.hAcc != null ? `${debugInfo.hAcc.toFixed(0)}m` : '-';
+  const hdAcc = debugInfo?.hdAcc != null ? `${debugInfo.hdAcc.toFixed(0)}°` : '-';
 
   return (
     <View style={styles.hud}>
@@ -163,42 +165,26 @@ const CameraHUD = ({ gpsStatus, onBack, buildingCount, factorScore, arTierInfo, 
         <Text style={styles.hudBackText}>{'\u2039'}</Text>
       </TouchableOpacity>
 
-      {/* Tier 배지 (1/2/3 + 색상) */}
+      {/* Tier·모드 통합 배지 */}
       <View style={[styles.hudTierBadge, { backgroundColor: arTierInfo?.color || '#888' }]}>
-        <Text style={styles.hudTierText}>T{debugInfo?.tier || 3}</Text>
+        <Text style={styles.hudTierText}>T{debugInfo?.tier || 3}·{tierLabel}</Text>
       </View>
 
-      <View style={styles.hudModePill}>
-        <View style={[styles.hudDot, { backgroundColor: arTierInfo?.color || '#888' }]} />
-        <Text style={styles.hudModeText}>{arTierInfo?.label || 'GPS 모드'}</Text>
+      {/* 정확도 + FOV + 건물수 압축 표시 */}
+      <View style={styles.hudInfoPill}>
+        <Text style={styles.hudInfoText}>{hAcc}</Text>
+        <Text style={styles.hudInfoSep}>·</Text>
+        <Text style={styles.hudInfoText}>{hdAcc}</Text>
+        <Text style={styles.hudInfoSep}>·</Text>
+        <Text style={styles.hudInfoText}>±{debugInfo?.fov || 35}°</Text>
+        <Text style={styles.hudInfoSep}>·</Text>
+        <Text style={styles.hudInfoText}>건물{debugInfo?.buildingCount || 0}</Text>
       </View>
 
-      {factorScore > 0 && (
-        <View style={styles.hudFactorPill}>
-          <Text style={styles.hudFactorText}>{factorScore}</Text>
-        </View>
-      )}
-
+      {/* GPS 상태 (색상 점만) */}
       <View style={styles.hudGps}>
-        <View style={[styles.hudDot, { backgroundColor: gpsColor }]} />
-        <Text style={[styles.hudGpsText, { color: gpsColor }]}>{gpsLabel}</Text>
+        <View style={[styles.hudGpsDot, { backgroundColor: gpsColor }]} />
       </View>
-
-      {/* 디버그 패널: Tier 상세 */}
-      {debugInfo && (
-        <View style={styles.hudDebugPanel}>
-          <Text style={styles.hudDebugText}>
-            VPS: {debugInfo.vps === null ? '...' : debugInfo.vps ? 'ON' : 'OFF'}
-            {' | '}H: {debugInfo.hAcc != null ? `${debugInfo.hAcc.toFixed(1)}m` : '-'}
-            {' | '}HD: {debugInfo.hdAcc != null ? `${debugInfo.hdAcc.toFixed(1)}°` : '-'}
-          </Text>
-          <Text style={styles.hudDebugText}>
-            FOV: ±{debugInfo.fov}°
-            {' | '}건물: {debugInfo.buildingCount}
-            {' | '}AR: {debugInfo.arMode ? 'Y' : 'N'}
-          </Text>
-        </View>
-      )}
     </View>
   );
 };
@@ -1169,17 +1155,13 @@ const styles = StyleSheet.create({
   },
   hudBackBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center' },
   hudBackText: { fontSize: 22, color: '#FFF', marginTop: -2 },
-  hudModePill: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.4)', paddingHorizontal: SPACING.md, paddingVertical: SPACING.xs + 1, borderRadius: 16, gap: SPACING.xs },
-  hudDot: { width: 6, height: 6, borderRadius: 3 },
-  hudModeText: { fontSize: 13, fontWeight: '600', color: '#FFF' },
-  hudFactorPill: { backgroundColor: 'rgba(255,255,255,0.15)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
-  hudFactorText: { fontSize: 11, fontWeight: '700', color: 'rgba(255,255,255,0.7)' },
-  hudGps: { marginLeft: 'auto', flexDirection: 'row', alignItems: 'center', gap: SPACING.xs },
-  hudGpsText: { fontSize: 11, fontWeight: '500' },
-  hudTierBadge: { width: 28, height: 28, borderRadius: 14, justifyContent: 'center', alignItems: 'center' },
-  hudTierText: { fontSize: 12, fontWeight: '900', color: '#FFF' },
-  hudDebugPanel: { position: 'absolute', top: '100%', left: SPACING.lg, right: SPACING.lg, marginTop: SPACING.xs, backgroundColor: 'rgba(0,0,0,0.7)', borderRadius: 8, paddingHorizontal: SPACING.sm, paddingVertical: SPACING.xs },
-  hudDebugText: { fontSize: 10, fontWeight: '500', color: 'rgba(255,255,255,0.85)', lineHeight: 14 },
+  hudTierBadge: { backgroundColor: 'rgba(0,0,0,0.4)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14, justifyContent: 'center', alignItems: 'center' },
+  hudTierText: { fontSize: 11, fontWeight: '900', color: '#FFF' },
+  hudInfoPill: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.4)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14, gap: 2 },
+  hudInfoText: { fontSize: 11, fontWeight: '600', color: 'rgba(255,255,255,0.8)' },
+  hudInfoSep: { fontSize: 11, color: 'rgba(255,255,255,0.3)' },
+  hudGps: { marginLeft: 'auto' },
+  hudGpsDot: { width: 8, height: 8, borderRadius: 4 },
 
   // 안내 텍스트
   guideTextWrap: { position: 'absolute', bottom: SH * 0.14, left: 0, right: 0, alignItems: 'center', zIndex: 5 },
