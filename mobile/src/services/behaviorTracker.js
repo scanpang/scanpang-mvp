@@ -7,18 +7,32 @@
  * - 이벤트 자동 수집
  * - 오프라인 버퍼 + 배치 전송
  * - 7-Factor 센서 데이터 첨부
+ * - BHDB 듀얼 전송 (BHDB 우선, Render 폴백)
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import axios from 'axios';
 import { apiClient } from './api';
+import { BHDB_API_URL, BHDB_API_KEY } from '../constants/config';
 
 const BEHAVIOR_QUEUE_KEY = '@scanpang_behavior_queue';
 const MAX_QUEUE_SIZE = 200;
 const BATCH_SIZE = 50;
 const FLUSH_INTERVAL = 30000; // 30초마다 배치 전송
 
+// BHDB 전용 axios 인스턴스
+const bhdbClient = axios.create({
+  baseURL: BHDB_API_URL,
+  timeout: 10000,
+  headers: {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${BHDB_API_KEY}`,
+  },
+});
+
 class BehaviorTracker {
   constructor() {
     this.sessionId = null;
+    this.bhdbSessionId = null; // BHDB에서 발급받은 UUID 세션
     this.isTracking = false;
     this.gazeState = new Map(); // buildingId → { startTime, lastSeen }
     this.eventQueue = [];
@@ -33,18 +47,33 @@ class BehaviorTracker {
   async startSession(options = {}) {
     const { userId, startLat, startLng, deviceInfo } = options;
 
+    // BHDB 우선 시도
     try {
-      const response = await apiClient.post('/behavior/session/start', {
+      const bhdbRes = await bhdbClient.post('/session/start', {
         userId,
         startLat,
         startLng,
         deviceInfo,
       });
-
-      this.sessionId = response?.data?.sessionId || `local_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      this.bhdbSessionId = bhdbRes?.data?.sessionId || null;
+      this.sessionId = this.bhdbSessionId;
     } catch {
-      // 오프라인이면 로컬 세션 ID
-      this.sessionId = `local_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      this.bhdbSessionId = null;
+    }
+
+    // BHDB 실패 시 기존 Render 폴백
+    if (!this.sessionId) {
+      try {
+        const response = await apiClient.post('/behavior/session/start', {
+          userId,
+          startLat,
+          startLng,
+          deviceInfo,
+        });
+        this.sessionId = response?.data?.sessionId || `local_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      } catch {
+        this.sessionId = `local_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      }
     }
 
     this.isTracking = true;
@@ -70,13 +99,27 @@ class BehaviorTracker {
 
     // 서버에 세션 종료 알림
     const gazePath = this.buildGazePath();
+    const endPayload = {
+      gazePath,
+      buildingsViewed: gazePath.length,
+      buildingsEntered: 0,
+      totalGazeDurationMs: gazePath.reduce((sum, g) => sum + g.durationMs, 0),
+      endLat: this.userLocation?.lat || null,
+      endLng: this.userLocation?.lng || null,
+    };
+
+    // BHDB 종료
+    if (this.bhdbSessionId) {
+      try {
+        await bhdbClient.patch(`/session/${this.bhdbSessionId}/end`, endPayload);
+      } catch {
+        // 실패 시 무시
+      }
+    }
+
+    // Render 종료 (폴백)
     try {
-      await apiClient.patch(`/behavior/session/${this.sessionId}/end`, {
-        gazePath,
-        buildingsViewed: gazePath.length,
-        buildingsEntered: 0,
-        totalGazeDurationMs: gazePath.reduce((sum, g) => sum + g.durationMs, 0),
-      });
+      await apiClient.patch(`/behavior/session/${this.sessionId}/end`, endPayload);
     } catch {
       // 실패 시 무시
     }
@@ -84,6 +127,7 @@ class BehaviorTracker {
     this.stopAutoFlush();
     this.isTracking = false;
     this.sessionId = null;
+    this.bhdbSessionId = null;
     this.gazeState.clear();
   }
 
@@ -97,8 +141,8 @@ class BehaviorTracker {
   /**
    * 위치 업데이트
    */
-  updateLocation(lat, lng) {
-    this.userLocation = { lat, lng };
+  updateLocation(lat, lng, accuracy) {
+    this.userLocation = { lat, lng, accuracy: accuracy || null };
   }
 
   /**
@@ -165,12 +209,13 @@ class BehaviorTracker {
     if (!this.isTracking || !this.sessionId) return;
 
     const event = {
-      sessionId: this.sessionId,
+      sessionId: this.bhdbSessionId || this.sessionId,
       eventType,
       buildingId: data.buildingId || null,
       durationMs: data.durationMs || null,
       gpsLat: this.userLocation?.lat || null,
       gpsLng: this.userLocation?.lng || null,
+      gpsAccuracy: this.userLocation?.accuracy || null,
       compassHeading: this.sensorSnapshot?.heading || null,
       gyroscope: this.sensorSnapshot?.gyroscope || null,
       accelerometer: this.sensorSnapshot?.accelerometer || null,
@@ -197,17 +242,26 @@ class BehaviorTracker {
   }
 
   /**
-   * 배치 전송
+   * 배치 전송 (BHDB 우선, 실패 시 Render 폴백)
    */
   async flush() {
     if (this.eventQueue.length === 0) return;
 
     const batch = this.eventQueue.splice(0, BATCH_SIZE);
 
+    // BHDB 전송 시도
+    try {
+      await bhdbClient.post('/batch', { events: batch });
+      return; // 성공 시 종료
+    } catch {
+      // BHDB 실패 → Render 폴백
+    }
+
+    // Render 폴백
     try {
       await apiClient.post('/behavior/batch', { events: batch });
     } catch {
-      // 실패한 이벤트를 로컬 스토리지에 저장
+      // 둘 다 실패 시 로컬 스토리지에 저장
       await this.saveToStorage(batch);
     }
   }
@@ -228,7 +282,7 @@ class BehaviorTracker {
   }
 
   /**
-   * 오프라인 저장된 이벤트 전송 시도
+   * 오프라인 저장된 이벤트 전송 시도 (BHDB 우선)
    */
   async flushStoredEvents() {
     try {
@@ -241,9 +295,14 @@ class BehaviorTracker {
       for (let i = 0; i < stored.length; i += BATCH_SIZE) {
         const chunk = stored.slice(i, i + BATCH_SIZE);
         try {
-          await apiClient.post('/behavior/batch', { events: chunk });
+          await bhdbClient.post('/batch', { events: chunk });
         } catch {
-          remaining.push(...chunk);
+          // BHDB 실패 → Render 폴백
+          try {
+            await apiClient.post('/behavior/batch', { events: chunk });
+          } catch {
+            remaining.push(...chunk);
+          }
         }
       }
       await AsyncStorage.setItem(BEHAVIOR_QUEUE_KEY, JSON.stringify(remaining));
