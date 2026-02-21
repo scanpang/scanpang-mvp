@@ -15,7 +15,8 @@
     "preview": {
       "distribution": "internal",
       "android": {
-        "buildType": "apk"
+        "buildType": "apk",
+        "gradleCommand": ":app:assembleRelease"
       },
       "env": {
         "API_BASE_URL": "https://scanpang-backend.onrender.com/api"
