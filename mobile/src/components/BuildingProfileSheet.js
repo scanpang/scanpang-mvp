@@ -37,6 +37,9 @@ const C = {
   cyan: '#06b6d4',
   gray: '#475569',
   tabActive: 'rgba(255,255,255,0.15)',
+  // 더미 폴백 데이터 구분 색상 (연보라 — 다크 테마와 조화)
+  dummyText: '#c4b5fd',
+  dummyText2: 'rgba(196,181,253,0.5)',
 };
 
 const TAG_COLORS = [C.green, C.blue, C.purple, C.amber, C.cyan, C.red];
@@ -196,7 +199,7 @@ const TabBar = ({ activeTab, onChangeTab, meta }) => {
 };
 
 // ===== 개요 탭: 편의시설 태그 =====
-const AmenityTags = ({ amenities = [] }) => {
+const AmenityTags = ({ amenities = [], isDummy = false }) => {
   if (!amenities.length) return null;
   return (
     <GHScrollView horizontal showsHorizontalScrollIndicator={false} nestedScrollEnabled directionalLockEnabled style={s.amenityScroll} contentContainerStyle={s.amenityContent}>
@@ -204,8 +207,8 @@ const AmenityTags = ({ amenities = [] }) => {
         <View key={i} style={s.amenityTag}>
           <View style={[s.amenityDot, { backgroundColor: TAG_COLORS[i % TAG_COLORS.length] }]} />
           <View>
-            <Text style={s.amenityName}>{item.type || item.label || ''}</Text>
-            <Text style={s.amenityDetail}>{item.location || item.hours || ''}</Text>
+            <Text style={[s.amenityName, isDummy && { color: C.dummyText }]}>{item.type || item.label || ''}</Text>
+            <Text style={[s.amenityDetail, isDummy && { color: C.dummyText2 }]}>{item.location || item.hours || ''}</Text>
           </View>
         </View>
       ))}
@@ -214,9 +217,10 @@ const AmenityTags = ({ amenities = [] }) => {
 };
 
 // ===== 개요 탭: 스탯 그리드 =====
-const STAT_ICONS = { total_floors: '\uD83C\uDFE2', occupancy: '\uD83D\uDCCA', tenants: '\uD83C\uDFEC', operating: '\uD83D\uDD52', residents: '\uD83D\uDC65', parking_capacity: '\uD83D\uDE97', congestion: '\uD83D\uDE80' };
+const STAT_ICONS = { total_floors: '\uD83C\uDFE2', occupancy: '\uD83D\uDCCA', tenants: '\uD83C\uDFEC', operating: '\uD83D\uDD52', residents: '\uD83D\uDC65', parking_capacity: '\uD83D\uDE97', congestion: '\uD83D\uDE80', type: '\uD83C\uDFF7\uFE0F' };
+const STAT_LABELS = { total_floors: '총층수', occupancy: '입주율', tenants: '테넌트', operating: '영업중', residents: '세대수', parking_capacity: '주차', congestion: '혼잡도', type: '용도' };
 
-const StatGrid = ({ stats }) => {
+const StatGrid = ({ stats, isDummy = false }) => {
   const items = stats?.raw?.slice(0, 4) || [];
   if (!items.length) {
     return (
@@ -236,8 +240,8 @@ const StatGrid = ({ stats }) => {
       {items.map((st, i) => (
         <View key={i} style={s.statBox}>
           <Text style={s.statIcon}>{STAT_ICONS[st.type] || '\uD83D\uDCCB'}</Text>
-          <Text style={s.statLabel}>{st.type === 'total_floors' ? '총층수' : st.type === 'occupancy' ? '입주율' : st.type === 'tenants' ? '테넌트' : st.type === 'operating' ? '영업중' : st.type}</Text>
-          <Text style={s.statValue}>{st.value}</Text>
+          <Text style={[s.statLabel, isDummy && { color: C.dummyText2 }]}>{STAT_LABELS[st.type] || st.type}</Text>
+          <Text style={[s.statValue, isDummy && { color: C.dummyText }]}>{st.value}</Text>
         </View>
       ))}
     </View>
@@ -313,7 +317,7 @@ const getFloorBadgeColor = (floorNumber) => {
   return C.purple;
 };
 
-const XrayTab = ({ floors = [] }) => {
+const XrayTab = ({ floors = [], isDummy = false }) => {
   if (!floors.length) return <XraySkeleton />;
   return (
     <View style={s.xrayWrap}>
@@ -334,7 +338,7 @@ const XrayTab = ({ floors = [] }) => {
               <Text style={s.xrayBadgeText}>{f.floor_number}</Text>
             </View>
             <Text
-              style={[s.xrayTenant, isVacant && s.xrayTenantVacant]}
+              style={[s.xrayTenant, isVacant && s.xrayTenantVacant, isDummy && { color: C.dummyText }]}
               numberOfLines={1}
             >
               {isVacant ? '공실' : (f.tenant_name || '정보 없음')}
@@ -447,6 +451,12 @@ const BuildingProfileSheet = ({ buildingProfile, loading, enriching, error, onCl
 
   const isDataSparse = (meta?.dataCompleteness || 0) < 25;
 
+  // 더미 필드 추적 (색상 구분용)
+  const dummyFields = new Set(profile?._dummyFields || []);
+  const isFoodDummy = dummyFields.has('restaurants');
+  const isEstateDummy = dummyFields.has('realEstate');
+  const isTourismDummy = dummyFields.has('tourism');
+
   return (
     <View style={s.outerWrap}>
       {/* 고정 영역: 헤더 + 탭바 (BottomSheetScrollView 바깥 → 가로 스와이프 제스처 충돌 해결) */}
@@ -461,8 +471,8 @@ const BuildingProfileSheet = ({ buildingProfile, loading, enriching, error, onCl
       {activeTab === 'overview' && (
         <View>
           {enriching && <EnrichingBanner />}
-          <AmenityTags amenities={profile.amenities} />
-          <StatGrid stats={profile.stats} />
+          <AmenityTags amenities={profile.amenities} isDummy={dummyFields.has('amenities')} />
+          <StatGrid stats={profile.stats} isDummy={dummyFields.has('stats')} />
           <LiveFeedSection feeds={profile.liveFeeds} />
           <PromotionBanner promotion={profile.promotion} />
           {isDataSparse && !enriching && <CollectingMessage />}
@@ -470,7 +480,7 @@ const BuildingProfileSheet = ({ buildingProfile, loading, enriching, error, onCl
       )}
 
       {activeTab === 'xray' && (
-        <XrayTab floors={profile.floors} />
+        <XrayTab floors={profile.floors} isDummy={dummyFields.has('floors')} />
       )}
 
       {activeTab === 'food' && (
@@ -495,16 +505,16 @@ const BuildingProfileSheet = ({ buildingProfile, loading, enriching, error, onCl
                     <Text style={s.foodIconText}>{getCategoryIcon(r.category)}</Text>
                   </View>
                   <View style={s.foodCenter}>
-                    <Text style={s.foodName} numberOfLines={1}>{r.name}</Text>
-                    <Text style={s.foodCategory}>{r.sub_category || r.category || ''}</Text>
+                    <Text style={[s.foodName, isFoodDummy && { color: C.dummyText }]} numberOfLines={1}>{r.name}</Text>
+                    <Text style={[s.foodCategory, isFoodDummy && { color: C.dummyText2 }]}>{r.sub_category || r.category || ''}</Text>
                     {r.rating != null && (
-                      <Text style={s.foodRating}>
+                      <Text style={[s.foodRating, isFoodDummy && { color: C.dummyText }]}>
                         {'\u2B50'} {r.rating}{r.review_count != null ? ` (${r.review_count})` : ''}
                       </Text>
                     )}
                     {r.signature_menu && (
                       <View style={s.foodMenuPill}>
-                        <Text style={s.foodMenuText}>대표: {r.signature_menu}{r.signature_price ? ` ${r.signature_price}` : ''}</Text>
+                        <Text style={[s.foodMenuText, isFoodDummy && { color: C.dummyText2 }]}>대표: {r.signature_menu}{r.signature_price ? ` ${r.signature_price}` : ''}</Text>
                       </View>
                     )}
                   </View>
@@ -548,8 +558,8 @@ const BuildingProfileSheet = ({ buildingProfile, loading, enriching, error, onCl
                   </View>
                   <View style={s.estateBody}>
                     <View style={s.estateInfo}>
-                      <Text style={s.estatePrice}>{priceStr}</Text>
-                      <Text style={s.estateDetail}>
+                      <Text style={[s.estatePrice, isEstateDummy && { color: C.dummyText }]}>{priceStr}</Text>
+                      <Text style={[s.estateDetail, isEstateDummy && { color: C.dummyText2 }]}>
                         {r.unit_number ? `${r.unit_number} \u00B7 ` : ''}{r.size_pyeong ? `${r.size_pyeong}평 (${r.size_sqm}\u33A1)` : '면적 미정'}
                       </Text>
                     </View>
@@ -576,9 +586,9 @@ const BuildingProfileSheet = ({ buildingProfile, loading, enriching, error, onCl
             <View style={s.tourismCard}>
               <View style={s.tourismHeader}>
                 <View style={{ flex: 1 }}>
-                  <Text style={s.tourismName}>{profile.tourism.attraction_name}</Text>
+                  <Text style={[s.tourismName, isTourismDummy && { color: C.dummyText }]}>{profile.tourism.attraction_name}</Text>
                   {profile.tourism.attraction_name_en && (
-                    <Text style={s.tourismNameEn}>{profile.tourism.attraction_name_en}</Text>
+                    <Text style={[s.tourismNameEn, isTourismDummy && { color: C.dummyText2 }]}>{profile.tourism.attraction_name_en}</Text>
                   )}
                 </View>
                 <TouchableOpacity style={s.tourismFavBtn} activeOpacity={0.7}>
@@ -588,7 +598,7 @@ const BuildingProfileSheet = ({ buildingProfile, loading, enriching, error, onCl
               {profile.tourism.rating != null && (
                 <View style={s.tourismRatingRow}>
                   <Text style={s.tourismStar}>{'\u2B50'}</Text>
-                  <Text style={s.tourismRatingNum}>{profile.tourism.rating}</Text>
+                  <Text style={[s.tourismRatingNum, isTourismDummy && { color: C.dummyText }]}>{profile.tourism.rating}</Text>
                   {profile.tourism.review_count != null && (
                     <Text style={s.tourismReviewCount}>({profile.tourism.review_count.toLocaleString()} review)</Text>
                   )}
@@ -597,27 +607,27 @@ const BuildingProfileSheet = ({ buildingProfile, loading, enriching, error, onCl
               <View style={s.tourismGrid}>
                 <View style={s.tourismGridCell}>
                   <Text style={s.tourismGridLabel}>혼잡도</Text>
-                  <Text style={[s.tourismGridValue, { color: getCongestionColor(profile.tourism.congestion) }]}>
+                  <Text style={[s.tourismGridValue, isTourismDummy ? { color: C.dummyText } : { color: getCongestionColor(profile.tourism.congestion) }]}>
                     {'\uD83D\uDC65'} {profile.tourism.congestion || '정보 없음'}
                   </Text>
                 </View>
                 <View style={s.tourismGridCell}>
                   <Text style={s.tourismGridLabel}>운영시간</Text>
-                  <Text style={s.tourismGridValue}>{profile.tourism.hours || '정보 없음'}</Text>
+                  <Text style={[s.tourismGridValue, isTourismDummy && { color: C.dummyText }]}>{profile.tourism.hours || '정보 없음'}</Text>
                 </View>
               </View>
               {profile.tourism.admission_fee && (
                 <View style={s.tourismFeeSection}>
                   <Text style={s.tourismFeeLabel}>입장료</Text>
                   <View style={s.tourismFeeBox}>
-                    <Text style={s.tourismFeeText}>{profile.tourism.admission_fee}</Text>
+                    <Text style={[s.tourismFeeText, isTourismDummy && { color: C.dummyText }]}>{profile.tourism.admission_fee}</Text>
                   </View>
                 </View>
               )}
               {profile.tourism.description && (
                 <View style={s.tourismDescSection}>
                   <Text style={s.tourismDescLabel}>설명</Text>
-                  <Text style={s.tourismDesc}>{profile.tourism.description}</Text>
+                  <Text style={[s.tourismDesc, isTourismDummy && { color: C.dummyText2 }]}>{profile.tourism.description}</Text>
                 </View>
               )}
               {profile.floors && profile.floors.length > 0 && (
