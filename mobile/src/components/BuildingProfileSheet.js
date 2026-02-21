@@ -251,7 +251,7 @@ const StatGrid = ({ stats, isDummy = false }) => {
 // ===== 개요 탭: LIVE 피드 =====
 const FEED_ICONS = { event: '\u2B50', promotion: '\uD83C\uDF81', congestion: '\uD83D\uDC65', update: '\uD83D\uDD14' };
 
-const LiveFeedSection = ({ feeds = [] }) => (
+const LiveFeedSection = ({ feeds = [], isDummy = false }) => (
   <View style={s.liveSection}>
     <View style={s.liveHeader}>
       <View style={s.livePulseDot} />
@@ -267,10 +267,10 @@ const LiveFeedSection = ({ feeds = [] }) => (
             <Text style={s.liveFeedIcon}>{FEED_ICONS[feed.feed_type] || '\uD83D\uDCE2'}</Text>
           </View>
           <View style={s.liveFeedContent}>
-            <Text style={s.liveFeedTitle} numberOfLines={1}>{feed.title}</Text>
-            {feed.subtitle ? <Text style={s.liveFeedSub} numberOfLines={1}>{feed.subtitle}</Text> : null}
+            <Text style={[s.liveFeedTitle, isDummy && { color: C.dummyText }]} numberOfLines={1}>{feed.title}</Text>
+            {feed.subtitle ? <Text style={[s.liveFeedSub, isDummy && { color: C.dummyText2 }]} numberOfLines={2}>{feed.subtitle}</Text> : null}
           </View>
-          <Text style={s.liveFeedTime}>{feed.time_label || ''}</Text>
+          <Text style={[s.liveFeedTime, isDummy && { color: C.dummyText2 }]}>{feed.time_label || ''}</Text>
         </View>
       ))
     )}
@@ -278,19 +278,19 @@ const LiveFeedSection = ({ feeds = [] }) => (
 );
 
 // ===== 개요 탭: 프로모션 배너 =====
-const PromotionBanner = ({ promotion }) => {
+const PromotionBanner = ({ promotion, isDummy = false }) => {
   if (!promotion) return null;
   return (
-    <View style={s.promoBanner}>
+    <View style={[s.promoBanner, isDummy && { borderColor: 'rgba(196,181,253,0.3)', backgroundColor: 'rgba(168,85,247,0.08)' }]}>
       <Text style={s.promoStar}>{'\u2B50'}</Text>
-      <Text style={s.promoTitle}>{promotion.title}</Text>
+      <Text style={[s.promoTitle, isDummy && { color: C.dummyText }]}>{promotion.title}</Text>
       {promotion.reward_points && (
-        <Text style={s.promoPoints}>{promotion.reward_points}P 적립 가능</Text>
+        <Text style={[s.promoPoints, isDummy && { color: '#c084fc' }]}>{promotion.reward_points}P 적립 가능</Text>
       )}
       {promotion.condition_text && (
-        <Text style={s.promoCondition}>{promotion.condition_text}</Text>
+        <Text style={[s.promoCondition, isDummy && { color: C.dummyText2 }]}>{promotion.condition_text}</Text>
       )}
-      <TouchableOpacity style={s.promoCta} activeOpacity={0.8}>
+      <TouchableOpacity style={[s.promoCta, isDummy && { backgroundColor: '#a855f7' }]} activeOpacity={0.8}>
         <Text style={s.promoCtaText}>{'\u25B6'} 광고 보고 포인트 받기</Text>
       </TouchableOpacity>
     </View>
@@ -473,8 +473,8 @@ const BuildingProfileSheet = ({ buildingProfile, loading, enriching, error, onCl
           {enriching && <EnrichingBanner />}
           <AmenityTags amenities={profile.amenities} isDummy={dummyFields.has('amenities')} />
           <StatGrid stats={profile.stats} isDummy={dummyFields.has('stats')} />
-          <LiveFeedSection feeds={profile.liveFeeds} />
-          <PromotionBanner promotion={profile.promotion} />
+          <LiveFeedSection feeds={profile.liveFeeds} isDummy={dummyFields.has('liveFeeds')} />
+          <PromotionBanner promotion={profile.promotion} isDummy={dummyFields.has('promotion')} />
           {isDataSparse && !enriching && <CollectingMessage />}
         </View>
       )}
@@ -733,8 +733,8 @@ const s = StyleSheet.create({
   liveBadgeText: { fontSize: 10, fontWeight: '800', color: C.red, letterSpacing: 1 },
   liveEmptyText: { fontSize: 13, color: C.text3, textAlign: 'center', paddingVertical: SPACING.lg },
   liveFeedItem: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingVertical: SPACING.sm, paddingHorizontal: SPACING.sm,
+    flexDirection: 'row', alignItems: 'flex-start',
+    paddingVertical: 10, paddingHorizontal: SPACING.sm,
     backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 10, marginBottom: SPACING.xs,
     gap: SPACING.md,
   },
