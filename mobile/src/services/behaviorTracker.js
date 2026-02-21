@@ -148,7 +148,7 @@ class BehaviorTracker {
   /**
    * Gaze 시작 (건물이 화면에 보이기 시작)
    */
-  startGaze(buildingId) {
+  startGaze(buildingId, buildingName) {
     if (!this.isTracking || !buildingId) return;
     if (this.gazeState.has(buildingId)) {
       // 이미 추적 중 → lastSeen 업데이트
@@ -159,9 +159,10 @@ class BehaviorTracker {
     this.gazeState.set(buildingId, {
       startTime: Date.now(),
       lastSeen: Date.now(),
+      buildingName: buildingName || null,
     });
 
-    this.trackEvent('gaze_start', { buildingId });
+    this.trackEvent('gaze_start', { buildingId, buildingName });
   }
 
   /**
@@ -176,7 +177,7 @@ class BehaviorTracker {
     this.gazeState.delete(buildingId);
 
     if (durationMs > 500) { // 0.5초 이상만 기록
-      this.trackEvent('gaze_end', { buildingId, durationMs });
+      this.trackEvent('gaze_end', { buildingId, buildingName: state.buildingName, durationMs });
     }
   }
 
@@ -184,14 +185,18 @@ class BehaviorTracker {
    * 화면에 보이는 건물 목록 업데이트 (매 프레임)
    * 이전에 보였는데 지금 안 보이는 건물 → gaze_end
    */
-  updateVisibleBuildings(visibleBuildingIds) {
+  updateVisibleBuildings(visibleBuildings) {
     if (!this.isTracking) return;
 
-    const visibleSet = new Set(visibleBuildingIds);
+    // 배열 원소가 객체({id, name})이면 이름 포함, 문자열이면 기존 호환
+    const entries = (visibleBuildings || []).map(b =>
+      typeof b === 'object' ? b : { id: b, name: null }
+    );
+    const visibleSet = new Set(entries.map(e => e.id));
 
     // 새로 보이는 건물 → gaze_start
-    for (const id of visibleBuildingIds) {
-      this.startGaze(id);
+    for (const { id, name } of entries) {
+      this.startGaze(id, name);
     }
 
     // 안 보이게 된 건물 → gaze_end (3초 유예)

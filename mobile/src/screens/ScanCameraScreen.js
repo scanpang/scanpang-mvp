@@ -706,8 +706,8 @@ const ScanCameraScreen = ({ route, navigation }) => {
   }, [heading, gyroscope, accelerometer]);
 
   useEffect(() => {
-    const ids = focusedBuilding ? [focusedBuilding.id] : [];
-    behaviorTracker.updateVisibleBuildings(ids);
+    const visible = focusedBuilding ? [{ id: focusedBuilding.id, name: focusedBuilding.name }] : [];
+    behaviorTracker.updateVisibleBuildings(visible);
   }, [focusedBuilding]);
 
   // Gemini Vision: 주기적 (안정 + 선택 건물, 바텀시트 열려있으면 중단)
@@ -848,7 +848,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
   }, [userLocation, heading, saveRecentScan, triggerGeminiAnalysis]);
 
   const handleCloseSheet = useCallback(() => {
-    if (selectedBuildingId) behaviorTracker.trackEvent('card_close', { buildingId: selectedBuildingId });
+    if (selectedBuildingId) behaviorTracker.trackEvent('card_close', { buildingId: selectedBuildingId, buildingName: selectedBuilding?.name });
     setSelectedBuildingId(null);
     setScanComplete(false);
     setGaugeProgress(0);
@@ -1017,7 +1017,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
           const isOpen = index >= 1;
           setSheetOpen(isOpen);
           if (selectedBuildingId && isOpen) {
-            behaviorTracker.trackEvent('card_open', { buildingId: selectedBuildingId });
+            behaviorTracker.trackEvent('card_open', { buildingId: selectedBuildingId, buildingName: selectedBuilding?.name });
           }
           // 드래그로 완전히 닫힌 경우 상태 정리
           if (index === -1 && selectedBuildingId) {
