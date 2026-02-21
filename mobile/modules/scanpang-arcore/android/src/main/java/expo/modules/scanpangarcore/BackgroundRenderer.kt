@@ -18,6 +18,7 @@ class BackgroundRenderer {
     private var program = 0
     private var positionAttrib = 0
     private var texCoordAttrib = 0
+    private var texCoordsInitialized = false
 
     // NDC 전체 화면 쿼드 좌표
     private val quadVertices: FloatBuffer = ByteBuffer
@@ -73,20 +74,23 @@ class BackgroundRenderer {
 
         positionAttrib = GLES20.glGetAttribLocation(program, "a_Position")
         texCoordAttrib = GLES20.glGetAttribLocation(program, "a_TexCoord")
+
+        texCoordsInitialized = false  // EGL 컨텍스트 재생성 시 UV 재계산 보장
     }
 
     /**
      * 카메라 프레임을 전체 화면에 렌더링
      */
     fun draw(frame: Frame) {
-        // 디스플레이 지오메트리 변경 시 텍스처 좌표 재계산
-        if (frame.hasDisplayGeometryChanged()) {
+        // 최초 1회는 반드시 UV 좌표 계산 실행 (초기값 0.0f → 회색 화면 방지)
+        if (!texCoordsInitialized || frame.hasDisplayGeometryChanged()) {
             frame.transformCoordinates2d(
                 Coordinates2d.OPENGL_NORMALIZED_DEVICE_COORDINATES,
                 quadVertices,
                 Coordinates2d.TEXTURE_NORMALIZED,
                 transformedTexCoords
             )
+            texCoordsInitialized = true
         }
 
         if (frame.timestamp == 0L) return
