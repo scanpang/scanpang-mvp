@@ -3,6 +3,8 @@ package expo.modules.scanpangarcore
 import android.content.Context
 import android.opengl.GLES20
 import android.opengl.GLSurfaceView
+import android.os.Handler
+import android.os.Looper
 import android.view.WindowManager
 import expo.modules.kotlin.AppContext
 import expo.modules.kotlin.viewevent.EventDispatcher
@@ -13,6 +15,15 @@ import javax.microedition.khronos.opengles.GL10
 /**
  * ARCore 카메라 프리뷰 네이티브 뷰
  * GLSurfaceView로 ARCore 카메라 프레임 렌더링 + Geospatial pose 이벤트 발행
+ *
+ * 초기화 순서 (GL Surface 기반):
+ *   1. init: GLSurfaceView 생성 + 렌더러 등록
+ *   2. GL thread: onSurfaceCreated → 텍스처 생성 → mainHandler로 세션 초기화 요청
+ *   3. Main thread: initializeSession → 세션 생성 → 텍스처 등록 → displayGeometry 설정 → resume
+ *   4. GL thread: onDrawFrame → session.update() → 카메라 렌더링
+ *
+ * EGL 컨텍스트 소실 시 (홈 복귀 등):
+ *   onSurfaceCreated 재호출 → 새 텍스처 생성 → 기존 세션에 재등록
  */
 class ScanPangARCoreView(context: Context, appContext: AppContext) : ExpoView(context, appContext) {
 
@@ -26,16 +37,19 @@ class ScanPangARCoreView(context: Context, appContext: AppContext) : ExpoView(co
     private val glSurfaceView: GLSurfaceView
     val geospatialManager: GeospatialManager
     private val backgroundRenderer = BackgroundRenderer()
+    // View.post 대신 Handler 사용 (View 미attach 상태에서도 확실히 실행)
+    private val mainHandler = Handler(Looper.getMainLooper())
+
     private var isSessionCreated = false
     private var isPaused = false
-    private var cameraTextureId = -1  // GL 스레드에서 생성된 텍스처 ID 캐시
-    private var hasRenderedFirstFrame = false  // 첫 유효 프레임 렌더링 여부 (깜빡임 방지)
+    private var cameraTextureId = -1  // GL 스레드에서 생성된 텍스처 ID
+    private var hasRenderedFirstFrame = false  // 깜빡임 방지용
 
     // 포즈 업데이트 쓰로틀링 (200ms 간격)
     private var lastPoseUpdateTime = 0L
     private val POSE_UPDATE_INTERVAL = 200L
 
-    // 뷰포트 크기 + 디스플레이 회전 (세션 생성 후 재적용 필요)
+    // 뷰포트 크기 + 디스플레이 회전 (세션 생성 시 적용)
     private var viewWidth = 0
     private var viewHeight = 0
     private var displayRotation = 0
@@ -46,7 +60,7 @@ class ScanPangARCoreView(context: Context, appContext: AppContext) : ExpoView(co
         // 모듈에 활성 뷰 등록
         ScanPangARCoreModule.activeView = this
 
-        // GLSurfaceView 설정
+        // GLSurfaceView 설정 (렌더러 등록 → GL 스레드 시작)
         glSurfaceView = GLSurfaceView(context).apply {
             preserveEGLContextOnPause = true
             setEGLContextClientVersion(2)
@@ -59,10 +73,12 @@ class ScanPangARCoreView(context: Context, appContext: AppContext) : ExpoView(co
     }
 
     /**
-     * ARCore 세션 시작
+     * ARCore 세션 초기화 (메인 스레드에서 실행)
+     * onSurfaceCreated에서만 호출됨 → GL 텍스처 생성 보장
      */
-    fun startSession() {
+    private fun initializeSession() {
         if (isSessionCreated) return
+        if (cameraTextureId < 0) return  // GL 텍스처 미생성 안전 가드
 
         val activity = appContext.currentActivity
         if (activity == null) {
@@ -71,8 +87,7 @@ class ScanPangARCoreView(context: Context, appContext: AppContext) : ExpoView(co
         }
 
         // ARCore 지원 확인
-        val availability = geospatialManager.checkAvailability()
-        if (availability == "unsupported") {
+        if (geospatialManager.checkAvailability() == "unsupported") {
             onError(mapOf("error" to "arcore_unsupported"))
             return
         }
@@ -81,18 +96,15 @@ class ScanPangARCoreView(context: Context, appContext: AppContext) : ExpoView(co
         if (geospatialManager.createSession(activity)) {
             isSessionCreated = true
 
-            // 카메라 텍스처를 세션에 등록 (GL 스레드에서 이미 생성됨)
-            if (cameraTextureId >= 0) {
-                geospatialManager.setCameraTexture(cameraTextureId)
-            }
+            // 1. GL 텍스처 등록 (onSurfaceCreated에서 이미 생성됨)
+            geospatialManager.setCameraTexture(cameraTextureId)
 
-            // 디스플레이 지오메트리 설정 (onSurfaceChanged가 세션 생성 전에 호출되어 누락됨)
-            // 이 호출이 없으면 텍스처 좌표가 계산되지 않아 회색 화면 발생
+            // 2. 디스플레이 지오메트리 설정 (onSurfaceChanged에서 캐시된 값)
             if (viewWidth > 0 && viewHeight > 0) {
                 geospatialManager.setDisplayGeometry(displayRotation, viewWidth, viewHeight)
             }
 
-            // 세션 resume → 카메라 피드 시작
+            // 3. 세션 시작 → 카메라 피드 활성화
             geospatialManager.resume()
 
             onReady(mapOf("status" to "session_created"))
@@ -104,7 +116,7 @@ class ScanPangARCoreView(context: Context, appContext: AppContext) : ExpoView(co
     fun pauseSession() {
         if (!isPaused && isSessionCreated) {
             isPaused = true
-            hasRenderedFirstFrame = false  // resume 시 안정화 전까지 검은 화면 허용
+            hasRenderedFirstFrame = false
             geospatialManager.pause()
             glSurfaceView.onPause()
         }
@@ -115,6 +127,9 @@ class ScanPangARCoreView(context: Context, appContext: AppContext) : ExpoView(co
             isPaused = false
             geospatialManager.resume()
             glSurfaceView.onResume()
+            // onResume 후 GL 스레드가 재시작됨:
+            // - EGL 컨텍스트 유지 → onSurfaceChanged만 호출 → 정상 렌더링
+            // - EGL 컨텍스트 소실 → onSurfaceCreated 재호출 → 텍스처 재등록
         }
     }
 
@@ -140,19 +155,26 @@ class ScanPangARCoreView(context: Context, appContext: AppContext) : ExpoView(co
     }
 
     /**
-     * GL 렌더러 — ARCore 프레임 처리 + 카메라 배경 렌더링
+     * GL 렌더러 — onSurfaceCreated가 세션 초기화의 유일한 트리거
      */
     private inner class ARRenderer : GLSurfaceView.Renderer {
 
         override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
             GLES20.glClearColor(0f, 0f, 0f, 1f)
+
+            // GL 텍스처 생성 (항상 새로 생성 — EGL 컨텍스트 소실 대응)
             backgroundRenderer.createOnGlThread()
-
-            // 텍스처 ID 캐시 (세션 생성 후 등록됨)
             cameraTextureId = backgroundRenderer.getTextureId()
+            hasRenderedFirstFrame = false
 
-            // 메인 스레드에서 세션 시작 (세션 생성 → 텍스처 등록 → resume 순서)
-            post { startSession() }
+            if (isSessionCreated) {
+                // EGL 컨텍스트 재생성됨 (홈 복귀 등):
+                // 기존 세션은 살아있지만 GL 텍스처가 새로 만들어졌으므로 재등록
+                geospatialManager.setCameraTexture(cameraTextureId)
+            } else {
+                // 최초 마운트: GL 준비 완료 → 메인 스레드에서 세션 생성
+                mainHandler.post { initializeSession() }
+            }
         }
 
         override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
@@ -192,7 +214,7 @@ class ScanPangARCoreView(context: Context, appContext: AppContext) : ExpoView(co
             // Tracking 상태 변화 이벤트
             if (geospatialManager.trackingStateChanged) {
                 val state = geospatialManager.currentTrackingState
-                post { onTrackingStateChanged(mapOf("state" to state)) }
+                mainHandler.post { onTrackingStateChanged(mapOf("state" to state)) }
             }
 
             // Geospatial pose + 앵커 위치 업데이트 (200ms 쓰로틀)
@@ -201,7 +223,7 @@ class ScanPangARCoreView(context: Context, appContext: AppContext) : ExpoView(co
                 lastPoseUpdateTime = now
                 val pose = geospatialManager.getCurrentPose()
                 if (pose != null) {
-                    post { onGeospatialPoseUpdate(pose) }
+                    mainHandler.post { onGeospatialPoseUpdate(pose) }
                 }
 
                 // 앵커 screen-space 좌표 업데이트
@@ -210,7 +232,7 @@ class ScanPangARCoreView(context: Context, appContext: AppContext) : ExpoView(co
                         frame, viewWidth, viewHeight
                     )
                     if (anchorPositions.isNotEmpty()) {
-                        post { onAnchorPositionsUpdate(mapOf("anchors" to anchorPositions)) }
+                        mainHandler.post { onAnchorPositionsUpdate(mapOf("anchors" to anchorPositions)) }
                     }
                 }
             }
