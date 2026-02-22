@@ -2,7 +2,8 @@
 // - ABI 필터링 (arm64-v8a만)
 // - R8 코드 축소 + 리소스 축소 활성화
 // - ProGuard keep 규칙 추가
-const { withGradleProperties, withDangerousMod } = require('expo/config-plugins');
+// - 앱 레벨 의존성 추가 (ARCore Geospatial 필수)
+const { withGradleProperties, withDangerousMod, withAppBuildGradle } = require('expo/config-plugins');
 const fs = require('fs');
 const path = require('path');
 
@@ -43,6 +44,8 @@ function withApkOptimization(config) {
 -keep class com.google.ar.** { *; }
 -keep class com.google.android.filament.** { *; }
 -keep class com.google.android.gms.location.** { *; }
+-keep class com.google.android.gms.common.** { *; }
+-keep class com.google.android.gms.tasks.** { *; }
 
 # Expo Modules
 -keep class expo.modules.** { *; }
@@ -55,8 +58,8 @@ function withApkOptimization(config) {
 
       if (fs.existsSync(proguardPath)) {
         let content = fs.readFileSync(proguardPath, 'utf8');
-        // 중복 추가 방지
-        if (!content.includes('com.google.ar')) {
+        // gms.location 규칙이 없으면 추가
+        if (!content.includes('com.google.android.gms.location')) {
           content += extraRules;
           fs.writeFileSync(proguardPath, content);
         }
@@ -65,6 +68,18 @@ function withApkOptimization(config) {
       return config;
     },
   ]);
+
+  // 3. 앱 레벨 build.gradle에 play-services-location 의존성 추가
+  config = withAppBuildGradle(config, (config) => {
+    const contents = config.modResults.contents;
+    if (!contents.includes('play-services-location')) {
+      config.modResults.contents = contents.replace(
+        /dependencies\s*\{/,
+        `dependencies {\n    // ARCore Geospatial 필수 의존성 (Fused Location Provider)\n    implementation("com.google.android.gms:play-services-location:21.1.0")`
+      );
+    }
+    return config;
+  });
 
   return config;
 }

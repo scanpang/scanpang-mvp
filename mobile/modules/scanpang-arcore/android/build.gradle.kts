@@ -24,5 +24,5 @@ android {
 dependencies {
     implementation(project(":expo-modules-core"))
     implementation("com.google.ar:core:1.42.0")
-    implementation("com.google.android.gms:play-services-location:21.1.0")
+    api("com.google.android.gms:play-services-location:21.1.0")
 }
