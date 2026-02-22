@@ -153,9 +153,8 @@ const FocusedLabel = ({ building, confidence, gaugeProgress, onPress }) => {
 };
 
 // ===== 상단 HUD =====
-const CameraHUD = ({ gpsStatus, onBack, buildingCount, factorScore, arTierInfo, debugInfo }) => {
+const CameraHUD = ({ gpsStatus, onBack, buildingCount, factorScore, accuracyInfo, debugInfo }) => {
   const gpsColor = gpsStatus === 'active' ? Colors.successGreen : gpsStatus === 'error' ? Colors.liveRed : Colors.accentAmber;
-  const tierLabel = debugInfo?.vps ? 'VPS' : debugInfo?.arMode ? 'AR' : 'GPS';
   const hAcc = debugInfo?.hAcc != null ? `${debugInfo.hAcc.toFixed(0)}m` : '-';
   const hdAcc = debugInfo?.hdAcc != null ? `${debugInfo.hdAcc.toFixed(0)}°` : '-';
 
@@ -165,9 +164,11 @@ const CameraHUD = ({ gpsStatus, onBack, buildingCount, factorScore, arTierInfo, 
         <Text style={styles.hudBackText}>{'\u2039'}</Text>
       </TouchableOpacity>
 
-      {/* Tier·모드 통합 배지 */}
-      <View style={[styles.hudTierBadge, { backgroundColor: arTierInfo?.color || '#888' }]}>
-        <Text style={styles.hudTierText}>T{debugInfo?.tier || 3}·{tierLabel}</Text>
+      {/* 모드 배지 (VPS/AR/GPS) */}
+      <View style={[styles.hudModeBadge, { backgroundColor: accuracyInfo?.modeColor || '#888' }]}>
+        <Text style={styles.hudModeText}>
+          {accuracyInfo?.modeLabel || 'GPS'}{accuracyInfo?.hasVPS ? ' \u2713' : ''}
+        </Text>
       </View>
 
       {/* 정확도 + FOV + 건물수 압축 표시 */}
@@ -397,11 +398,15 @@ const ScanCameraScreen = ({ route, navigation }) => {
 
   const { gyroscope, accelerometer, cameraAngle, isStable, motionState, getSnapshot } = useSensorData({ enabled: gpsStatus === 'active' });
 
-  // ARCore Geospatial 추적 (3-Tier 폴백)
+  // ARCore Geospatial 추적 (단일 정확도 시스템)
   const {
-    geoPose, vpsAvailable, trackingState, isLocalized, isARMode, tier, tierInfo, arError,
+    geoPose, vpsAvailable, trackingState, isLocalized, isARMode, accuracyInfo, arError,
     handlePoseUpdate, handleTrackingStateChanged, handleReady, handleError,
   } = useGeospatialTracking({ enabled: true });
+
+  // geoPose stale closure 방지용 ref
+  const geoPoseRef = useRef(null);
+  useEffect(() => { geoPoseRef.current = geoPose; }, [geoPose]);
 
   // AR 앵커 관리 (Geospatial localized 시에만)
   const snapPoints = useMemo(() => ['1%', '50%', '90%'], []);
@@ -455,14 +460,12 @@ const ScanCameraScreen = ({ route, navigation }) => {
   }, [buildings, heading, gyroscope, accelerometer, cameraAngle, timeContext, geminiResults, isARMode, isLocalized, geoPose]);
 
   // 포커스 영역 내 중심에 가장 가까운 건물 1개 계산 (바텀시트 열리면 중단)
-  // Geospatial 모드: 좁은 FOV(25°) + 빠른 전환
-  // Tier별 포커스 파라미터
-  const geoMode = isARMode && isLocalized;
-  const focusAngle = tier === 1 ? GEO_PARAMS.FOCUS_ANGLE     // Tier 1: 25°
-    : tier === 2 ? 30                                         // Tier 2: 30°
-    : FOCUS_ANGLE;                                            // Tier 3: 35°
-  const stickinessBonus = geoMode ? GEO_PARAMS.STICKINESS_BONUS : STICKINESS_BONUS;
-  const switchThreshold = geoMode ? GEO_PARAMS.SWITCH_THRESHOLD : SWITCH_THRESHOLD;
+  // horizontalAccuracy 기반 FOV 자동 계산: 정확도 좋으면 좁게(25°), 나쁘면 넓게(35°)
+  const currentAccuracy = geoPose?.horizontalAccuracy ?? gpsAccuracy ?? 999;
+  const focusAngle = Math.min(35, Math.max(25, 25 + (currentAccuracy - 2) * 0.556));
+  const highAccuracy = currentAccuracy < 10;
+  const stickinessBonus = highAccuracy ? GEO_PARAMS.STICKINESS_BONUS : STICKINESS_BONUS;
+  const switchThreshold = highAccuracy ? GEO_PARAMS.SWITCH_THRESHOLD : SWITCH_THRESHOLD;
 
   const focusedBuilding = useMemo(() => {
     if (sheetOpen) return null; // 바텀시트 열려있으면 감지 중단
@@ -509,9 +512,9 @@ const ScanCameraScreen = ({ route, navigation }) => {
   }, [focusedBuilding]);
 
   // ===== 게이지 시스템 (디바운스 리셋) =====
-  // Geospatial 모드: 더 빠른 전환/리셋
-  const focusResetThreshold = geoMode ? GEO_PARAMS.FOCUS_RESET : FOCUS_RESET_THRESHOLD;
-  const switchConfirmThreshold = geoMode ? GEO_PARAMS.SWITCH_CONFIRM : SWITCH_CONFIRM_THRESHOLD;
+  // 높은 정확도: 더 빠른 전환/리셋
+  const focusResetThreshold = highAccuracy ? GEO_PARAMS.FOCUS_RESET : FOCUS_RESET_THRESHOLD;
+  const switchConfirmThreshold = highAccuracy ? GEO_PARAMS.SWITCH_CONFIRM : SWITCH_CONFIRM_THRESHOLD;
 
   useEffect(() => {
     const newId = focusedBuilding?.id || null;
@@ -626,7 +629,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
 
     // scan log + behavior
     postScanLog({ sessionId: sessionIdRef.current, buildingId, eventType: 'gaze_scan', userLat: userLocation?.lat, userLng: userLocation?.lng, deviceHeading: heading, metadata: { confidence: building.confidence } }).catch(() => {});
-    behaviorTracker.trackEvent('gaze_scan', { buildingId, buildingName: building.name, metadata: { confidence: building.confidence, tier } });
+    behaviorTracker.trackEvent('gaze_scan', { buildingId, buildingName: building.name, metadata: { confidence: building.confidence, mode: accuracyInfo?.modeLabel, hAcc: accuracyInfo?.hAcc } });
 
     saveRecentScan(building);
     triggerGeminiAnalysis(building);
@@ -634,17 +637,17 @@ const ScanCameraScreen = ({ route, navigation }) => {
     return () => clearTimeout(msgTimer);
   }, [scanComplete]);
 
-  // AR 모드: geoPose → userLocation/heading 브릿지
+  // geoPose → userLocation/heading 브릿지 (geoPose 도착 시 자동 덮어쓰기)
   useEffect(() => {
-    if (!isARMode || !geoPose) return;
+    if (!geoPose) return;
     setUserLocation({ lat: geoPose.latitude, lng: geoPose.longitude });
     if (Math.abs(geoPose.heading - lastHeadingRef.current) >= 3) {
       lastHeadingRef.current = geoPose.heading;
       setHeading(geoPose.heading);
     }
-    // geoPose가 있으면 위치 확보된 것이므로 active 전환 (tracking 상태 무관)
+    // geoPose가 있으면 위치 확보된 것이므로 active 전환
     setGpsStatus('active');
-  }, [isARMode, geoPose, trackingState]);
+  }, [geoPose]);
 
   // ===== focusBuildingId로 진입 시 바텀시트 자동 오픈 =====
   useEffect(() => {
@@ -746,9 +749,8 @@ const ScanCameraScreen = ({ route, navigation }) => {
     })();
   }, [cameraPermission]);
 
-  // 위치 추적 (GPS 폴백 모드에서만)
+  // 위치 추적 (항상 실행, geoPose 없을 때만 갱신)
   useEffect(() => {
-    if (isARMode) return; // AR 모드에서는 geoPose 사용
     let cancelled = false;
     (async () => {
       try {
@@ -758,9 +760,12 @@ const ScanCameraScreen = ({ route, navigation }) => {
           { accuracy: Location.Accuracy.High, timeInterval: 3000, distanceInterval: 5 },
           (loc) => {
             if (!cancelled && isMountedRef.current) {
-              setUserLocation({ lat: loc.coords.latitude, lng: loc.coords.longitude });
+              // geoPose가 없을 때만 GPS 위치 사용 (geoPose 우선)
+              if (!geoPoseRef.current) {
+                setUserLocation({ lat: loc.coords.latitude, lng: loc.coords.longitude });
+                setGpsStatus('active');
+              }
               if (loc.coords.accuracy != null) setGpsAccuracy(loc.coords.accuracy);
-              setGpsStatus('active');
             }
           }
         );
@@ -768,21 +773,23 @@ const ScanCameraScreen = ({ route, navigation }) => {
       } catch { if (!cancelled) setGpsStatus('error'); }
     })();
     return () => { cancelled = true; locationSubRef.current?.remove(); };
-  }, [isARMode]);
+  }, []);
 
-  // 나침반 (GPS 폴백 모드에서만)
+  // 나침반 (항상 실행, geoPose 없을 때만 갱신)
   useEffect(() => {
-    if (isARMode) return; // AR 모드에서는 geoPose.heading 사용
     Magnetometer.setUpdateInterval(200);
     const sub = Magnetometer.addListener((data) => {
       if (isMountedRef.current && data) {
-        const h = computeHeading(data.x, data.y);
-        if (Math.abs(h - lastHeadingRef.current) >= 5) { lastHeadingRef.current = h; setHeading(h); }
+        // geoPose가 없을 때만 나침반 heading 사용 (geoPose.heading 우선)
+        if (!geoPoseRef.current) {
+          const h = computeHeading(data.x, data.y);
+          if (Math.abs(h - lastHeadingRef.current) >= 5) { lastHeadingRef.current = h; setHeading(h); }
+        }
       }
     });
     magnetSubRef.current = sub;
     return () => magnetSubRef.current?.remove();
-  }, [isARMode]);
+  }, []);
 
   // AppState
   useEffect(() => {
@@ -842,10 +849,10 @@ const ScanCameraScreen = ({ route, navigation }) => {
     setTimeout(() => bottomSheetRef.current?.snapToIndex(1), 50);
 
     postScanLog({ sessionId: sessionIdRef.current, buildingId: building.id, eventType: 'pin_tapped', userLat: userLocation?.lat, userLng: userLocation?.lng, deviceHeading: heading, metadata: { confidence: building.confidence } }).catch(() => {});
-    behaviorTracker.trackEvent('pin_click', { buildingId: building.id, buildingName: building.name, metadata: { confidence: building.confidence, tier } });
+    behaviorTracker.trackEvent('pin_click', { buildingId: building.id, buildingName: building.name, metadata: { confidence: building.confidence, mode: accuracyInfo?.modeLabel, hAcc: accuracyInfo?.hAcc } });
     saveRecentScan(building);
     triggerGeminiAnalysis(building);
-  }, [userLocation, heading, saveRecentScan, triggerGeminiAnalysis]);
+  }, [userLocation, heading, accuracyInfo, saveRecentScan, triggerGeminiAnalysis]);
 
   const handleCloseSheet = useCallback(() => {
     if (selectedBuildingId) behaviorTracker.trackEvent('card_close', { buildingId: selectedBuildingId, buildingName: selectedBuilding?.name });
@@ -984,15 +991,12 @@ const ScanCameraScreen = ({ route, navigation }) => {
         onBack={() => navigation.goBack()}
         buildingCount={buildings.length}
         factorScore={rankedBuildings[0]?.confidencePercent || 0}
-        arTierInfo={tierInfo}
+        accuracyInfo={accuracyInfo}
         debugInfo={{
-          tier,
-          vps: vpsAvailable,
           hAcc: geoPose?.horizontalAccuracy ?? gpsAccuracy ?? null,
           hdAcc: geoPose?.headingAccuracy ?? null,
-          fov: focusAngle,
+          fov: Math.round(focusAngle),
           buildingCount: buildings.length,
-          arMode: isARMode,
         }}
       />
 
@@ -1155,8 +1159,8 @@ const styles = StyleSheet.create({
   },
   hudBackBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center' },
   hudBackText: { fontSize: 22, color: '#FFF', marginTop: -2 },
-  hudTierBadge: { backgroundColor: 'rgba(0,0,0,0.4)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14, justifyContent: 'center', alignItems: 'center' },
-  hudTierText: { fontSize: 11, fontWeight: '900', color: '#FFF' },
+  hudModeBadge: { backgroundColor: 'rgba(0,0,0,0.4)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14, justifyContent: 'center', alignItems: 'center' },
+  hudModeText: { fontSize: 11, fontWeight: '900', color: '#FFF' },
   hudInfoPill: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.4)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14, gap: 2 },
   hudInfoText: { fontSize: 11, fontWeight: '600', color: 'rgba(255,255,255,0.8)' },
   hudInfoSep: { fontSize: 11, color: 'rgba(255,255,255,0.3)' },

@@ -1,18 +1,16 @@
 /**
  * useGeospatialTracking - ARCore Geospatial 추적 훅
  *
- * 3-Tier 폴백 체계:
- *   Tier 1: VPS + GPS 융합 (~1m 정확도) — Terrain/Rooftop Anchor, 좁은 FOV(25°)
- *   Tier 2: GPS + IMU 융합 (~5m) — VPS 불가 + ARCore GPS+센서 융합, 중간 FOV(30°)
- *   Tier 3: 기존 7-Factor 폴백 (~10-20m) — ARCore 초기화 실패 시
+ * 단일 정확도 시스템: horizontalAccuracy 기반 자동 FOV 조절
+ * GPS 항상 실행 → geoPose 도착 시 자동 우선 적용
  *
- * @returns {Object} { geoPose, vpsAvailable, trackingState, isLocalized, isARMode, tier, arError, handlers }
+ * @returns {Object} { geoPose, vpsAvailable, trackingState, isLocalized, isARMode, accuracyInfo, arError, handlers }
  */
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { checkVPSAvailability } from 'scanpang-arcore';
 
-// ARCore 초기화 타임아웃 (5초 내 onReady 안 오면 CameraView 폴백)
-const AR_INIT_TIMEOUT = 5000;
+// ARCore 초기화 타임아웃 (GPS가 항상 기본이므로 AR 실패해도 무관, 여유있게 30초)
+const AR_INIT_TIMEOUT = 30000;
 
 const useGeospatialTracking = ({ enabled = true } = {}) => {
   // Geospatial pose
@@ -21,7 +19,7 @@ const useGeospatialTracking = ({ enabled = true } = {}) => {
   const [vpsAvailable, setVpsAvailable] = useState(null);
   // Tracking 상태: 'initializing' | 'tracking' | 'limited' | 'stopped'
   const [trackingState, setTrackingState] = useState('initializing');
-  // AR 모드 활성 여부 (false = GPS 폴백, Tier 3)
+  // AR 모드 활성 여부 (false = GPS 폴백)
   const [isARMode, setIsARMode] = useState(true);
   // AR 에러
   const [arError, setArError] = useState(null);
@@ -35,26 +33,15 @@ const useGeospatialTracking = ({ enabled = true } = {}) => {
   // 위치 정확도 기반 localized 판정 (horizontalAccuracy < 10m)
   const isLocalized = geoPose != null && geoPose.horizontalAccuracy < 10;
 
-  // 3-Tier 판정
-  //   Tier 1: VPS 활성 + localized (정밀 모드)
-  //   Tier 2: ARCore tracking 중 + VPS 없음 (GPS+IMU 융합)
-  //   Tier 3: ARCore 비활성 (기존 7-Factor)
-  const tier = useMemo(() => {
-    if (!isARMode) return 3;
-    if (trackingState !== 'tracking') return 3;
-    if (vpsAvailable && isLocalized) return 1;
-    if (trackingState === 'tracking') return 2;
-    return 3;
-  }, [isARMode, trackingState, vpsAvailable, isLocalized]);
-
-  // Tier별 HUD 정보
-  const tierInfo = useMemo(() => {
-    switch (tier) {
-      case 1: return { label: 'AR 정밀 모드', color: '#10B981', fov: 25 };   // 초록
-      case 2: return { label: 'AR 일반 모드', color: '#F59E0B', fov: 30 };   // 노랑
-      default: return { label: 'GPS 모드', color: '#888888', fov: 35 };       // 회색
-    }
-  }, [tier]);
+  // 정확도 기반 모드/HUD 정보
+  const accuracyInfo = useMemo(() => {
+    const hAcc = geoPose?.horizontalAccuracy ?? null;
+    const hdAcc = geoPose?.headingAccuracy ?? null;
+    const hasVPS = vpsAvailable && isLocalized;
+    const modeLabel = hasVPS ? 'VPS' : isARMode ? 'AR' : 'GPS';
+    const modeColor = hasVPS ? '#10B981' : isARMode ? '#3B82F6' : '#888888';
+    return { hAcc, hdAcc, hasVPS, modeLabel, modeColor };
+  }, [geoPose, vpsAvailable, isLocalized, isARMode]);
 
   // ===== ARCameraView 이벤트 핸들러 =====
 
@@ -157,8 +144,7 @@ const useGeospatialTracking = ({ enabled = true } = {}) => {
     trackingState,
     isLocalized,
     isARMode,
-    tier,
-    tierInfo,
+    accuracyInfo,
     arError,
     // ARCameraView에 전달할 이벤트 핸들러
     handlePoseUpdate,
