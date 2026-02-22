@@ -39,9 +39,10 @@ function withApkOptimization(config) {
       );
 
       const extraRules = `
-# ARCore
+# ARCore + Geospatial 의존성 (Fused Location Provider)
 -keep class com.google.ar.** { *; }
 -keep class com.google.android.filament.** { *; }
+-keep class com.google.android.gms.location.** { *; }
 
 # Expo Modules
 -keep class expo.modules.** { *; }
