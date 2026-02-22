@@ -1,16 +1,17 @@
 /**
  * useBuildingIdentify - 레이캐스팅 건물 식별 훅
  * - depth 있으면 → 즉시 identify 요청
- * - depth null + heading ±10° 3초 안정 → identify 요청 (서버에서 레이캐스팅)
- * - heading 이동 중 → 아무것도 안 함 (nearby 폴백)
+ * - depth null + heading ±15° 3초 안정 → identify 요청 (서버에서 레이캐스팅)
+ * - heading 이동 중 → 아무것도 안 함
  * - buildings 배열 반환으로 useNearbyBuildings와 호환
+ * - status 반환: idle / stabilizing / requesting / done
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { identifyBuilding } from '../services/api';
 
 // heading 안정 판정
-const HEADING_STABLE_THRESHOLD = 10;  // ±10° 이내면 안정
+const HEADING_STABLE_THRESHOLD = 15;  // ±15° 이내면 안정
 const HEADING_STABLE_DURATION = 3000; // 3초 유지 시 트리거
 const POSITION_THRESHOLD = 5;         // 5m 이상 이동 시 재요청
 
@@ -30,12 +31,13 @@ function headingDiff(a, b) {
  * @param {Object} params
  * @param {Object|null} params.geoPose - ARCore Geospatial pose
  * @param {boolean} params.enabled - 훅 활성화 여부
- * @returns {{ buildings: Array, loading: boolean, error: Object|null, refetch: Function }}
+ * @returns {{ buildings: Array, loading: boolean, error: Object|null, status: string, refetch: Function }}
  */
 const useBuildingIdentify = ({ geoPose = null, enabled = true } = {}) => {
   const [buildings, setBuildings] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [status, setStatus] = useState('idle'); // idle / stabilizing / requesting / done
 
   const isMounted = useRef(true);
   const requestId = useRef(0);          // 경합 방지
@@ -52,6 +54,7 @@ const useBuildingIdentify = ({ geoPose = null, enabled = true } = {}) => {
 
     const myId = ++requestId.current;
     setLoading(true);
+    setStatus('requesting');
     setError(null);
 
     try {
@@ -76,6 +79,7 @@ const useBuildingIdentify = ({ geoPose = null, enabled = true } = {}) => {
 
       setBuildings(withConfidence);
       setLoading(false);
+      setStatus('done');
       lastRequest.current = { lat, lng, heading, depthMeters };
     } catch (err) {
       if (!isMounted.current || myId !== requestId.current) return;
@@ -83,12 +87,14 @@ const useBuildingIdentify = ({ geoPose = null, enabled = true } = {}) => {
       setError({ message: 'identify 실패', isFallback: false });
       setBuildings([]);
       setLoading(false);
+      setStatus('done');
     }
   }, []);
 
   useEffect(() => {
     if (!enabled || !geoPose) {
       if (buildings.length > 0) setBuildings([]);
+      setStatus('idle');
       // heading 안정 상태 초기화
       stableHeadingRef.current = null;
       stableStartRef.current = null;
@@ -129,6 +135,7 @@ const useBuildingIdentify = ({ geoPose = null, enabled = true } = {}) => {
       stableHeadingRef.current = heading;
       stableStartRef.current = now;
       stableFiredRef.current = false;
+      setStatus('stabilizing');
     } else if (headingDiff(heading, stableHeadingRef.current) > HEADING_STABLE_THRESHOLD) {
       // heading이 크게 변함 → 안정 리셋
       stableHeadingRef.current = heading;
@@ -136,6 +143,7 @@ const useBuildingIdentify = ({ geoPose = null, enabled = true } = {}) => {
       stableFiredRef.current = false;
       if (stableTimerRef.current) clearTimeout(stableTimerRef.current);
       stableTimerRef.current = null;
+      setStatus('stabilizing');
     }
 
     // 아직 발사 안 했으면 3초 타이머 설정
@@ -188,7 +196,7 @@ const useBuildingIdentify = ({ geoPose = null, enabled = true } = {}) => {
     };
   }, []);
 
-  return { buildings, loading, error, refetch };
+  return { buildings, loading, error, status, refetch };
 };
 
 export default useBuildingIdentify;

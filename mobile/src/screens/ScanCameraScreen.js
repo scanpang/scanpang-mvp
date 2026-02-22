@@ -407,6 +407,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
   const [profileError, setProfileError] = useState(null);
   const [xrayActive, setXrayActive] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [nearbyManual, setNearbyManual] = useState(false); // 주변 검색 수동 모드
 
   const bottomSheetRef = useRef(null);
   const cameraRef = useRef(null);
@@ -441,20 +442,28 @@ const ScanCameraScreen = ({ route, navigation }) => {
   const snapPoints = useMemo(() => ['1%', '50%', '90%'], []);
 
   // 1. identify 훅 (primary — depth/방위각 기반 역지오코딩)
-  const { buildings: identifiedBuildings } = useBuildingIdentify({
+  const { buildings: identifiedBuildings, status: identifyStatus } = useBuildingIdentify({
     geoPose,
     enabled: gpsStatus === 'active' && !sheetOpen,
   });
 
-  // 2. nearby 훅 (fallback — identify가 빈 결과일 때만 활성화)
+  // 2. nearby 훅 (시연/테스트용 독립 토글)
   const { buildings: nearbyBuildings } = useNearbyBuildings({
     latitude: userLocation?.lat, longitude: userLocation?.lng,
     heading, radius: 200,
-    enabled: gpsStatus === 'active' && !sheetOpen && identifiedBuildings.length === 0,
+    enabled: gpsStatus === 'active' && !sheetOpen && nearbyManual,
   });
 
-  // 3. 통합: identify 우선, nearby 폴백
-  const buildings = identifiedBuildings.length > 0 ? identifiedBuildings : nearbyBuildings;
+  // 3. 통합: identify + nearby 병합 (nearby는 독립 토글, identify와 무관)
+  const buildings = useMemo(() => {
+    const merged = [...identifiedBuildings];
+    if (nearbyManual && nearbyBuildings.length > 0) {
+      // 중복 제거: identify에 이미 있는 건물은 스킵
+      const ids = new Set(identifiedBuildings.map(b => b.id));
+      nearbyBuildings.forEach(b => { if (!ids.has(b.id)) merged.push(b); });
+    }
+    return merged;
+  }, [identifiedBuildings, nearbyBuildings, nearbyManual]);
 
   // AR 앵커 관리 (Geospatial localized + 바텀시트 닫혀있을 때)
   const { anchors: arAnchors, handleAnchorPositionsUpdate } = useGeospatialAnchors({
@@ -937,15 +946,23 @@ const ScanCameraScreen = ({ route, navigation }) => {
     navigation.navigate('BehaviorReport', { buildingId: selectedBuilding.id, buildingName: selectedBuilding.name });
   }, [selectedBuilding, navigation]);
 
-  // 안내 텍스트 결정 (scanCompleteMessage는 0.5초 후 자동 소멸)
+  // 주변 검색 버튼 토글
+  const handleNearbyToggle = useCallback(() => {
+    setNearbyManual(prev => !prev);
+  }, []);
+
+  // 안내 텍스트 결정 (identify 상태 반영)
   const guideMessage = useMemo(() => {
     if (sheetOpen || scanComplete) return scanCompleteMessage || null;
     if (scanCompleteMessage) return scanCompleteMessage;
     if (gpsStatus === 'searching') return '위치를 탐색하고 있습니다...';
-    if (!buildings.length) return '건물을 향해 카메라를 비추세요';
+    // identify 상태 기반 안내
+    if (identifyStatus === 'stabilizing') return '카메라를 고정하세요...';
+    if (identifyStatus === 'requesting') return '건물 식별 중...';
+    if (identifiedBuildings.length === 0 && identifyStatus === 'done') return '건물이 감지되지 않았습니다';
     if (!focusedBuilding) return '건물에 카메라를 맞춰주세요';
     return `${focusedBuilding.name} 스캔 중...`;
-  }, [gpsStatus, buildings.length, focusedBuilding, scanComplete, scanCompleteMessage, sheetOpen]);
+  }, [gpsStatus, identifyStatus, identifiedBuildings.length, focusedBuilding, scanComplete, scanCompleteMessage, sheetOpen]);
 
   return (
     <GestureHandlerRootView style={styles.container}>
@@ -1060,6 +1077,21 @@ const ScanCameraScreen = ({ route, navigation }) => {
 
       {/* 안내 텍스트 (null이면 숨김) */}
       {guideMessage && <GuideText text={guideMessage} />}
+
+      {/* Nearby 토글 버튼: 시연/테스트용, 항상 접근 가능 */}
+      {!sheetOpen && gpsStatus === 'active' && (
+        <View style={styles.nearbyBtnWrap}>
+          <TouchableOpacity
+            style={[styles.nearbyBtn, nearbyManual && styles.nearbyBtnActive]}
+            onPress={handleNearbyToggle}
+            activeOpacity={0.75}
+          >
+            <Text style={[styles.nearbyBtnText, nearbyManual && styles.nearbyBtnTextActive]}>
+              Nearby{nearbyManual ? ' ON' : ''}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* Layer 4: 바텀시트 */}
       <BottomSheet
@@ -1224,6 +1256,13 @@ const styles = StyleSheet.create({
   // 안내 텍스트
   guideTextWrap: { position: 'absolute', bottom: SH * 0.14, left: 0, right: 0, alignItems: 'center', zIndex: 5 },
   guideText: { fontSize: 14, fontWeight: '500', color: 'rgba(255,255,255,0.9)', backgroundColor: 'rgba(0,0,0,0.5)', paddingHorizontal: SPACING.xl, paddingVertical: SPACING.sm, borderRadius: 20, overflow: 'hidden' },
+
+  // 주변 검색 버튼
+  nearbyBtnWrap: { position: 'absolute', bottom: SH * 0.08, left: 0, right: 0, alignItems: 'center', zIndex: 5 },
+  nearbyBtn: { backgroundColor: 'rgba(255,255,255,0.15)', paddingHorizontal: 24, paddingVertical: 10, borderRadius: 22, borderWidth: 1, borderColor: 'rgba(255,255,255,0.25)' },
+  nearbyBtnActive: { backgroundColor: 'rgba(59,130,246,0.35)', borderColor: 'rgba(59,130,246,0.6)' },
+  nearbyBtnText: { fontSize: 14, fontWeight: '600', color: 'rgba(255,255,255,0.85)' },
+  nearbyBtnTextActive: { color: '#FFF' },
 
   // ===== 바텀시트 =====
   bsBackground: { backgroundColor: '#141428', borderTopLeftRadius: 20, borderTopRightRadius: 20 },
