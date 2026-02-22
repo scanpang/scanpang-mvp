@@ -69,6 +69,8 @@ const useGeospatialTracking = ({ enabled = true } = {}) => {
         horizontalAccuracy: data.horizontalAccuracy,
         headingAccuracy: data.headingAccuracy,
         verticalAccuracy: data.verticalAccuracy,
+        depthMeters: data.depthMeters ?? null,
+        depthSupported: data.depthSupported ?? false,
       });
 
       // 위치 확보 시 VPS 가용성 체크 (실패 시 최대 2회 재시도)
