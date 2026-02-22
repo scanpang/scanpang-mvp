@@ -25,7 +25,7 @@ const googlePlaces = require('../services/googlePlaces');
  */
 router.get('/nearby', async (req, res, next) => {
   try {
-    const { lat, lng, radius, heading } = req.query;
+    const { lat, lng, radius, heading, source: querySource } = req.query;
 
     if (!lat || !lng) {
       return res.status(400).json({
@@ -50,26 +50,61 @@ router.get('/nearby', async (req, res, next) => {
     let primaryResults = [];
     let source = 'kakao';
 
-    // 1. 카카오 primary
-    try {
-      primaryResults = await kakaoLocal.searchNearbyPlaces(parsedLat, parsedLng, parsedRadius);
-    } catch (err) {
-      console.warn('[nearby] 카카오 조회 실패:', err.message);
-    }
-
-    // 2. 카카오 실패/빈 결과 시 OSM 폴백
-    if (!primaryResults.length) {
-      source = 'osm';
-      let osmResults = osmBuildings.getCachedNearby(parsedLat, parsedLng, parsedRadius);
-      if (!osmResults) {
-        try {
-          osmResults = await osmBuildings.fetchNearbyFromOSM(parsedLat, parsedLng, parsedRadius);
-        } catch (err) {
-          console.warn('[nearby] OSM 조회 실패:', err.message);
-          osmResults = [];
-        }
+    // === VPS 모드: OSM primary + 카카오 이름 보강 ===
+    if (querySource === 'osm_vps') {
+      source = 'osm_vps';
+      try {
+        primaryResults = await osmBuildings.fetchNearbyFromOSM(parsedLat, parsedLng, parsedRadius, { includeUnnamed: true });
+      } catch (err) {
+        console.warn('[nearby/vps] OSM 조회 실패:', err.message);
+        primaryResults = [];
       }
-      primaryResults = osmResults;
+
+      // needsEnrich 건물 상위 5개에 카카오 coordToAddress로 이름 보강
+      const enrichTargets = primaryResults.filter(b => b.needsEnrich).slice(0, 5);
+      if (enrichTargets.length > 0) {
+        const enrichResults = await Promise.allSettled(
+          enrichTargets.map(b => kakaoLocal.coordToAddress(b.lat, b.lng))
+        );
+        enrichResults.forEach((result, i) => {
+          if (result.status === 'fulfilled' && result.value) {
+            const addr = result.value;
+            const target = enrichTargets[i];
+            if (addr.buildingName) {
+              target.name = addr.buildingName;
+              target.needsEnrich = false;
+            } else if (addr.roadAddress) {
+              target.name = addr.roadAddress;
+              target.needsEnrich = false;
+            }
+            if (addr.address) target.address = target.address || addr.address;
+            if (addr.roadAddress) target.roadAddress = addr.roadAddress;
+          }
+        });
+      }
+    } else {
+      // === 기존 모드: 카카오 primary + OSM 폴백 ===
+      // 1. 카카오 primary
+      try {
+        primaryResults = await kakaoLocal.searchNearbyPlaces(parsedLat, parsedLng, parsedRadius);
+      } catch (err) {
+        console.warn('[nearby] 카카오 조회 실패:', err.message);
+      }
+
+      // 2. 카카오 실패/빈 결과 시 OSM 폴백
+      if (!primaryResults.length) {
+        source = 'osm';
+        let osmResults = osmBuildings.getCachedNearby(parsedLat, parsedLng, parsedRadius);
+        if (!osmResults) {
+          try {
+            osmResults = await osmBuildings.fetchNearbyFromOSM(parsedLat, parsedLng, parsedRadius);
+          } catch (err) {
+            console.warn('[nearby] OSM 조회 실패:', err.message);
+            osmResults = [];
+          }
+        }
+        primaryResults = osmResults;
+      }
     }
 
     // 3. DB: 보조 소스

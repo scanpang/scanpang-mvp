@@ -42,7 +42,6 @@ import XRayOverlay from '../components/XRayOverlay';
 import { ARCameraView } from 'scanpang-arcore';
 import useGeospatialTracking from '../hooks/useGeospatialTracking';
 import useGeospatialAnchors from '../hooks/useGeospatialAnchors';
-import useBuildingIdentify from '../hooks/useBuildingIdentify';
 
 const { width: SW, height: SH } = Dimensions.get('window');
 const RECENT_SCANS_KEY = '@scanpang_recent_scans';
@@ -155,9 +154,9 @@ const FocusedLabel = ({ building, confidence, gaugeProgress, onPress }) => {
 
 // ===== 상단 HUD =====
 // 모드 순환: auto(null) → VPS* → AR* → GPS* → auto(null)
-const FORCE_MODE_CYCLE = ['VPS', 'AR', 'GPS'];
+const FORCE_MODE_CYCLE = ['VPS', 'GPS'];
 
-const CameraHUD = ({ gpsStatus, onBack, buildingCount, factorScore, accuracyInfo, debugInfo, arError, forceMode, onForceMode, depthMeters }) => {
+const CameraHUD = ({ gpsStatus, onBack, buildingCount, factorScore, accuracyInfo, debugInfo, arError, forceMode, onForceMode }) => {
   const gpsColor = gpsStatus === 'active' ? Colors.successGreen : gpsStatus === 'error' ? Colors.liveRed : Colors.accentAmber;
   const hAcc = debugInfo?.hAcc != null ? `${debugInfo.hAcc.toFixed(0)}m` : '-';
   const hdAcc = debugInfo?.hdAcc != null ? `${debugInfo.hdAcc.toFixed(0)}°` : '-';
@@ -201,12 +200,6 @@ const CameraHUD = ({ gpsStatus, onBack, buildingCount, factorScore, accuracyInfo
         <Text style={styles.hudInfoSep}>·</Text>
         <Text style={styles.hudInfoText}>±{debugInfo?.fov || 35}°</Text>
         <Text style={styles.hudInfoSep}>·</Text>
-        {depthMeters != null && (
-          <>
-            <Text style={[styles.hudInfoText, { color: '#4FC3F7' }]}>{depthMeters.toFixed(1)}m</Text>
-            <Text style={styles.hudInfoSep}>·</Text>
-          </>
-        )}
         <Text style={styles.hudInfoText}>건물{debugInfo?.buildingCount || 0}</Text>
       </View>
 
@@ -246,7 +239,6 @@ const ScanCameraScreen = ({ route, navigation }) => {
   const [profileError, setProfileError] = useState(null);
   const [xrayActive, setXrayActive] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
-  const [nearbyManual, setNearbyManual] = useState(false); // 주변 검색 수동 모드
 
   const bottomSheetRef = useRef(null);
   const cameraRef = useRef(null);
@@ -277,31 +269,19 @@ const ScanCameraScreen = ({ route, navigation }) => {
   const geoPoseRef = useRef(null);
   useEffect(() => { geoPoseRef.current = geoPose; }, [geoPose]);
 
-  // AR 앵커 관리 (Geospatial localized 시에만)
+  // VPS/GPS 분기: VPS면 OSM primary(좁은 반경), GPS면 기존 200m
+  const isVpsActive = accuracyInfo?.hasVPS === true;
+  const nearbyRadius = isVpsActive
+    ? (geoPose?.horizontalAccuracy < 5 ? 50 : 100)
+    : 200;
+  const nearbySource = isVpsActive ? 'osm_vps' : 'auto';
 
-  // 1. identify 훅 (primary — depth/방위각 기반 역지오코딩)
-  const { buildings: identifiedBuildings, status: identifyStatus } = useBuildingIdentify({
-    geoPose,
+  const { buildings, loading: nearbyLoading } = useNearbyBuildings({
+    latitude: userLocation?.lat, longitude: userLocation?.lng,
+    heading, radius: nearbyRadius,
+    source: nearbySource,
     enabled: gpsStatus === 'active' && !sheetOpen,
   });
-
-  // 2. nearby 훅 (시연/테스트용 독립 토글)
-  const { buildings: nearbyBuildings } = useNearbyBuildings({
-    latitude: userLocation?.lat, longitude: userLocation?.lng,
-    heading, radius: 200,
-    enabled: gpsStatus === 'active' && !sheetOpen && nearbyManual,
-  });
-
-  // 3. 통합: identify + nearby 병합 (nearby는 독립 토글, identify와 무관)
-  const buildings = useMemo(() => {
-    const merged = [...identifiedBuildings];
-    if (nearbyManual && nearbyBuildings.length > 0) {
-      // 중복 제거: identify에 이미 있는 건물은 스킵
-      const ids = new Set(identifiedBuildings.map(b => b.id));
-      nearbyBuildings.forEach(b => { if (!ids.has(b.id)) merged.push(b); });
-    }
-    return merged;
-  }, [identifiedBuildings, nearbyBuildings, nearbyManual]);
 
   // AR 앵커 관리 (Geospatial localized + 바텀시트 닫혀있을 때)
   const { anchors: arAnchors, handleAnchorPositionsUpdate } = useGeospatialAnchors({
@@ -334,30 +314,26 @@ const ScanCameraScreen = ({ route, navigation }) => {
     ? { ...(buildings.find(b => b.id === selectedBuildingId) || {}), ...(buildingDetail || {}) }
     : null;
 
-  // 건물별 confidence 계산 + 정렬 (identify / Geospatial / 7-Factor 조건 분기)
+  // 건물별 confidence 계산 + 정렬 (VPS: Geospatial 엔진 / GPS: 7-Factor)
   const rankedBuildings = useMemo(() => {
     if (!buildings.length) return [];
-    // identify 결과는 이미 confidence 포함 → 엔진 스킵
-    if (identifiedBuildings.length > 0) {
-      return buildings;
-    }
-    if (isARMode && isLocalized && geoPose) {
-      // Geospatial 엔진: ARCore 위치/heading 기반
+    if (isVpsActive && geoPose) {
+      // VPS: Geospatial 엔진 — ARCore 위치/heading 기반
       return matchBuildingsGeo(geoPose, buildings, timeContext, geminiResults);
     }
-    // 7-Factor 폴백: 기존 센서 기반
+    // GPS: 7-Factor 폴백 — 기존 센서 기반
     const sensorData = { heading, gyroscope, accelerometer, cameraAngle };
     return rankBuildings(buildings, sensorData, timeContext, geminiResults);
-  }, [buildings, identifiedBuildings, heading, gyroscope, accelerometer, cameraAngle, timeContext, geminiResults, isARMode, isLocalized, geoPose]);
+  }, [buildings, heading, gyroscope, accelerometer, cameraAngle, timeContext, geminiResults, isVpsActive, geoPose]);
 
   // 포커스 영역 내 중심에 가장 가까운 건물 1개 계산 (바텀시트 열리면 중단)
   // horizontalAccuracy 기반 FOV 자동 계산: 정확도 좋으면 좁게(25°), 나쁘면 넓게(35°)
   // forceMode 시 고정 FOV: VPS*=25°, AR*=30°, GPS*=35°
   const currentAccuracy = geoPose?.horizontalAccuracy ?? gpsAccuracy ?? 999;
   const focusAngle = forceMode === 'VPS' ? 25
-    : forceMode === 'AR' ? 30
     : forceMode === 'GPS' ? 35
-    : Math.min(35, Math.max(25, 25 + (currentAccuracy - 2) * 0.556));
+    : isVpsActive ? Math.min(30, Math.max(25, 25 + (currentAccuracy - 2) * 0.556))
+    : 35;
   const highAccuracy = currentAccuracy < 10;
   const stickinessBonus = highAccuracy ? GEO_PARAMS.STICKINESS_BONUS : STICKINESS_BONUS;
   const switchThreshold = highAccuracy ? GEO_PARAMS.SWITCH_THRESHOLD : SWITCH_THRESHOLD;
@@ -789,23 +765,16 @@ const ScanCameraScreen = ({ route, navigation }) => {
     navigation.navigate('BehaviorReport', { buildingId: selectedBuilding.id, buildingName: selectedBuilding.name });
   }, [selectedBuilding, navigation]);
 
-  // 주변 검색 버튼 토글
-  const handleNearbyToggle = useCallback(() => {
-    setNearbyManual(prev => !prev);
-  }, []);
-
-  // 안내 텍스트 결정 (identify 상태 반영)
+  // 안내 텍스트 결정 (nearbyLoading 기반)
   const guideMessage = useMemo(() => {
     if (sheetOpen || scanComplete) return scanCompleteMessage || null;
     if (scanCompleteMessage) return scanCompleteMessage;
     if (gpsStatus === 'searching') return '위치를 탐색하고 있습니다...';
-    // identify 상태 기반 안내
-    if (identifyStatus === 'stabilizing') return '카메라를 고정하세요...';
-    if (identifyStatus === 'requesting') return '건물 식별 중...';
-    if (identifiedBuildings.length === 0 && identifyStatus === 'done') return '건물이 감지되지 않았습니다';
+    if (nearbyLoading) return '주변 건물 탐색 중...';
+    if (buildings.length === 0) return '건물이 감지되지 않았습니다';
     if (!focusedBuilding) return '건물에 카메라를 맞춰주세요';
     return `${focusedBuilding.name} 스캔 중...`;
-  }, [gpsStatus, identifyStatus, identifiedBuildings.length, focusedBuilding, scanComplete, scanCompleteMessage, sheetOpen]);
+  }, [gpsStatus, nearbyLoading, buildings.length, focusedBuilding, scanComplete, scanCompleteMessage, sheetOpen]);
 
   return (
     <GestureHandlerRootView style={styles.container}>
@@ -903,7 +872,6 @@ const ScanCameraScreen = ({ route, navigation }) => {
         arError={arError}
         forceMode={forceMode}
         onForceMode={setForceMode}
-        depthMeters={geoPose?.depthMeters ?? null}
         debugInfo={{
           hAcc: geoPose?.horizontalAccuracy ?? gpsAccuracy ?? null,
           hdAcc: geoPose?.headingAccuracy ?? null,
@@ -920,21 +888,6 @@ const ScanCameraScreen = ({ route, navigation }) => {
 
       {/* 안내 텍스트 (null이면 숨김) */}
       {guideMessage && <GuideText text={guideMessage} />}
-
-      {/* Nearby 토글 버튼: 시연/테스트용, 항상 접근 가능 */}
-      {!sheetOpen && gpsStatus === 'active' && (
-        <View style={styles.nearbyBtnWrap}>
-          <TouchableOpacity
-            style={[styles.nearbyBtn, nearbyManual && styles.nearbyBtnActive]}
-            onPress={handleNearbyToggle}
-            activeOpacity={0.75}
-          >
-            <Text style={[styles.nearbyBtnText, nearbyManual && styles.nearbyBtnTextActive]}>
-              Nearby{nearbyManual ? ' ON' : ''}
-            </Text>
-          </TouchableOpacity>
-        </View>
-      )}
 
       {/* Layer 4: 바텀시트 */}
       <BottomSheet
@@ -1086,13 +1039,6 @@ const styles = StyleSheet.create({
   // 안내 텍스트
   guideTextWrap: { position: 'absolute', bottom: SH * 0.14, left: 0, right: 0, alignItems: 'center', zIndex: 5 },
   guideText: { fontSize: 14, fontWeight: '500', color: 'rgba(255,255,255,0.9)', backgroundColor: 'rgba(0,0,0,0.5)', paddingHorizontal: SPACING.xl, paddingVertical: SPACING.sm, borderRadius: 20, overflow: 'hidden' },
-
-  // 주변 검색 버튼
-  nearbyBtnWrap: { position: 'absolute', bottom: SH * 0.08, left: 0, right: 0, alignItems: 'center', zIndex: 5 },
-  nearbyBtn: { backgroundColor: 'rgba(255,255,255,0.15)', paddingHorizontal: 24, paddingVertical: 10, borderRadius: 22, borderWidth: 1, borderColor: 'rgba(255,255,255,0.25)' },
-  nearbyBtnActive: { backgroundColor: 'rgba(59,130,246,0.35)', borderColor: 'rgba(59,130,246,0.6)' },
-  nearbyBtnText: { fontSize: 14, fontWeight: '600', color: 'rgba(255,255,255,0.85)' },
-  nearbyBtnTextActive: { color: '#FFF' },
 
   // ===== 바텀시트 =====
   bsBackground: { backgroundColor: '#141428', borderTopLeftRadius: 20, borderTopRightRadius: 20 },

@@ -40,20 +40,20 @@ const useGeospatialTracking = ({ enabled = true } = {}) => {
   // 위치 정확도 기반 localized 판정 (horizontalAccuracy < 10m)
   const isLocalized = geoPose != null && geoPose.horizontalAccuracy < 10;
 
-  // 정확도 기반 모드/HUD 정보
+  // 정확도 기반 모드/HUD 정보 (VPS / GPS 2단계)
   const accuracyInfo = useMemo(() => {
     const hAcc = geoPose?.horizontalAccuracy ?? null;
     const hdAcc = geoPose?.headingAccuracy ?? null;
     const hasVPS = vpsAvailable && isLocalized;
-    let modeLabel = hasVPS ? 'VPS' : effectiveARMode ? 'AR' : 'GPS';
-    let modeColor = hasVPS ? '#10B981' : effectiveARMode ? '#3B82F6' : '#888888';
+    let modeLabel = hasVPS ? 'VPS' : 'GPS';
+    let modeColor = hasVPS ? '#10B981' : '#888888';
     // 강제 모드 시 라벨/색상 오버라이드
     if (forceMode) {
       modeLabel = forceMode + '*';
-      modeColor = forceMode === 'VPS' ? '#10B981' : forceMode === 'AR' ? '#3B82F6' : '#888888';
+      modeColor = forceMode === 'VPS' ? '#10B981' : '#888888';
     }
     return { hAcc, hdAcc, hasVPS, modeLabel, modeColor };
-  }, [geoPose, vpsAvailable, isLocalized, effectiveARMode, forceMode]);
+  }, [geoPose, vpsAvailable, isLocalized, forceMode]);
 
   // ===== ARCameraView 이벤트 핸들러 =====
 

@@ -24,19 +24,21 @@ function getCacheKey(lat, lng, radius) {
  * @param {number} radius - 반경 (미터)
  * @returns {Array} 건물 목록
  */
-async function fetchNearbyFromOSM(lat, lng, radius = 500) {
+async function fetchNearbyFromOSM(lat, lng, radius = 500, { includeUnnamed = false } = {}) {
   const cacheKey = getCacheKey(lat, lng, radius);
   const cached = nearbyCache.get(cacheKey);
   if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
     return cached.data;
   }
 
-  // Overpass QL: 이름 있는 건물 + 주소 있는 건물 + 아파트 단지 relation 조회
+  // Overpass QL: includeUnnamed=true면 모든 건물, 아니면 이름/주소 있는 건물만
+  const buildingQuery = includeUnnamed
+    ? `way["building"](around:${radius},${lat},${lng});`
+    : `way["building"]["name"](around:${radius},${lat},${lng});\n      way["building"]["addr:street"](around:${radius},${lat},${lng});`;
   const query = `
     [out:json][timeout:8];
     (
-      way["building"]["name"](around:${radius},${lat},${lng});
-      way["building"]["addr:street"](around:${radius},${lat},${lng});
+      ${buildingQuery}
       relation["building"="apartments"](around:${radius},${lat},${lng});
       relation["landuse"="residential"]["name"](around:${radius},${lat},${lng});
     );
@@ -112,7 +114,10 @@ async function fetchNearbyFromOSM(lat, lng, radius = 500) {
         const tags = el.tags || {};
         const name = enrichName(tags.name || '', tags, elLat, elLng);
 
-        if (!name) return null;
+        // 이름 없는 건물: includeUnnamed면 좌표 기반 임시 이름 + needsEnrich 플래그
+        const needsEnrich = !name;
+        if (!name && !includeUnnamed) return null;
+        const displayName = name || `건물 (${elLat.toFixed(4)}, ${elLng.toFixed(4)})`;
 
         const distance = haversineDistance(lat, lng, elLat, elLng);
         const bearing = calculateBearing(lat, lng, elLat, elLng);
@@ -121,7 +126,8 @@ async function fetchNearbyFromOSM(lat, lng, radius = 500) {
 
         const building = {
           id: `osm_${el.id}`,
-          name,
+          name: displayName,
+          needsEnrich,
           address: buildAddress(tags),
           lat: elLat,
           lng: elLng,

@@ -34,6 +34,7 @@ const useNearbyBuildings = ({
   longitude = null,
   heading = 0,
   radius = 500,
+  source = 'auto',
   enabled = true,
 } = {}) => {
   const [buildings, setBuildings] = useState([]);
@@ -66,14 +67,14 @@ const useNearbyBuildings = ({
   /**
    * API 호출 실행 함수
    */
-  const fetchBuildings = useCallback(async (lat, lng, hd, rad) => {
+  const fetchBuildings = useCallback(async (lat, lng, hd, rad, src) => {
     if (!isMounted.current) return;
 
     setLoading(true);
     setError(null);
 
     try {
-      const response = await getNearbyBuildings(lat, lng, rad, hd);
+      const response = await getNearbyBuildings(lat, lng, rad, hd, src);
       if (isMounted.current) {
         const rawBuildings = Array.isArray(response) ? response
           : response?.data ? (Array.isArray(response.data) ? response.data : [])
@@ -119,7 +120,7 @@ const useNearbyBuildings = ({
           setTimeout(() => {
             if (isMounted.current) {
               lastParams.current = null;
-              fetchBuildings(lat, lng, hd, rad);
+              fetchBuildings(lat, lng, hd, rad, src);
             }
           }, 3000);
         }
@@ -130,17 +131,17 @@ const useNearbyBuildings = ({
   /**
    * 디바운싱된 fetch 함수
    */
-  const debouncedFetch = useCallback((lat, lng, hd, rad) => {
+  const debouncedFetch = useCallback((lat, lng, hd, rad, src) => {
     if (debounceTimer.current) {
       clearTimeout(debounceTimer.current);
     }
 
-    const paramsKey = `${lat?.toFixed(5)}_${lng?.toFixed(5)}_${Math.round(hd)}_${rad}`;
+    const paramsKey = `${lat?.toFixed(5)}_${lng?.toFixed(5)}_${Math.round(hd)}_${rad}_${src}`;
     if (lastParams.current === paramsKey) return;
 
     debounceTimer.current = setTimeout(() => {
       lastParams.current = paramsKey;
-      fetchBuildings(lat, lng, hd, rad);
+      fetchBuildings(lat, lng, hd, rad, src);
     }, 200);
   }, [fetchBuildings]);
 
@@ -149,8 +150,8 @@ const useNearbyBuildings = ({
    */
   useEffect(() => {
     if (!enabled || latitude === null || longitude === null) return;
-    debouncedFetch(latitude, longitude, heading, radius);
-  }, [latitude, longitude, heading, radius, enabled, debouncedFetch]);
+    debouncedFetch(latitude, longitude, heading, radius, source);
+  }, [latitude, longitude, heading, radius, source, enabled, debouncedFetch]);
 
   /**
    * 수동 리페치 함수
@@ -158,8 +159,8 @@ const useNearbyBuildings = ({
   const refetch = useCallback(() => {
     if (latitude === null || longitude === null) return;
     lastParams.current = null;
-    fetchBuildings(latitude, longitude, heading, radius);
-  }, [latitude, longitude, heading, radius, fetchBuildings]);
+    fetchBuildings(latitude, longitude, heading, radius, source);
+  }, [latitude, longitude, heading, radius, source, fetchBuildings]);
 
   useEffect(() => {
     isMounted.current = true;

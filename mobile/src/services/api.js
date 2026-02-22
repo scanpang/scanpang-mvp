@@ -79,10 +79,10 @@ const withRetry = async (fn, maxRetries = 2) => {
 
 // ===== API 엔드포인트 함수들 =====
 
-export const getNearbyBuildings = async (lat, lng, radius = 500, heading = 0) => {
+export const getNearbyBuildings = async (lat, lng, radius = 500, heading = 0, source = 'auto') => {
   return withRetry(() =>
     apiClient.get('/buildings/nearby', {
-      params: { lat, lng, radius, heading },
+      params: { lat, lng, radius, heading, source },
     })
   );
 };
