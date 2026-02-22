@@ -1,8 +1,11 @@
 package expo.modules.scanpangarcore
 
+import android.app.Activity
+import android.app.Application
 import android.content.Context
 import android.opengl.GLES20
 import android.opengl.GLSurfaceView
+import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.WindowManager
@@ -46,9 +49,14 @@ class ScanPangARCoreView(context: Context, appContext: AppContext) : ExpoView(co
     private var cameraTextureId = -1  // GL 스레드에서 생성된 텍스처 ID
     private var hasRenderedFirstFrame = false  // 깜빡임 방지용
 
-    // 포즈 업데이트 쓰로틀링 (200ms 간격)
+    // 포즈 업데이트 쓰로틀링 (150ms 간격)
     private var lastPoseUpdateTime = 0L
-    private val POSE_UPDATE_INTERVAL = 200L
+    private val POSE_UPDATE_INTERVAL = 150L
+
+    // Activity lifecycle 연동
+    private var lifecycleRegistered = false
+    private var resumeTimestamp = 0L              // resume 직후 안정화 대기용
+    private val RESUME_STABILIZE_MS = 500L        // resume 후 500ms간 pose 이벤트 무시
 
     // 뷰포트 크기 + 디스플레이 회전 (세션 생성 시 적용)
     private var viewWidth = 0
@@ -127,6 +135,7 @@ class ScanPangARCoreView(context: Context, appContext: AppContext) : ExpoView(co
     fun resumeSession() {
         if (isPaused && isSessionCreated) {
             isPaused = false
+            resumeTimestamp = System.currentTimeMillis()  // 안정화 대기 시작
             geospatialManager.resume()
             glSurfaceView.onResume()
             // onResume 후 GL 스레드가 재시작됨:
@@ -143,6 +152,7 @@ class ScanPangARCoreView(context: Context, appContext: AppContext) : ExpoView(co
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
+        registerActivityLifecycle()
         if (isPaused) {
             resumeSession()
         }
@@ -150,10 +160,43 @@ class ScanPangARCoreView(context: Context, appContext: AppContext) : ExpoView(co
 
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
+        unregisterActivityLifecycle()
         if (ScanPangARCoreModule.activeView == this) {
             ScanPangARCoreModule.activeView = null
         }
         destroySession()
+    }
+
+    // ===== Activity lifecycle 연동 =====
+    // 백그라운드 진입 시 세션 pause, 복귀 시 resume
+    private fun registerActivityLifecycle() {
+        if (lifecycleRegistered) return
+        val activity = appContext.currentActivity ?: return
+        activity.application.registerActivityLifecycleCallbacks(activityCallbacks)
+        lifecycleRegistered = true
+    }
+
+    private fun unregisterActivityLifecycle() {
+        if (!lifecycleRegistered) return
+        try {
+            val activity = appContext.currentActivity
+            activity?.application?.unregisterActivityLifecycleCallbacks(activityCallbacks)
+        } catch (_: Exception) {}
+        lifecycleRegistered = false
+    }
+
+    private val activityCallbacks = object : Application.ActivityLifecycleCallbacks {
+        override fun onActivityPaused(activity: Activity) {
+            if (activity == appContext.currentActivity) pauseSession()
+        }
+        override fun onActivityResumed(activity: Activity) {
+            if (activity == appContext.currentActivity) resumeSession()
+        }
+        override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {}
+        override fun onActivityStarted(activity: Activity) {}
+        override fun onActivityStopped(activity: Activity) {}
+        override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) {}
+        override fun onActivityDestroyed(activity: Activity) {}
     }
 
     /**
@@ -227,8 +270,10 @@ class ScanPangARCoreView(context: Context, appContext: AppContext) : ExpoView(co
                 mainHandler.post { onTrackingStateChanged(mapOf("state" to state)) }
             }
 
-            // Geospatial pose + depth + 앵커 위치 업데이트 (200ms 쓰로틀)
+            // Geospatial pose + depth + 앵커 위치 업데이트 (150ms 쓰로틀)
+            // resume 직후 500ms간은 pose 이벤트 무시 (이벤트 폭주 방지)
             val now = System.currentTimeMillis()
+            if (resumeTimestamp > 0 && now - resumeTimestamp < RESUME_STABILIZE_MS) return
             if (now - lastPoseUpdateTime >= POSE_UPDATE_INTERVAL) {
                 lastPoseUpdateTime = now
                 val pose = geospatialManager.getCurrentPose()

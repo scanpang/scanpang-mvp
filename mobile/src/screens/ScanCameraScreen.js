@@ -16,7 +16,6 @@ import {
   ActivityIndicator,
   Animated,
   Dimensions,
-  ScrollView,
   AppState,
   Linking,
   InteractionManager,
@@ -26,7 +25,7 @@ import * as Location from 'expo-location';
 import { Magnetometer } from 'expo-sensors';
 import * as Haptics from 'expo-haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import BottomSheet, { BottomSheetView, BottomSheetScrollView } from '@gorhom/bottom-sheet';
+import BottomSheet, { BottomSheetView } from '@gorhom/bottom-sheet';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { Colors, SPACING, TOUCH } from '../constants/theme';
@@ -55,6 +54,7 @@ const FOCUS_RESET_THRESHOLD = 8; // 연속 8틱(400ms) 벗어나야 게이지 �
 const STICKINESS_BONUS = 5; // 현재 포커스 건물에 5° 보너스 (방위각 비교 시)
 const SWITCH_THRESHOLD = 3; // 새 건물이 3° 이상 더 가까워야 전환
 const SWITCH_CONFIRM_THRESHOLD = 5; // 5틱 연속 같은 새 건물이어야 전환
+const SNAP_POINTS = ['1%', '50%', '90%'];
 
 // GPS 캐시 키
 const GPS_CACHE_KEY = '@scanpang_last_gps';
@@ -225,167 +225,6 @@ const GuideText = ({ text }) => (
   </View>
 );
 
-// ===== 바텀시트 스켈레톤 =====
-const BottomSheetSkeleton = () => (
-  <View style={styles.skeletonContainer}>
-    <View style={styles.skeletonRow}>
-      <View style={[styles.skeletonBlock, { width: '60%', height: 22 }]} />
-      <View style={[styles.skeletonBlock, { width: 60, height: 28, borderRadius: 14 }]} />
-    </View>
-    <View style={[styles.skeletonBlock, { width: '40%', height: 14, marginTop: 8 }]} />
-    <View style={styles.skeletonStatsRow}>
-      {[1, 2, 3, 4].map(i => (
-        <View key={i} style={styles.skeletonStatBox}>
-          <View style={[styles.skeletonBlock, { width: 32, height: 32, borderRadius: 16 }]} />
-          <View style={[styles.skeletonBlock, { width: '80%', height: 10, marginTop: 6 }]} />
-          <View style={[styles.skeletonBlock, { width: '60%', height: 14, marginTop: 4 }]} />
-        </View>
-      ))}
-    </View>
-  </View>
-);
-
-// ===== 바텀시트: 건물 헤더 =====
-const BuildingHeader = ({ building, onClose, onReport }) => (
-  <View style={styles.bsHeader}>
-    <View style={styles.bsHeaderLeft}>
-      <Text style={styles.bsName}>{building.name}</Text>
-      <Text style={styles.bsDistance}>{formatDistance(building.distance)}</Text>
-    </View>
-    <View style={styles.bsHeaderRight}>
-      <TouchableOpacity style={styles.bsReportPill} onPress={onReport}>
-        <Text style={styles.bsReportPillText}>리포트</Text>
-      </TouchableOpacity>
-      <View style={styles.bsLivePill}>
-        <Text style={styles.bsLivePillText}>LIVE 투시</Text>
-      </View>
-      <TouchableOpacity style={styles.bsCloseBtn} onPress={onClose} hitSlop={TOUCH.hitSlop}>
-        <Text style={styles.bsCloseBtnText}>{'\u2715'}</Text>
-      </TouchableOpacity>
-    </View>
-  </View>
-);
-
-// ===== 바텀시트: 편의시설 태그 =====
-const QuickInfoTags = ({ amenities = [] }) => {
-  if (!amenities.length) return null;
-  return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tagsScroll} contentContainerStyle={styles.tagsContent}>
-      {amenities.map((item, i) => {
-        const name = typeof item === 'string' ? item.split(' ')[0] : (item.name || item.type || '');
-        const detail = typeof item === 'string' ? item.split(' ').slice(1).join(' ') : (item.detail || item.statusText || item.locationInfo || '');
-        return (
-          <View key={i} style={styles.tagPill}>
-            <View style={[styles.tagDot, { backgroundColor: Colors.successGreen }]} />
-            <Text style={styles.tagName}>{name}</Text>
-            {detail ? <Text style={styles.tagDetail}>{detail}</Text> : null}
-          </View>
-        );
-      })}
-    </ScrollView>
-  );
-};
-
-// ===== 바텀시트: 건물 스탯 =====
-const BuildingStats = ({ building }) => {
-  const floorCount = building.floors?.length || 0;
-  const occupiedCount = building.floors ? building.floors.filter(f => !f.isVacant && !f.is_vacant).length : 0;
-  const occupancyRate = building.occupancyRate || (floorCount > 0 ? Math.round((occupiedCount / floorCount) * 100) : 85);
-  const tenantCount = building.totalTenants || floorCount;
-  const operatingCount = building.operatingTenants || occupiedCount;
-  const stats = [
-    { icon: 'B', label: '총 층수', value: `${building.totalFloors || floorCount}층`, color: Colors.primaryBlue },
-    { icon: '%', label: '입주율', value: `${occupancyRate}%`, color: Colors.successGreen },
-    { icon: 'T', label: '테넌트', value: `${tenantCount}개`, color: Colors.accentAmber },
-    { icon: 'ON', label: '영업중', value: `${operatingCount}개`, color: Colors.successGreen },
-  ];
-  return (
-    <View style={styles.statsGrid}>
-      {stats.map((s, i) => (
-        <View key={i} style={styles.statBox}>
-          <View style={[styles.statIconCircle, { backgroundColor: `${s.color}20` }]}>
-            <Text style={[styles.statIcon, { color: s.color }]}>{s.icon}</Text>
-          </View>
-          <Text style={styles.statLabel}>{s.label}</Text>
-          <Text style={styles.statValue}>{s.value}</Text>
-        </View>
-      ))}
-    </View>
-  );
-};
-
-// ===== 바텀시트: 층별 리스트 =====
-const FloorList = ({ floors = [], onFloorTap, onRewardTap }) => {
-  if (!floors.length) return null;
-  const getFloorColor = (floor) => {
-    const num = parseInt(floor);
-    if (floor === 'RF') return Colors.liveRed;
-    if (num >= 10) return Colors.accentAmber;
-    if (num >= 5) return Colors.primaryBlue;
-    return '#1E3A5F';
-  };
-  return (
-    <View style={styles.floorSection}>
-      <Text style={styles.floorSectionTitle}>층별 투시</Text>
-      {floors.map((f, i) => {
-        const floor = f.floor || f.floorNumber || '';
-        const tenants = f.tenants || [];
-        const isVacant = f.isVacant || f.is_vacant;
-        const hasReward = f.hasReward || f.has_reward;
-        const tenantDisplay = tenants.length > 0
-          ? tenants.slice(0, 2).join(', ') + (tenants.length > 2 ? ` +${tenants.length - 2}` : '')
-          : f.tenantName || f.usage || f.tenantCategory || '정보 없음';
-        return (
-          <TouchableOpacity
-            key={`${floor}-${i}`}
-            style={[styles.floorItem, hasReward && styles.floorItemReward]}
-            activeOpacity={0.7}
-            onPress={() => { onFloorTap?.(f); hasReward && onRewardTap?.(f); }}
-          >
-            <View style={[styles.floorBadge, { backgroundColor: getFloorColor(floor) }]}>
-              <Text style={styles.floorBadgeText}>{floor}</Text>
-            </View>
-            <Text style={[styles.floorTenant, isVacant && styles.floorTenantVacant]} numberOfLines={1}>
-              {isVacant ? '공실' : tenantDisplay}
-            </Text>
-            {hasReward && <View style={styles.floorRewardBadge}><Text style={styles.floorRewardText}>+P</Text></View>}
-          </TouchableOpacity>
-        );
-      })}
-    </View>
-  );
-};
-
-// ===== 바텀시트: LIVE 피드 =====
-const LiveFeed = ({ feeds = [] }) => {
-  if (!feeds.length) return null;
-  const FC = { event: '#4CAF50', promo: '#2196F3', alert: '#F44336', news: '#4CAF50', congestion: '#FF9800', promotion: '#2196F3', update: '#F44336' };
-  return (
-    <View style={styles.liveSection}>
-      <View style={styles.liveHeader}>
-        <View style={styles.liveBadge}><View style={styles.liveDot} /><Text style={styles.liveBadgeText}>LIVE</Text></View>
-        <Text style={styles.liveTitle}>지금 이 순간</Text>
-      </View>
-      {feeds.slice(0, 3).map((feed) => {
-        const ft = feed.type || feed.feedType || 'news';
-        return (
-          <View key={feed.id} style={styles.liveFeedItem}>
-            <View style={[styles.liveFeedIcon, { backgroundColor: `${FC[ft] || Colors.primaryBlue}20` }]}>
-              <Text style={[styles.liveFeedIconText, { color: FC[ft] || Colors.primaryBlue }]}>
-                {ft === 'event' ? 'EVT' : ft === 'promo' || ft === 'promotion' ? 'SAL' : 'NEW'}
-              </Text>
-            </View>
-            <View style={styles.liveFeedContent}>
-              <Text style={styles.liveFeedTitle} numberOfLines={1}>{feed.title}</Text>
-              {feed.description && <Text style={styles.liveFeedDesc} numberOfLines={1}>{feed.description}</Text>}
-            </View>
-          </View>
-        );
-      })}
-    </View>
-  );
-};
-
 // ===== 메인 화면 =====
 const ScanCameraScreen = ({ route, navigation }) => {
   const { focusBuildingId } = route?.params || {};
@@ -439,7 +278,6 @@ const ScanCameraScreen = ({ route, navigation }) => {
   useEffect(() => { geoPoseRef.current = geoPose; }, [geoPose]);
 
   // AR 앵커 관리 (Geospatial localized 시에만)
-  const snapPoints = useMemo(() => ['1%', '50%', '90%'], []);
 
   // 1. identify 훅 (primary — depth/방위각 기반 역지오코딩)
   const { buildings: identifiedBuildings, status: identifyStatus } = useBuildingIdentify({
@@ -911,8 +749,8 @@ const ScanCameraScreen = ({ route, navigation }) => {
     triggerGeminiAnalysis(building);
   }, [userLocation, heading, accuracyInfo, saveRecentScan, triggerGeminiAnalysis]);
 
-  const handleCloseSheet = useCallback(() => {
-    if (selectedBuildingId) behaviorTracker.trackEvent('card_close', { buildingId: selectedBuildingId, buildingName: selectedBuilding?.name });
+  // 스캔 상태 초기화 (바텀시트 닫기, 드래그 닫기 공용)
+  const resetScanState = useCallback(() => {
     setSelectedBuildingId(null);
     setScanComplete(false);
     setGaugeProgress(0);
@@ -925,8 +763,13 @@ const ScanCameraScreen = ({ route, navigation }) => {
     focusedBuildingRef.current = null;
     pendingSwitchRef.current = null;
     switchCountRef.current = 0;
+  }, []);
+
+  const handleCloseSheet = useCallback(() => {
+    if (selectedBuildingId) behaviorTracker.trackEvent('card_close', { buildingId: selectedBuildingId, buildingName: selectedBuilding?.name });
+    resetScanState();
     bottomSheetRef.current?.close();
-  }, [selectedBuildingId]);
+  }, [selectedBuildingId, resetScanState]);
 
   const handleXrayToggle = useCallback(() => {
     setXrayActive(prev => {
@@ -1097,7 +940,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
       <BottomSheet
         ref={bottomSheetRef}
         index={-1}
-        snapPoints={snapPoints}
+        snapPoints={SNAP_POINTS}
         backgroundStyle={styles.bsBackground}
         handleIndicatorStyle={styles.bsHandle}
         enablePanDownToClose={true}
@@ -1109,14 +952,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
           }
           // 드래그로 완전히 닫힌 경우 상태 정리
           if (index === -1 && selectedBuildingId) {
-            setSelectedBuildingId(null);
-            setScanComplete(false);
-            setGaugeProgress(0);
-            setProfileData(null);
-            setProfileError(null);
-            setXrayActive(false);
-            focusedIdRef.current = null;
-            focusedBuildingRef.current = null;
+            resetScanState();
           }
         }}
       >
@@ -1179,12 +1015,6 @@ const styles = StyleSheet.create({
   arLabelNameFocused: { color: '#FFF', fontWeight: '700' },
   arLabelDist: { fontSize: 10, color: 'rgba(255,255,255,0.6)', marginTop: 1 },
 
-  // 스켈레톤
-  skeletonContainer: { paddingHorizontal: SPACING.lg, paddingTop: SPACING.md },
-  skeletonRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  skeletonBlock: { backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 8 },
-  skeletonStatsRow: { flexDirection: 'row', gap: SPACING.sm, marginTop: SPACING.lg },
-  skeletonStatBox: { flex: 1, alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 12, paddingVertical: SPACING.md },
   loadingView: { flex: 1, backgroundColor: '#0D1230', justifyContent: 'center', alignItems: 'center' },
   loadingText: { fontSize: 14, color: '#B0B0B0', marginTop: SPACING.md },
 
@@ -1267,64 +1097,9 @@ const styles = StyleSheet.create({
   // ===== 바텀시트 =====
   bsBackground: { backgroundColor: '#141428', borderTopLeftRadius: 20, borderTopRightRadius: 20 },
   bsHandle: { backgroundColor: 'rgba(255,255,255,0.2)', width: 36, height: 4, borderRadius: 2 },
-  bsScroll: { paddingHorizontal: SPACING.lg },
   bsEmpty: { alignItems: 'center', paddingVertical: SPACING.xxl },
   bsEmptyText: { fontSize: 15, color: '#B0B0B0' },
 
-  // 바텀시트: 헤더
-  bsHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: SPACING.lg },
-  bsHeaderLeft: { flex: 1 },
-  bsName: { fontSize: 22, fontWeight: '700', color: '#FFF', marginBottom: 4 },
-  bsDistance: { fontSize: 14, color: 'rgba(255,255,255,0.7)' },
-  bsHeaderRight: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
-  bsReportPill: { backgroundColor: 'rgba(255,255,255,0.12)', paddingHorizontal: SPACING.md, paddingVertical: SPACING.xs + 2, borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' },
-  bsReportPillText: { fontSize: 13, fontWeight: '700', color: 'rgba(255,255,255,0.8)' },
-  bsLivePill: { backgroundColor: Colors.primaryBlue, paddingHorizontal: SPACING.md, paddingVertical: SPACING.xs + 2, borderRadius: 20 },
-  bsLivePillText: { fontSize: 13, fontWeight: '700', color: '#FFF' },
-  bsCloseBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.1)', justifyContent: 'center', alignItems: 'center' },
-  bsCloseBtnText: { fontSize: 16, color: 'rgba(255,255,255,0.7)' },
-
-  // 바텀시트: 태그
-  tagsScroll: { marginBottom: SPACING.md },
-  tagsContent: { gap: SPACING.sm },
-  tagPill: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.1)', paddingHorizontal: SPACING.md, paddingVertical: SPACING.xs + 2, borderRadius: 12, gap: SPACING.xs },
-  tagDot: { width: 6, height: 6, borderRadius: 3 },
-  tagName: { fontSize: 13, fontWeight: '600', color: '#FFF' },
-  tagDetail: { fontSize: 12, color: 'rgba(255,255,255,0.6)' },
-
-  // 바텀시트: 스탯
-  statsGrid: { flexDirection: 'row', gap: SPACING.sm, marginBottom: SPACING.lg },
-  statBox: { flex: 1, alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 12, paddingVertical: SPACING.md, gap: 4 },
-  statIconCircle: { width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center' },
-  statIcon: { fontSize: 12, fontWeight: '800' },
-  statLabel: { fontSize: 11, color: 'rgba(255,255,255,0.5)' },
-  statValue: { fontSize: 16, fontWeight: '700', color: '#FFF' },
-
-  // 바텀시트: 층별
-  floorSection: { marginBottom: SPACING.lg },
-  floorSectionTitle: { fontSize: 18, fontWeight: '700', color: '#FFF', marginBottom: SPACING.md },
-  floorItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: SPACING.sm + 2, paddingHorizontal: SPACING.sm, borderRadius: 10, marginBottom: SPACING.xs, backgroundColor: 'rgba(255,255,255,0.04)', gap: SPACING.md },
-  floorItemReward: { backgroundColor: 'rgba(245,158,11,0.12)', borderWidth: 1, borderColor: 'rgba(245,158,11,0.25)' },
-  floorBadge: { width: 40, height: 28, borderRadius: 8, justifyContent: 'center', alignItems: 'center' },
-  floorBadgeText: { fontSize: 12, fontWeight: '700', color: '#FFF' },
-  floorTenant: { flex: 1, fontSize: 15, fontWeight: '600', color: '#FFF' },
-  floorTenantVacant: { color: 'rgba(255,255,255,0.3)', fontStyle: 'italic' },
-  floorRewardBadge: { backgroundColor: Colors.accentAmber, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
-  floorRewardText: { fontSize: 11, fontWeight: '800', color: '#FFF' },
-
-  // 바텀시트: LIVE
-  liveSection: { borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.08)', paddingTop: SPACING.lg },
-  liveHeader: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm, marginBottom: SPACING.md },
-  liveBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(239,68,68,0.15)', paddingHorizontal: SPACING.sm, paddingVertical: 3, borderRadius: 8, gap: SPACING.xs },
-  liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: Colors.liveRed },
-  liveBadgeText: { fontSize: 11, fontWeight: '800', color: Colors.liveRed, letterSpacing: 1 },
-  liveTitle: { fontSize: 18, fontWeight: '700', color: '#FFF' },
-  liveFeedItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: SPACING.sm, gap: SPACING.md },
-  liveFeedIcon: { width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center' },
-  liveFeedIconText: { fontSize: 10, fontWeight: '800' },
-  liveFeedContent: { flex: 1, gap: 2 },
-  liveFeedTitle: { fontSize: 14, fontWeight: '600', color: '#FFF' },
-  liveFeedDesc: { fontSize: 12, color: 'rgba(255,255,255,0.5)' },
 });
 
 export default ScanCameraScreen;
