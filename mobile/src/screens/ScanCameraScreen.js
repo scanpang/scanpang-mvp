@@ -389,7 +389,6 @@ const ScanCameraScreen = ({ route, navigation }) => {
   const [gpsStatus, setGpsStatus] = useState('searching');
   const [cameraPermissionDenied, setCameraPermissionDenied] = useState(false);
   const [cameraReady, setCameraReady] = useState(false); // 네비게이션 애니메이션 완료 후 카메라 마운트
-  const [locationPermissionGranted, setLocationPermissionGranted] = useState(false); // 위치 권한 승인 여부 (ARCore Geospatial 필수)
   const [gpsAccuracy, setGpsAccuracy] = useState(null); // GPS 폴백 모드 수평 정확도(m)
 
   const [timeContext, setTimeContext] = useState(null);
@@ -783,7 +782,6 @@ const ScanCameraScreen = ({ route, navigation }) => {
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status !== 'granted') { if (!cancelled) setGpsStatus('error'); return; }
-        if (!cancelled) setLocationPermissionGranted(true);
         const sub = await Location.watchPositionAsync(
           { accuracy: Location.Accuracy.High, timeInterval: 3000, distanceInterval: 5 },
           (loc) => {
@@ -951,7 +949,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
         </View>
       ) : (
         <>
-          {isARMode && locationPermissionGranted ? (
+          {isARMode ? (
             <ARCameraView
               style={StyleSheet.absoluteFillObject}
               onGeospatialPoseUpdate={handlePoseUpdate}

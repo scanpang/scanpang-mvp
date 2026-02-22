@@ -58,8 +58,8 @@ class GeospatialManager(private val context: Context) {
      */
     fun createSession(activity: Activity): String? {
         return try {
-            // ARCore 설치/업데이트 확인 (미설치 시 설치 프롬프트 표시)
-            val installStatus = ArCoreApk.getInstance().requestInstall(activity, true)
+            // ARCore 설치 확인 (프롬프트 없이)
+            val installStatus = ArCoreApk.getInstance().requestInstall(activity, false)
             if (installStatus != ArCoreApk.InstallStatus.INSTALLED) {
                 return "arcore_not_installed"
             }
