@@ -23,12 +23,19 @@ const useGeospatialTracking = ({ enabled = true } = {}) => {
   const [isARMode, setIsARMode] = useState(true);
   // AR 에러
   const [arError, setArError] = useState(null);
+  // 강제 모드: null(자동) | 'VPS' | 'AR' | 'GPS'
+  const [forceMode, setForceMode] = useState(null);
   // VPS 체크 완료 여부 + 재시도 횟수
   const vpsCheckedRef = useRef(false);
   const vpsRetryCountRef = useRef(0);
   // AR 초기화 타임아웃 (onReady 수신 전 폴백)
   const arTimeoutRef = useRef(null);
   const arReadyRef = useRef(false);
+
+  // forceMode에 따른 effective isARMode
+  const effectiveARMode = forceMode === 'GPS' ? false
+    : forceMode === 'VPS' || forceMode === 'AR' ? true
+    : isARMode;
 
   // 위치 정확도 기반 localized 판정 (horizontalAccuracy < 10m)
   const isLocalized = geoPose != null && geoPose.horizontalAccuracy < 10;
@@ -38,10 +45,15 @@ const useGeospatialTracking = ({ enabled = true } = {}) => {
     const hAcc = geoPose?.horizontalAccuracy ?? null;
     const hdAcc = geoPose?.headingAccuracy ?? null;
     const hasVPS = vpsAvailable && isLocalized;
-    const modeLabel = hasVPS ? 'VPS' : isARMode ? 'AR' : 'GPS';
-    const modeColor = hasVPS ? '#10B981' : isARMode ? '#3B82F6' : '#888888';
+    let modeLabel = hasVPS ? 'VPS' : effectiveARMode ? 'AR' : 'GPS';
+    let modeColor = hasVPS ? '#10B981' : effectiveARMode ? '#3B82F6' : '#888888';
+    // 강제 모드 시 라벨/색상 오버라이드
+    if (forceMode) {
+      modeLabel = forceMode + '*';
+      modeColor = forceMode === 'VPS' ? '#10B981' : forceMode === 'AR' ? '#3B82F6' : '#888888';
+    }
     return { hAcc, hdAcc, hasVPS, modeLabel, modeColor };
-  }, [geoPose, vpsAvailable, isLocalized, isARMode]);
+  }, [geoPose, vpsAvailable, isLocalized, effectiveARMode, forceMode]);
 
   // ===== ARCameraView 이벤트 핸들러 =====
 
@@ -100,8 +112,11 @@ const useGeospatialTracking = ({ enabled = true } = {}) => {
   const handleError = useCallback((event) => {
     const data = event?.nativeEvent || event;
     setArError(data?.error || 'unknown_error');
-    setIsARMode(false);
-  }, []);
+    // 강제 VPS/AR 모드에서는 에러로 폴백하지 않음
+    if (forceMode !== 'VPS' && forceMode !== 'AR') {
+      setIsARMode(false);
+    }
+  }, [forceMode]);
 
   // AR 초기화 타임아웃: N초 내 onReady 안 오면 CameraView 폴백
   useEffect(() => {
@@ -110,8 +125,11 @@ const useGeospatialTracking = ({ enabled = true } = {}) => {
     arTimeoutRef.current = setTimeout(() => {
       if (!arReadyRef.current) {
         console.warn('[useGeospatialTracking] AR 초기화 타임아웃 → CameraView 폴백');
-        setIsARMode(false);
         setArError('ar_init_timeout');
+        // 강제 VPS/AR 모드에서는 타임아웃으로 폴백하지 않음
+        if (forceMode !== 'VPS' && forceMode !== 'AR') {
+          setIsARMode(false);
+        }
       }
     }, AR_INIT_TIMEOUT);
     return () => {
@@ -120,7 +138,7 @@ const useGeospatialTracking = ({ enabled = true } = {}) => {
         arTimeoutRef.current = null;
       }
     };
-  }, [enabled]);
+  }, [enabled, forceMode]);
 
   // AR 모드 폴백 시 VPS 상태 확정 (null → false)
   useEffect(() => {
@@ -143,9 +161,11 @@ const useGeospatialTracking = ({ enabled = true } = {}) => {
     vpsAvailable,
     trackingState,
     isLocalized,
-    isARMode,
+    isARMode: effectiveARMode, // forceMode 반영된 값
     accuracyInfo,
     arError,
+    forceMode,
+    setForceMode,
     // ARCameraView에 전달할 이벤트 핸들러
     handlePoseUpdate,
     handleTrackingStateChanged,

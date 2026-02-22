@@ -153,10 +153,20 @@ const FocusedLabel = ({ building, confidence, gaugeProgress, onPress }) => {
 };
 
 // ===== 상단 HUD =====
-const CameraHUD = ({ gpsStatus, onBack, buildingCount, factorScore, accuracyInfo, debugInfo }) => {
+// 모드 순환: auto(null) → VPS* → AR* → GPS* → auto(null)
+const FORCE_MODE_CYCLE = [null, 'VPS', 'AR', 'GPS'];
+
+const CameraHUD = ({ gpsStatus, onBack, buildingCount, factorScore, accuracyInfo, debugInfo, arError, forceMode, onForceMode }) => {
   const gpsColor = gpsStatus === 'active' ? Colors.successGreen : gpsStatus === 'error' ? Colors.liveRed : Colors.accentAmber;
   const hAcc = debugInfo?.hAcc != null ? `${debugInfo.hAcc.toFixed(0)}m` : '-';
   const hdAcc = debugInfo?.hdAcc != null ? `${debugInfo.hdAcc.toFixed(0)}°` : '-';
+
+  // 모드 배지 탭 → 다음 모드로 순환
+  const handleModeTap = () => {
+    const currentIdx = FORCE_MODE_CYCLE.indexOf(forceMode);
+    const nextIdx = (currentIdx + 1) % FORCE_MODE_CYCLE.length;
+    onForceMode?.(FORCE_MODE_CYCLE[nextIdx]);
+  };
 
   return (
     <View style={styles.hud}>
@@ -164,12 +174,23 @@ const CameraHUD = ({ gpsStatus, onBack, buildingCount, factorScore, accuracyInfo
         <Text style={styles.hudBackText}>{'\u2039'}</Text>
       </TouchableOpacity>
 
-      {/* 모드 배지 (VPS/AR/GPS) */}
-      <View style={[styles.hudModeBadge, { backgroundColor: accuracyInfo?.modeColor || '#888' }]}>
+      {/* 모드 배지 (탭하면 강제 모드 순환) */}
+      <TouchableOpacity
+        style={[styles.hudModeBadge, { backgroundColor: accuracyInfo?.modeColor || '#888' }]}
+        onPress={handleModeTap}
+        activeOpacity={0.7}
+      >
         <Text style={styles.hudModeText}>
-          {accuracyInfo?.modeLabel || 'GPS'}{accuracyInfo?.hasVPS ? ' \u2713' : ''}
+          {accuracyInfo?.modeLabel || 'GPS'}{accuracyInfo?.hasVPS && !forceMode ? ' \u2713' : ''}
         </Text>
-      </View>
+      </TouchableOpacity>
+
+      {/* arError 표시 (있을 때만) */}
+      {arError && (
+        <View style={styles.hudErrorBadge}>
+          <Text style={styles.hudErrorText}>{arError}</Text>
+        </View>
+      )}
 
       {/* 정확도 + FOV + 건물수 압축 표시 */}
       <View style={styles.hudInfoPill}>
@@ -401,6 +422,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
   // ARCore Geospatial 추적 (단일 정확도 시스템)
   const {
     geoPose, vpsAvailable, trackingState, isLocalized, isARMode, accuracyInfo, arError,
+    forceMode, setForceMode,
     handlePoseUpdate, handleTrackingStateChanged, handleReady, handleError,
   } = useGeospatialTracking({ enabled: true });
 
@@ -461,8 +483,12 @@ const ScanCameraScreen = ({ route, navigation }) => {
 
   // 포커스 영역 내 중심에 가장 가까운 건물 1개 계산 (바텀시트 열리면 중단)
   // horizontalAccuracy 기반 FOV 자동 계산: 정확도 좋으면 좁게(25°), 나쁘면 넓게(35°)
+  // forceMode 시 고정 FOV: VPS*=25°, AR*=30°, GPS*=35°
   const currentAccuracy = geoPose?.horizontalAccuracy ?? gpsAccuracy ?? 999;
-  const focusAngle = Math.min(35, Math.max(25, 25 + (currentAccuracy - 2) * 0.556));
+  const focusAngle = forceMode === 'VPS' ? 25
+    : forceMode === 'AR' ? 30
+    : forceMode === 'GPS' ? 35
+    : Math.min(35, Math.max(25, 25 + (currentAccuracy - 2) * 0.556));
   const highAccuracy = currentAccuracy < 10;
   const stickinessBonus = highAccuracy ? GEO_PARAMS.STICKINESS_BONUS : STICKINESS_BONUS;
   const switchThreshold = highAccuracy ? GEO_PARAMS.SWITCH_THRESHOLD : SWITCH_THRESHOLD;
@@ -992,6 +1018,9 @@ const ScanCameraScreen = ({ route, navigation }) => {
         buildingCount={buildings.length}
         factorScore={rankedBuildings[0]?.confidencePercent || 0}
         accuracyInfo={accuracyInfo}
+        arError={arError}
+        forceMode={forceMode}
+        onForceMode={setForceMode}
         debugInfo={{
           hAcc: geoPose?.horizontalAccuracy ?? gpsAccuracy ?? null,
           hdAcc: geoPose?.headingAccuracy ?? null,
@@ -1161,6 +1190,8 @@ const styles = StyleSheet.create({
   hudBackText: { fontSize: 22, color: '#FFF', marginTop: -2 },
   hudModeBadge: { backgroundColor: 'rgba(0,0,0,0.4)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14, justifyContent: 'center', alignItems: 'center' },
   hudModeText: { fontSize: 11, fontWeight: '900', color: '#FFF' },
+  hudErrorBadge: { backgroundColor: 'rgba(239,68,68,0.8)', paddingHorizontal: 6, paddingVertical: 3, borderRadius: 10 },
+  hudErrorText: { fontSize: 9, fontWeight: '700', color: '#FFF' },
   hudInfoPill: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.4)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14, gap: 2 },
   hudInfoText: { fontSize: 11, fontWeight: '600', color: 'rgba(255,255,255,0.8)' },
   hudInfoSep: { fontSize: 11, color: 'rgba(255,255,255,0.3)' },
