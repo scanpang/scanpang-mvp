@@ -1,5 +1,6 @@
 /**
  * 건물 조회 API 라우터
+ * - POST /identify            : 레이캐스팅 건물 식별 (역지오코딩)
  * - GET /nearby              : 주변 건물 조회 (카카오 primary + OSM 폴백 + DB 보조)
  * - GET /:id/profile         : 건물 상세 프로필 (1차 빠른 응답)
  * - GET /:id/profile/enrich  : 건축물대장 + 네이버블로그 보강 (2차)
@@ -120,7 +121,8 @@ router.get('/nearby', async (req, res, next) => {
 
 /**
  * POST /api/buildings/identify
- * Depth/방위각 기반 건물 식별 (역지오코딩)
+ * 레이캐스팅 건물 식별: heading 방향으로 가까운 거리부터 역지오코딩,
+ * 첫 번째 buildingName 히트 = 유저가 보고 있는 건물
  * Body: { lat, lng, heading, depthMeters?, horizontalAccuracy?, headingAccuracy? }
  */
 router.post('/identify', async (req, res, next) => {
@@ -146,66 +148,71 @@ router.post('/identify', async (req, res, next) => {
     }
 
     const hasDepth = depthMeters != null && depthMeters >= 0.5 && depthMeters <= 30;
-    let candidates = [];
 
+    // 레이캐스팅: 가까운 거리부터 순차 역지오코딩
+    // depth 있으면 depth 거리를 맨 앞에 삽입
+    const RAY_DISTANCES = [5, 10, 20, 30, 40, 50, 60];
+    let distances = [...RAY_DISTANCES];
     if (hasDepth) {
-      // Depth 유효: 단일 전방 좌표 → 역지오코딩 1회
-      const fwd = kakaoLocal.calculateForwardCoord(parsedLat, parsedLng, parsedHeading, depthMeters);
-      const addr = await kakaoLocal.coordToAddress(fwd.lat, fwd.lng);
-      if (addr) {
-        candidates.push({
-          ...addr,
-          forwardLat: fwd.lat,
-          forwardLng: fwd.lng,
-          distance: depthMeters,
-          source: 'depth',
-        });
+      // depth 거리를 맨 앞에 추가 (중복 제거)
+      distances = [depthMeters, ...RAY_DISTANCES.filter(d => Math.abs(d - depthMeters) > 3)];
+    }
+
+    // 전방 좌표 계산
+    const coords = distances.map(d => ({
+      ...kakaoLocal.calculateForwardCoord(parsedLat, parsedLng, parsedHeading, d),
+      distance: d,
+    }));
+
+    // 순차 역지오코딩: 첫 buildingName 히트에서 중단
+    let hitBuilding = null;
+    for (const coord of coords) {
+      try {
+        const addr = await kakaoLocal.coordToAddress(coord.lat, coord.lng);
+        if (addr && addr.buildingName) {
+          // 건물명 히트 — 이 건물이 시야 최전방 건물
+          hitBuilding = {
+            ...addr,
+            forwardLat: coord.lat,
+            forwardLng: coord.lng,
+            distance: coord.distance,
+            source: hasDepth && coord.distance === depthMeters ? 'depth' : 'raycast',
+          };
+          break;
+        }
+      } catch (e) {
+        // 개별 실패는 무시, 다음 거리로
+        continue;
       }
-    } else {
-      // Depth 없음: 다중 거리 샘플링 → 역지오코딩 병렬
-      const distances = [15, 30, 50, 70];
-      const coords = distances.map(d => ({
-        ...kakaoLocal.calculateForwardCoord(parsedLat, parsedLng, parsedHeading, d),
-        distance: d,
-      }));
+    }
 
-      const results = await Promise.allSettled(
-        coords.map(c => kakaoLocal.coordToAddress(c.lat, c.lng))
-      );
-
-      for (let i = 0; i < results.length; i++) {
-        if (results[i].status === 'fulfilled' && results[i].value) {
-          candidates.push({
-            ...results[i].value,
-            forwardLat: coords[i].lat,
-            forwardLng: coords[i].lng,
-            distance: coords[i].distance,
-            source: 'sampling',
-          });
+    // 히트 없으면 roadAddress라도 있는 첫 결과 사용
+    if (!hitBuilding) {
+      for (const coord of coords) {
+        try {
+          const addr = await kakaoLocal.coordToAddress(coord.lat, coord.lng);
+          if (addr && (addr.roadAddress || addr.address)) {
+            hitBuilding = {
+              ...addr,
+              forwardLat: coord.lat,
+              forwardLng: coord.lng,
+              distance: coord.distance,
+              source: 'raycast_road',
+            };
+            break;
+          }
+        } catch (e) {
+          continue;
         }
       }
     }
 
-    // 중복 제거 (같은 roadAddress) → buildingName 있는 것 우선 → 가까운 것 우선
-    const seen = new Set();
-    const unique = [];
-    // buildingName 있는 것 먼저 정렬
-    candidates.sort((a, b) => {
-      if (a.buildingName && !b.buildingName) return -1;
-      if (!a.buildingName && b.buildingName) return 1;
-      return a.distance - b.distance;
-    });
-    for (const c of candidates) {
-      const key = c.roadAddress || c.address;
-      if (!key || seen.has(key)) continue;
-      seen.add(key);
-      unique.push(c);
-    }
-
-    // 프론트 호환 building 객체로 변환
-    const buildings = unique.slice(0, 3).map(c => {
+    // 결과 변환
+    const buildings = [];
+    if (hitBuilding) {
+      const c = hitBuilding;
       const id = `geo_${c.forwardLat.toFixed(6)}_${c.forwardLng.toFixed(6)}`;
-      return {
+      buildings.push({
         id,
         name: c.buildingName || c.roadAddress || c.address || '건물',
         address: c.address,
@@ -227,8 +234,8 @@ router.post('/identify', async (req, res, next) => {
           region2: c.region2,
           region3: c.region3,
         },
-      };
-    });
+      });
+    }
 
     res.json({
       success: true,
@@ -239,6 +246,7 @@ router.post('/identify', async (req, res, next) => {
         depthMeters: hasDepth ? depthMeters : null,
         heading: parsedHeading,
         horizontalAccuracy: horizontalAccuracy || null,
+        source: hitBuilding?.source || 'none',
       },
     });
   } catch (err) {
@@ -688,11 +696,11 @@ router.post('/:id/scan-complete', async (req, res, next) => {
         profile.meta.enrichAvailable = true;
         return res.json({ success: true, data: profile });
       }
-      // 카카오 건물: 빈 프로필 (모바일에서 profile API 별도 호출)
+      // 카카오/geo 건물: 빈 프로필 (모바일에서 profile API 별도 호출)
       return res.json({
         success: true,
         data: null,
-        meta: { message: '카카오 건물은 GET /profile API를 사용해주세요.' },
+        meta: { message: 'GET /profile API를 사용해주세요.' },
       });
     }
 
