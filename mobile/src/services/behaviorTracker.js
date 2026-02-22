@@ -15,9 +15,36 @@ import { apiClient } from './api';
 import { BHDB_API_URL, BHDB_API_KEY } from '../constants/config';
 
 const BEHAVIOR_QUEUE_KEY = '@scanpang_behavior_queue';
+const ANONYMOUS_USER_KEY = '@scanpang_anonymous_uid';
 const MAX_QUEUE_SIZE = 200;
 const BATCH_SIZE = 50;
 const FLUSH_INTERVAL = 30000; // 30초마다 배치 전송
+
+/**
+ * RFC4122 v4 UUID 생성 (crypto 없는 환경용)
+ */
+function generateUUID() {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
+/**
+ * 영구 익명 유저 ID 가져오기 (없으면 생성 후 저장)
+ */
+async function getOrCreateAnonymousUserId() {
+  try {
+    const stored = await AsyncStorage.getItem(ANONYMOUS_USER_KEY);
+    if (stored) return stored;
+    const newId = generateUUID();
+    await AsyncStorage.setItem(ANONYMOUS_USER_KEY, newId);
+    return newId;
+  } catch {
+    return generateUUID(); // AsyncStorage 실패 시 임시 UUID
+  }
+}
 
 // BHDB 전용 axios 인스턴스
 const bhdbClient = axios.create({
@@ -47,10 +74,14 @@ class BehaviorTracker {
   async startSession(options = {}) {
     const { userId, startLat, startLng, deviceInfo } = options;
 
+    // 영구 익명 유저 ID (명시적 userId가 없으면 자동 생성)
+    const resolvedUserId = userId || await getOrCreateAnonymousUserId();
+    this.userId = resolvedUserId;
+
     // BHDB 우선 시도
     try {
       const bhdbRes = await bhdbClient.post('/session/start', {
-        userId,
+        userId: resolvedUserId,
         startLat,
         startLng,
         deviceInfo,
@@ -65,7 +96,7 @@ class BehaviorTracker {
     if (!this.sessionId) {
       try {
         const response = await apiClient.post('/behavior/session/start', {
-          userId,
+          userId: resolvedUserId,
           startLat,
           startLng,
           deviceInfo,
