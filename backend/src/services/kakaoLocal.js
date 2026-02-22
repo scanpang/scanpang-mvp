@@ -249,9 +249,44 @@ function calculateBearing(lat1, lng1, lat2, lng2) {
   return Math.round((toDeg(Math.atan2(y, x)) + 360) % 360);
 }
 
+/**
+ * 건물 이미지 검색 (카카오 이미지 검색 API)
+ * 네이버 이미지 검색 API 지원 종료로 카카오로 대체
+ * @param {string} buildingName - 건물명
+ * @returns {string|null} 첫 번째 이미지 썸네일 URL
+ */
+async function searchBuildingImage(buildingName) {
+  if (!KAKAO_REST_API_KEY || !buildingName) return null;
+
+  const cacheKey = `img_${buildingName}`;
+  const cached = getCached(cacheKey);
+  if (cached !== null) return cached;
+
+  try {
+    const res = await axios.get('https://dapi.kakao.com/v2/search/image', {
+      params: {
+        query: `${buildingName} 건물`,
+        size: 1,
+        sort: 'accuracy',
+      },
+      headers: getHeaders(),
+      timeout: 3000,
+    });
+
+    const item = res.data?.documents?.[0];
+    const thumbnail = item?.thumbnail_url || item?.image_url || null;
+    setCache(cacheKey, thumbnail);
+    return thumbnail;
+  } catch (err) {
+    console.warn('[카카오] 이미지 검색 실패:', err.message);
+    return null;
+  }
+}
+
 module.exports = {
   searchNearbyPlaces,
   searchByKeyword,
   coordToAddress,
   filterByAddress,
+  searchBuildingImage,
 };

@@ -238,8 +238,8 @@ router.get('/:id/profile/enrich', async (req, res, next) => {
         : Promise.resolve([]),
       // 네이버 블로그 리뷰
       naverSearch.getBuildingReviews(name || '', address || ''),
-      // 네이버 이미지
-      naverSearch.searchBuildingImage(name || ''),
+      // 카카오 이미지 (네이버 이미지 API 지원 종료 → 카카오 대체)
+      kakaoLocal.searchBuildingImage(name || ''),
     ]);
 
     const summary = summaryResult.status === 'fulfilled' ? summaryResult.value : null;
@@ -364,33 +364,38 @@ router.get('/:id/profile/lazy', async (req, res, next) => {
     }
 
     if (tab === 'estate') {
-      // 실거래가 (아파트)
+      // 상업용 부동산 실거래가
       const trades = sigunguCd
-        ? await publicData.getAptTradePrice(sigunguCd)
+        ? await publicData.getTradePrice(sigunguCd)
         : [];
 
-      // 건물명 기반 필터
+      // 지번 기반 필터 (같은 동/지번)
       let filtered = trades;
       if (name && trades.length > 0) {
         const nameNorm = name.replace(/\s+/g, '');
-        filtered = trades.filter(t =>
-          t.aptName.replace(/\s+/g, '').includes(nameNorm)
-        );
+        filtered = trades.filter(t => {
+          const dong = (t.dongName || '').replace(/\s+/g, '');
+          const use = (t.buildingUse || '').replace(/\s+/g, '');
+          return dong.includes(nameNorm) || nameNorm.includes(dong) || use.includes(nameNorm);
+        });
         // 정확 매칭 없으면 전체 반환 (주변 시세 참고용)
         if (filtered.length === 0) filtered = trades.slice(0, 10);
       }
 
       const realEstate = filtered.map(t => ({
         listing_type: '실거래',
-        room_type: '아파트',
-        unit_number: `${t.floor}층`,
+        room_type: t.buildingUse || '상업용',
+        building_type: t.buildingType || '',
+        unit_number: t.floor ? `${t.floor}층` : '',
         size_pyeong: t.area ? Math.round(t.area / 3.305785) : null,
         size_sqm: t.area || null,
-        deposit: null,
-        monthly_rent: null,
         sale_price: parseInt(t.dealAmount) || null,
         deal_date: `${t.dealYear}.${t.dealMonth}.${t.dealDay}`,
-        apt_name: t.aptName,
+        dong_name: t.dongName,
+        jibun: t.jibun,
+        land_use: t.landUse,
+        dealing_type: t.dealingType,
+        build_year: t.buildYear,
       }));
 
       return res.json({

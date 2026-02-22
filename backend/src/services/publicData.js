@@ -8,7 +8,9 @@
 const axios = require('axios');
 
 const PUBLIC_DATA_API_KEY = process.env.PUBLIC_DATA_API_KEY;
-const BASE_URL = 'https://apis.data.go.kr/1613000/BldRgstService_v2';
+// BldRgstHubService = 건축물대장 허브 서비스 (기존 BldRgstService_v2 → 500 에러)
+// .env의 PUBLIC_DATA_API_KEY는 Decoding 키 사용 (axios가 자동 인코딩)
+const BASE_URL = 'https://apis.data.go.kr/1613000/BldRgstHubService';
 
 // ===== 캐시 =====
 const cache = new Map();
@@ -165,26 +167,27 @@ async function getBuildingFloors(sigunguCd, bjdongCd, bun, ji) {
 }
 
 /**
- * 아파트 실거래가 조회 (lazy 탭용)
+ * 상업용 부동산(비주거) 실거래가 조회 (lazy 탭용)
+ * API: RTMSDataSvcNrgTrade (비주거용 부동산 매매)
  * @param {string} lawdCd - 지역코드 (5자리 시군구코드)
  * @param {string} dealYmd - 계약년월 (YYYYMM)
  * @returns {Array} 거래 목록
  */
-async function getAptTradePrice(lawdCd, dealYmd) {
+async function getTradePrice(lawdCd, dealYmd) {
   if (!PUBLIC_DATA_API_KEY || !lawdCd) return [];
 
-  // 기본: 최근 3개월
+  // 기본: 현재 월
   if (!dealYmd) {
     const now = new Date();
     dealYmd = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
   }
 
-  const cacheKey = `apt_${lawdCd}_${dealYmd}`;
+  const cacheKey = `nrg_${lawdCd}_${dealYmd}`;
   const cached = getCached(cacheKey);
   if (cached) return cached;
 
   try {
-    const res = await axios.get('https://apis.data.go.kr/1613000/RTMSDataSvcAptTradeDev/getRTMSDataSvcAptTradeDev', {
+    const res = await axios.get('https://apis.data.go.kr/1613000/RTMSDataSvcNrgTrade/getRTMSDataSvcNrgTrade', {
       params: {
         serviceKey: PUBLIC_DATA_API_KEY,
         LAWD_CD: lawdCd,
@@ -193,6 +196,7 @@ async function getAptTradePrice(lawdCd, dealYmd) {
         pageNo: 1,
         _type: 'json',
       },
+      headers: { 'User-Agent': 'ScanPang/1.0' },
       timeout: 5000,
     });
 
@@ -201,14 +205,19 @@ async function getAptTradePrice(lawdCd, dealYmd) {
 
     const list = Array.isArray(items) ? items : [items];
     const trades = list.map(item => ({
-      aptName: (item.aptNm || '').trim(),
-      dealAmount: (item.dealAmount || '').trim().replace(/,/g, ''),
-      area: parseFloat(item.excluUseAr) || 0,
-      floor: parseInt(item.floor) || 0,
+      dongName: (item.umdNm || '').trim(),
+      jibun: (item.jibun || '').trim(),
+      buildingUse: (item.buildingUse || '').trim(),
+      buildingType: (item.buildingType || '').trim(),
+      dealAmount: (item.dealAmount || '').toString().trim().replace(/,/g, ''),
+      area: parseFloat(item.buildingAr) || 0,
+      floor: typeof item.floor === 'number' ? item.floor : (parseInt(item.floor) || 0),
       dealYear: item.dealYear,
       dealMonth: item.dealMonth,
       dealDay: item.dealDay,
       buildYear: item.buildYear,
+      landUse: (item.landUse || '').trim(),
+      dealingType: (item.dealingGbn || '').trim(),
     }));
 
     setCache(cacheKey, trades);
@@ -242,6 +251,6 @@ function parseAddressCode(regionResult) {
 module.exports = {
   getBuildingSummary,
   getBuildingFloors,
-  getAptTradePrice,
+  getTradePrice,
   parseAddressCode,
 };

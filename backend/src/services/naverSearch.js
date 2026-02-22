@@ -90,39 +90,6 @@ async function getBuildingReviews(buildingName, address) {
   }
 }
 
-/**
- * 건물 이미지 검색
- * @param {string} buildingName - 건물명
- * @returns {string|null} 첫 번째 이미지 썸네일 URL
- */
-async function searchBuildingImage(buildingName) {
-  if (!NAVER_CLIENT_ID || !NAVER_CLIENT_SECRET || !buildingName) return null;
-
-  const cacheKey = `img_${buildingName}`;
-  const cached = getCached(cacheKey);
-  if (cached !== null) return cached;
-
-  try {
-    const res = await axios.get('https://openapi.naver.com/v1/search/image', {
-      params: {
-        query: `${buildingName} 건물`,
-        display: 1,
-        sort: 'sim',
-      },
-      headers: getHeaders(),
-      timeout: 3000,
-    });
-
-    const item = res.data?.items?.[0];
-    const thumbnail = item?.thumbnail || item?.link || null;
-    setCache(cacheKey, thumbnail);
-    return thumbnail;
-  } catch (err) {
-    console.warn('[네이버검색] 이미지 검색 실패:', err.message);
-    return null;
-  }
-}
-
 // HTML 태그 제거
 function stripHtml(str) {
   if (!str) return '';
@@ -131,5 +98,4 @@ function stripHtml(str) {
 
 module.exports = {
   getBuildingReviews,
-  searchBuildingImage,
 };
