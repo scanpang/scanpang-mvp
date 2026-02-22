@@ -54,13 +54,14 @@ class GeospatialManager(private val context: Context) {
 
     /**
      * ARCore 세션 생성 + Geospatial 모드 활성화
+     * 성공 시 null, 실패 시 에러 코드 문자열 반환
      */
-    fun createSession(activity: Activity): Boolean {
+    fun createSession(activity: Activity): String? {
         return try {
-            // ARCore 설치 확인 (프롬프트 없이)
-            val installStatus = ArCoreApk.getInstance().requestInstall(activity, false)
+            // ARCore 설치/업데이트 확인 (미설치 시 설치 프롬프트 표시)
+            val installStatus = ArCoreApk.getInstance().requestInstall(activity, true)
             if (installStatus != ArCoreApk.InstallStatus.INSTALLED) {
-                return false
+                return "arcore_not_installed"
             }
 
             session = Session(activity).also { s ->
@@ -68,7 +69,7 @@ class GeospatialManager(private val context: Context) {
                 if (!s.isGeospatialModeSupported(Config.GeospatialMode.ENABLED)) {
                     s.close()
                     session = null
-                    return false
+                    return "geospatial_not_supported"
                 }
 
                 val config = Config(s).apply {
@@ -81,17 +82,17 @@ class GeospatialManager(private val context: Context) {
                 }
                 s.configure(config)
             }
-            true
+            null // 성공
         } catch (e: UnavailableArcoreNotInstalledException) {
-            false
+            "arcore_not_installed"
         } catch (e: UnavailableDeviceNotCompatibleException) {
-            false
+            "device_not_compatible"
         } catch (e: UnavailableSdkTooOldException) {
-            false
+            "arcore_sdk_too_old"
         } catch (e: UnavailableUserDeclinedInstallationException) {
-            false
+            "user_declined_install"
         } catch (e: Exception) {
-            false
+            "session_exception:${e.message}"
         }
     }
 
