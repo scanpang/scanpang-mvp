@@ -119,12 +119,192 @@ router.get('/nearby', async (req, res, next) => {
 });
 
 /**
+ * POST /api/buildings/identify
+ * Depth/방위각 기반 건물 식별 (역지오코딩)
+ * Body: { lat, lng, heading, depthMeters?, horizontalAccuracy?, headingAccuracy? }
+ */
+router.post('/identify', async (req, res, next) => {
+  try {
+    const { lat, lng, heading, depthMeters, horizontalAccuracy, headingAccuracy } = req.body;
+
+    if (lat == null || lng == null || heading == null) {
+      return res.status(400).json({
+        success: false,
+        error: 'lat, lng, heading 파라미터가 필요합니다.',
+      });
+    }
+
+    const parsedLat = parseFloat(lat);
+    const parsedLng = parseFloat(lng);
+    const parsedHeading = parseFloat(heading);
+
+    if (isNaN(parsedLat) || isNaN(parsedLng) || isNaN(parsedHeading)) {
+      return res.status(400).json({
+        success: false,
+        error: '유효하지 않은 값입니다.',
+      });
+    }
+
+    const hasDepth = depthMeters != null && depthMeters >= 0.5 && depthMeters <= 30;
+    let candidates = [];
+
+    if (hasDepth) {
+      // Depth 유효: 단일 전방 좌표 → 역지오코딩 1회
+      const fwd = kakaoLocal.calculateForwardCoord(parsedLat, parsedLng, parsedHeading, depthMeters);
+      const addr = await kakaoLocal.coordToAddress(fwd.lat, fwd.lng);
+      if (addr) {
+        candidates.push({
+          ...addr,
+          forwardLat: fwd.lat,
+          forwardLng: fwd.lng,
+          distance: depthMeters,
+          source: 'depth',
+        });
+      }
+    } else {
+      // Depth 없음: 다중 거리 샘플링 → 역지오코딩 병렬
+      const distances = [15, 30, 50, 70];
+      const coords = distances.map(d => ({
+        ...kakaoLocal.calculateForwardCoord(parsedLat, parsedLng, parsedHeading, d),
+        distance: d,
+      }));
+
+      const results = await Promise.allSettled(
+        coords.map(c => kakaoLocal.coordToAddress(c.lat, c.lng))
+      );
+
+      for (let i = 0; i < results.length; i++) {
+        if (results[i].status === 'fulfilled' && results[i].value) {
+          candidates.push({
+            ...results[i].value,
+            forwardLat: coords[i].lat,
+            forwardLng: coords[i].lng,
+            distance: coords[i].distance,
+            source: 'sampling',
+          });
+        }
+      }
+    }
+
+    // 중복 제거 (같은 roadAddress) → buildingName 있는 것 우선 → 가까운 것 우선
+    const seen = new Set();
+    const unique = [];
+    // buildingName 있는 것 먼저 정렬
+    candidates.sort((a, b) => {
+      if (a.buildingName && !b.buildingName) return -1;
+      if (!a.buildingName && b.buildingName) return 1;
+      return a.distance - b.distance;
+    });
+    for (const c of candidates) {
+      const key = c.roadAddress || c.address;
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      unique.push(c);
+    }
+
+    // 프론트 호환 building 객체로 변환
+    const buildings = unique.slice(0, 3).map(c => {
+      const id = `geo_${c.forwardLat.toFixed(6)}_${c.forwardLng.toFixed(6)}`;
+      return {
+        id,
+        name: c.buildingName || c.roadAddress || c.address || '건물',
+        address: c.address,
+        roadAddress: c.roadAddress,
+        buildingName: c.buildingName,
+        zoneNo: c.zoneNo,
+        lat: c.forwardLat,
+        lng: c.forwardLng,
+        distance: Math.round(c.distance),
+        distanceMeters: Math.round(c.distance),
+        bearing: Math.round(parsedHeading),
+        source: c.source,
+        regionCode: {
+          bCode: c.bCode,
+          hCode: c.hCode,
+          sigunguCd: c.sigunguCd,
+          bjdongCd: c.bjdongCd,
+          region1: c.region1,
+          region2: c.region2,
+          region3: c.region3,
+        },
+      };
+    });
+
+    res.json({
+      success: true,
+      data: buildings,
+      meta: {
+        count: buildings.length,
+        hasDepth,
+        depthMeters: hasDepth ? depthMeters : null,
+        heading: parsedHeading,
+        horizontalAccuracy: horizontalAccuracy || null,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
  * GET /api/buildings/:id/profile
  * 건물 상세 프로필 (1차 빠른 응답)
  */
 router.get('/:id/profile', async (req, res, next) => {
   try {
     const rawId = req.params.id;
+
+    // geo_ 건물 처리 (identify 엔드포인트에서 생성된 건물)
+    if (rawId.startsWith('geo_')) {
+      const lat = parseFloat(req.query.lat);
+      const lng = parseFloat(req.query.lng);
+      const name = req.query.name || '건물';
+
+      // regionCode는 query param으로 전달받거나 새로 조회
+      let regionCode = null;
+      if (req.query.sigunguCd && req.query.bjdongCd) {
+        regionCode = {
+          sigunguCd: req.query.sigunguCd,
+          bjdongCd: req.query.bjdongCd,
+          bCode: req.query.bCode || '',
+          roadAddress: req.query.roadAddress || req.query.address || '',
+          address: req.query.address || '',
+        };
+      } else if (!isNaN(lat) && !isNaN(lng)) {
+        regionCode = await kakaoLocal.coordToAddress(lat, lng);
+      }
+
+      // 건물 내 업소 검색
+      let inBuildingPlaces = [];
+      if (!isNaN(lat) && !isNaN(lng) && name) {
+        try {
+          inBuildingPlaces = await kakaoLocal.searchByKeyword(name, lat, lng, 100);
+          if (regionCode?.roadAddress) {
+            inBuildingPlaces = kakaoLocal.filterByAddress(inBuildingPlaces, regionCode.roadAddress);
+          }
+        } catch (e) {
+          // 무시
+        }
+      }
+
+      const geoData = {
+        id: rawId,
+        name,
+        address: req.query.address || regionCode?.address || '',
+        roadAddress: req.query.roadAddress || regionCode?.roadAddress || '',
+        lat, lng,
+        category: '',
+        categoryDetail: '',
+      };
+
+      const profile = buildingProfile.buildProfile_Phase1(geoData, null, inBuildingPlaces);
+
+      if (regionCode) {
+        profile.meta.regionCode = regionCode;
+      }
+
+      return res.json({ success: true, data: profile });
+    }
 
     // 카카오 건물 처리
     if (rawId.startsWith('kakao_')) {
@@ -453,8 +633,8 @@ router.get('/:id/floors', async (req, res, next) => {
   try {
     const rawId = req.params.id;
 
-    // OSM/카카오 건물 처리
-    if (rawId.startsWith('osm_') || rawId.startsWith('kakao_')) {
+    // OSM/카카오/geo 건물 처리
+    if (rawId.startsWith('osm_') || rawId.startsWith('kakao_') || rawId.startsWith('geo_')) {
       // 층별 정보 없음 → 빈 배열
       return res.json({
         success: true,
@@ -496,8 +676,8 @@ router.post('/:id/scan-complete', async (req, res, next) => {
     const rawId = req.params.id;
     const { confidence, sensorData, cameraFrame } = req.body;
 
-    // 카카오/OSM 건물은 프로필만 반환
-    if (rawId.startsWith('kakao_') || rawId.startsWith('osm_')) {
+    // 카카오/OSM/geo 건물은 프로필만 반환
+    if (rawId.startsWith('kakao_') || rawId.startsWith('osm_') || rawId.startsWith('geo_')) {
       // scan-complete에서도 프로필 반환
       if (rawId.startsWith('osm_')) {
         const osmData = osmBuildings.getOsmBuildingData(rawId);

@@ -93,8 +93,9 @@ class ScanPangARCoreView(context: Context, appContext: AppContext) : ExpoView(co
             return
         }
 
-        // 세션 생성
-        if (geospatialManager.createSession(activity)) {
+        // 세션 생성 (null=성공, 문자열=에러 코드)
+        val sessionError = geospatialManager.createSession(activity)
+        if (sessionError == null) {
             isSessionCreated = true
 
             // ※ setCameraTexture는 GL스레드에서만 호출해야 함
@@ -110,7 +111,7 @@ class ScanPangARCoreView(context: Context, appContext: AppContext) : ExpoView(co
 
             onReady(mapOf("status" to "session_created"))
         } else {
-            onError(mapOf("error" to "session_create_failed"))
+            onError(mapOf("error" to sessionError))
         }
     }
 
@@ -226,13 +227,18 @@ class ScanPangARCoreView(context: Context, appContext: AppContext) : ExpoView(co
                 mainHandler.post { onTrackingStateChanged(mapOf("state" to state)) }
             }
 
-            // Geospatial pose + 앵커 위치 업데이트 (200ms 쓰로틀)
+            // Geospatial pose + depth + 앵커 위치 업데이트 (200ms 쓰로틀)
             val now = System.currentTimeMillis()
             if (now - lastPoseUpdateTime >= POSE_UPDATE_INTERVAL) {
                 lastPoseUpdateTime = now
                 val pose = geospatialManager.getCurrentPose()
                 if (pose != null) {
-                    mainHandler.post { onGeospatialPoseUpdate(pose) }
+                    // depth 정보 추가
+                    val poseWithDepth = pose.toMutableMap()
+                    val depthMeters = geospatialManager.getCenterDepth(frame)
+                    if (depthMeters != null) poseWithDepth["depthMeters"] = depthMeters
+                    poseWithDepth["depthSupported"] = geospatialManager.isDepthSupported
+                    mainHandler.post { onGeospatialPoseUpdate(poseWithDepth) }
                 }
 
                 // 앵커 screen-space 좌표 업데이트

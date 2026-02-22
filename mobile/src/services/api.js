@@ -103,6 +103,10 @@ export const getBuildingFloors = async (id) => {
   return withRetry(() => apiClient.get(`/buildings/${id}/floors`));
 };
 
+export const identifyBuilding = async (params) => {
+  return withRetry(() => apiClient.post('/buildings/identify', params));
+};
+
 export const postScanComplete = async (id, { confidence, sensorData, cameraFrame } = {}) => {
   return apiClient.post(`/buildings/${id}/scan-complete`, {
     confidence,
@@ -234,6 +238,7 @@ export { apiClient };
 
 export default {
   getNearbyBuildings,
+  identifyBuilding,
   getBuildingProfile,
   getBuildingEnrich,
   getBuildingLazy,

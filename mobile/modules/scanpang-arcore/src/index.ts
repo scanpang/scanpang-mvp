@@ -15,6 +15,8 @@ export interface GeospatialPose {
   horizontalAccuracy: number;
   headingAccuracy: number;
   verticalAccuracy: number;
+  depthMeters?: number;      // 화면 중앙 깊이 (미터), undefined=측정 불가
+  depthSupported?: boolean;  // 기기 Depth API 지원 여부
 }
 
 export interface TrackingStateEvent {

@@ -169,6 +169,8 @@ async function coordToAddress(lat, lng) {
     const result = {
       address: addrDoc?.address?.address_name || '',
       roadAddress: addrDoc?.road_address?.address_name || '',
+      buildingName: addrDoc?.road_address?.building_name || '',  // 건물명 (역지오코딩)
+      zoneNo: addrDoc?.road_address?.zone_no || '',              // 우편번호
       // 법정동코드 10자리: 시도(2) + 시군구(3) + 읍면동(3) + 리(2)
       bCode: bDoc.code || '',
       hCode: hDoc?.code || '',
@@ -283,10 +285,30 @@ async function searchBuildingImage(buildingName) {
   }
 }
 
+/**
+ * 전방 좌표 계산 (현재 위치 + 방위각 + 거리 → 전방 좌표)
+ * @param {number} lat - 현재 위도
+ * @param {number} lng - 현재 경도
+ * @param {number} heading - 방위각 (0~360)
+ * @param {number} distanceMeters - 전방 거리 (미터)
+ * @returns {{ lat: number, lng: number }}
+ */
+function calculateForwardCoord(lat, lng, heading, distanceMeters) {
+  const headingRad = heading * Math.PI / 180;
+  const latRad = lat * Math.PI / 180;
+  return {
+    lat: lat + (distanceMeters * Math.cos(headingRad)) / 111320,
+    lng: lng + (distanceMeters * Math.sin(headingRad)) / (111320 * Math.cos(latRad)),
+  };
+}
+
 module.exports = {
   searchNearbyPlaces,
   searchByKeyword,
   coordToAddress,
   filterByAddress,
   searchBuildingImage,
+  calculateForwardCoord,
+  haversineDistance,
+  calculateBearing,
 };

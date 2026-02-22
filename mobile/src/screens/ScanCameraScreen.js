@@ -43,6 +43,7 @@ import XRayOverlay from '../components/XRayOverlay';
 import { ARCameraView } from 'scanpang-arcore';
 import useGeospatialTracking from '../hooks/useGeospatialTracking';
 import useGeospatialAnchors from '../hooks/useGeospatialAnchors';
+import useBuildingIdentify from '../hooks/useBuildingIdentify';
 
 const { width: SW, height: SH } = Dimensions.get('window');
 const RECENT_SCANS_KEY = '@scanpang_recent_scans';
@@ -154,9 +155,9 @@ const FocusedLabel = ({ building, confidence, gaugeProgress, onPress }) => {
 
 // ===== 상단 HUD =====
 // 모드 순환: auto(null) → VPS* → AR* → GPS* → auto(null)
-const FORCE_MODE_CYCLE = [null, 'VPS', 'AR', 'GPS'];
+const FORCE_MODE_CYCLE = ['VPS', 'AR', 'GPS'];
 
-const CameraHUD = ({ gpsStatus, onBack, buildingCount, factorScore, accuracyInfo, debugInfo, arError, forceMode, onForceMode }) => {
+const CameraHUD = ({ gpsStatus, onBack, buildingCount, factorScore, accuracyInfo, debugInfo, arError, forceMode, onForceMode, depthMeters }) => {
   const gpsColor = gpsStatus === 'active' ? Colors.successGreen : gpsStatus === 'error' ? Colors.liveRed : Colors.accentAmber;
   const hAcc = debugInfo?.hAcc != null ? `${debugInfo.hAcc.toFixed(0)}m` : '-';
   const hdAcc = debugInfo?.hdAcc != null ? `${debugInfo.hdAcc.toFixed(0)}°` : '-';
@@ -192,7 +193,7 @@ const CameraHUD = ({ gpsStatus, onBack, buildingCount, factorScore, accuracyInfo
         </View>
       )}
 
-      {/* 정확도 + FOV + 건물수 압축 표시 */}
+      {/* 정확도 + FOV + depth + 건물수 압축 표시 */}
       <View style={styles.hudInfoPill}>
         <Text style={styles.hudInfoText}>{hAcc}</Text>
         <Text style={styles.hudInfoSep}>·</Text>
@@ -200,6 +201,12 @@ const CameraHUD = ({ gpsStatus, onBack, buildingCount, factorScore, accuracyInfo
         <Text style={styles.hudInfoSep}>·</Text>
         <Text style={styles.hudInfoText}>±{debugInfo?.fov || 35}°</Text>
         <Text style={styles.hudInfoSep}>·</Text>
+        {depthMeters != null && (
+          <>
+            <Text style={[styles.hudInfoText, { color: '#4FC3F7' }]}>{depthMeters.toFixed(1)}m</Text>
+            <Text style={styles.hudInfoSep}>·</Text>
+          </>
+        )}
         <Text style={styles.hudInfoText}>건물{debugInfo?.buildingCount || 0}</Text>
       </View>
 
@@ -433,10 +440,21 @@ const ScanCameraScreen = ({ route, navigation }) => {
   // AR 앵커 관리 (Geospatial localized 시에만)
   const snapPoints = useMemo(() => ['1%', '50%', '90%'], []);
 
-  const { buildings } = useNearbyBuildings({
-    latitude: userLocation?.lat, longitude: userLocation?.lng,
-    heading, radius: 200, enabled: gpsStatus === 'active' && !sheetOpen,
+  // 1. identify 훅 (primary — depth/방위각 기반 역지오코딩)
+  const { buildings: identifiedBuildings } = useBuildingIdentify({
+    geoPose,
+    enabled: gpsStatus === 'active' && !sheetOpen,
   });
+
+  // 2. nearby 훅 (fallback — identify가 빈 결과일 때만 활성화)
+  const { buildings: nearbyBuildings } = useNearbyBuildings({
+    latitude: userLocation?.lat, longitude: userLocation?.lng,
+    heading, radius: 200,
+    enabled: gpsStatus === 'active' && !sheetOpen && identifiedBuildings.length === 0,
+  });
+
+  // 3. 통합: identify 우선, nearby 폴백
+  const buildings = identifiedBuildings.length > 0 ? identifiedBuildings : nearbyBuildings;
 
   // AR 앵커 관리 (Geospatial localized + 바텀시트 닫혀있을 때)
   const { anchors: arAnchors, handleAnchorPositionsUpdate } = useGeospatialAnchors({
@@ -469,9 +487,13 @@ const ScanCameraScreen = ({ route, navigation }) => {
     ? { ...(buildings.find(b => b.id === selectedBuildingId) || {}), ...(buildingDetail || {}) }
     : null;
 
-  // 건물별 confidence 계산 + 정렬 (Geospatial / 7-Factor 조건 분기)
+  // 건물별 confidence 계산 + 정렬 (identify / Geospatial / 7-Factor 조건 분기)
   const rankedBuildings = useMemo(() => {
     if (!buildings.length) return [];
+    // identify 결과는 이미 confidence 포함 → 엔진 스킵
+    if (identifiedBuildings.length > 0) {
+      return buildings;
+    }
     if (isARMode && isLocalized && geoPose) {
       // Geospatial 엔진: ARCore 위치/heading 기반
       return matchBuildingsGeo(geoPose, buildings, timeContext, geminiResults);
@@ -479,7 +501,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
     // 7-Factor 폴백: 기존 센서 기반
     const sensorData = { heading, gyroscope, accelerometer, cameraAngle };
     return rankBuildings(buildings, sensorData, timeContext, geminiResults);
-  }, [buildings, heading, gyroscope, accelerometer, cameraAngle, timeContext, geminiResults, isARMode, isLocalized, geoPose]);
+  }, [buildings, identifiedBuildings, heading, gyroscope, accelerometer, cameraAngle, timeContext, geminiResults, isARMode, isLocalized, geoPose]);
 
   // 포커스 영역 내 중심에 가장 가까운 건물 1개 계산 (바텀시트 열리면 중단)
   // horizontalAccuracy 기반 FOV 자동 계산: 정확도 좋으면 좁게(25°), 나쁘면 넓게(35°)
@@ -1021,6 +1043,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
         arError={arError}
         forceMode={forceMode}
         onForceMode={setForceMode}
+        depthMeters={geoPose?.depthMeters ?? null}
         debugInfo={{
           hAcc: geoPose?.horizontalAccuracy ?? gpsAccuracy ?? null,
           hdAcc: geoPose?.headingAccuracy ?? null,

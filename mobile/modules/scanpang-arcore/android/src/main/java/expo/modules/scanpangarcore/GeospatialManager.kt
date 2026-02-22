@@ -24,6 +24,11 @@ class GeospatialManager(private val context: Context) {
     private var lastTrackingState: TrackingState? = null
     private val mainHandler = Handler(Looper.getMainLooper())
 
+    // Depth API 지원 여부
+    @Volatile
+    var isDepthSupported: Boolean = false
+        private set
+
     // 상태 (GL 스레드에서 업데이트, 메인 스레드에서 읽기)
     @Volatile
     var currentTrackingState: String = "initializing"
@@ -75,11 +80,13 @@ class GeospatialManager(private val context: Context) {
                 val config = Config(s).apply {
                     geospatialMode = Config.GeospatialMode.ENABLED
                     updateMode = Config.UpdateMode.LATEST_CAMERA_IMAGE
-                    // 불필요한 기능 비활성화 (성능 최적화)
                     planeFindingMode = Config.PlaneFindingMode.DISABLED
-                    depthMode = Config.DepthMode.DISABLED
+                    // Depth API: 기기 지원 시 활성화 (건물 거리 측정용)
+                    depthMode = if (s.isDepthModeSupported(Config.DepthMode.AUTOMATIC))
+                        Config.DepthMode.AUTOMATIC else Config.DepthMode.DISABLED
                     lightEstimationMode = Config.LightEstimationMode.DISABLED
                 }
+                isDepthSupported = (config.depthMode == Config.DepthMode.AUTOMATIC)
                 s.configure(config)
             }
             null // 성공
@@ -149,6 +156,27 @@ class GeospatialManager(private val context: Context) {
             "headingAccuracy" to pose.headingAccuracy.toDouble(),
             "verticalAccuracy" to pose.verticalAccuracy.toDouble()
         )
+    }
+
+    /**
+     * 화면 중앙 깊이 측정 (Depth API)
+     * @return 미터 단위 거리, 측정 불가 시 null
+     */
+    fun getCenterDepth(frame: Frame): Double? {
+        if (!isDepthSupported) return null
+        return try {
+            val depthImage = frame.acquireRawDepthImage16Bits()
+            try {
+                val cx = depthImage.width / 2
+                val cy = depthImage.height / 2
+                val plane = depthImage.planes[0]
+                val offset = cy * plane.rowStride + cx * 2
+                plane.buffer.position(offset)
+                val mm = (plane.buffer.getShort().toInt() and 0xFFFF)
+                if (mm == 0) null else mm / 1000.0
+            } finally { depthImage.close() }
+        } catch (e: com.google.ar.core.exceptions.NotYetAvailableException) { null }
+        catch (e: Exception) { null }
     }
 
     /**
