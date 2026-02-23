@@ -1,10 +1,9 @@
 /**
- * ScanCameraScreen - 포커스 가이드 기반 1건물 스캔 방식
- * - Layer 0: 전체화면 카메라 프리뷰
- * - Layer 1: 포커스 가이드 (중앙 사각형 + 디밍)
- * - Layer 2: 포커스된 건물 1개 라벨 + 게이지 바
- * - Layer 3: 상단 HUD
- * - Layer 4: 건물 프로필 바텀시트
+ * ScanCameraScreen - AR 앵커 탭 기반 건물 스캔
+ * - Layer 0: 전체화면 AR 카메라 프리뷰
+ * - Layer 1: AR 앵커 라벨 (건물 위치에 핀 스타일, 터치 가능)
+ * - Layer 2: 상단 HUD
+ * - Layer 3: 건물 프로필 바텀시트
  */
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
@@ -14,7 +13,6 @@ import {
   TouchableOpacity,
   StatusBar,
   ActivityIndicator,
-  Animated,
   Dimensions,
   AppState,
   Linking,
@@ -34,7 +32,6 @@ import useBuildingDetect from '../hooks/useBuildingDetect';
 import useBuildingDetail from '../hooks/useBuildingDetail';
 import useSensorData from '../hooks/useSensorData';
 import { formatDistance } from '../utils/coordinate';
-import { matchBuildings as matchBuildingsGeo, GEO_PARAMS } from '../services/geospatialEngine';
 import { behaviorTracker } from '../services/behaviorTracker';
 import BuildingProfileSheet from '../components/BuildingProfileSheet';
 import XRayOverlay from '../components/XRayOverlay';
@@ -44,14 +41,6 @@ import useGeospatialAnchors from '../hooks/useGeospatialAnchors';
 
 const { width: SW, height: SH } = Dimensions.get('window');
 const RECENT_SCANS_KEY = '@scanpang_recent_scans';
-const CAMERA_HFOV = 60;
-const FOCUS_ANGLE = 35; // 도심 밀집 지역 대응: ±35° (기존 ±19°)
-const GAUGE_DURATION = 3000; // 3초
-const GAUGE_TICK = 50; // 50ms마다 업데이트
-const FOCUS_RESET_THRESHOLD = 8; // 연속 8틱(400ms) 벗어나야 게이지 리셋
-const STICKINESS_BONUS = 5; // 현재 포커스 건물에 5° 보너스 (방위각 비교 시)
-const SWITCH_THRESHOLD = 3; // 새 건물이 3° 이상 더 가까워야 전환
-const SWITCH_CONFIRM_THRESHOLD = 5; // 5틱 연속 같은 새 건물이어야 전환
 const SNAP_POINTS = ['1%', '50%', '90%'];
 
 const computeHeading = (x, y) => {
@@ -59,97 +48,8 @@ const computeHeading = (x, y) => {
   return (angle + 360) % 360;
 };
 
-// ===== 포커스 가이드 프레임 (QR 스캐너 스타일) =====
-const GUIDE_WIDTH = SW * 0.65;
-const GUIDE_HEIGHT = GUIDE_WIDTH * (4 / 3); // 3:4 비율 (가로:세로)
-const GUIDE_TOP = SH * 0.18;
-const CORNER_LEN = 28;
-const CORNER_W = 3;
-
-const FocusGuide = ({ isActive, buildingCount }) => (
-  <View style={StyleSheet.absoluteFill} pointerEvents="none">
-    {/* 디밍 오버레이 (포커스 영역 바깥) */}
-    <View style={styles.dimTop} />
-    <View style={styles.dimRow}>
-      <View style={styles.dimSide} />
-      <View style={styles.guideHole}>
-        {/* 코너 라인 4개 */}
-        <View style={[styles.corner, styles.cornerTL, isActive && styles.cornerActive]} />
-        <View style={[styles.corner, styles.cornerTR, isActive && styles.cornerActive]} />
-        <View style={[styles.corner, styles.cornerBL, isActive && styles.cornerActive]} />
-        <View style={[styles.corner, styles.cornerBR, isActive && styles.cornerActive]} />
-      </View>
-      <View style={styles.dimSide} />
-    </View>
-    <View style={styles.dimBottom}>
-      <Text style={styles.nearbyCountText}>
-        {isActive ? '' : '건물에 카메라를 맞춰 스캔하세요'}
-      </Text>
-    </View>
-  </View>
-);
-
-// ===== 포커스된 건물 라벨 + 게이지 =====
-const FocusedLabel = ({ building, confidence, gaugeProgress, onPress }) => {
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(20)).current;
-
-  useEffect(() => {
-    fadeAnim.setValue(0);
-    slideAnim.setValue(20);
-    Animated.parallel([
-      Animated.timing(fadeAnim, { toValue: 1, duration: 250, useNativeDriver: true }),
-      Animated.spring(slideAnim, { toValue: 0, friction: 10, tension: 100, useNativeDriver: true }),
-    ]).start();
-  }, [building?.id]);
-
-  if (!building) return null;
-
-  const gaugeColor = gaugeProgress >= 1 ? Colors.successGreen : Colors.accentAmber;
-  const gaugeWidth = `${Math.min(gaugeProgress * 100, 100)}%`;
-
-  return (
-    <Animated.View style={[styles.focusedLabelWrap, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
-      <TouchableOpacity style={styles.focusedCard} onPress={() => onPress(building)} activeOpacity={0.85}>
-        {/* 건물명 + 타입 */}
-        <Text style={styles.focusedName} numberOfLines={1}>{building.name}</Text>
-        <Text style={styles.focusedType} numberOfLines={1}>
-          {building.buildingUse || building.category || ''}
-        </Text>
-
-        {/* 거리 + confidence */}
-        <View style={styles.focusedMetaRow}>
-          <Text style={styles.focusedDistance}>{formatDistance(building.distance || 0)}</Text>
-          {confidence != null && (
-            <View style={[styles.focusedConfBadge, {
-              backgroundColor: confidence >= 70 ? '#10B98125' : confidence >= 40 ? '#F59E0B25' : '#EF444425'
-            }]}>
-              <Text style={[styles.focusedConfText, {
-                color: confidence >= 70 ? '#10B981' : confidence >= 40 ? '#F59E0B' : '#EF4444'
-              }]}>{confidence}%</Text>
-            </View>
-          )}
-        </View>
-
-        {/* 게이지 바 */}
-        <View style={styles.gaugeBarBg}>
-          <View style={[styles.gaugeBarFill, { width: gaugeWidth, backgroundColor: gaugeColor }]} />
-        </View>
-      </TouchableOpacity>
-
-      {/* 핀 아이콘 */}
-      <View style={styles.focusedPin}>
-        <View style={styles.pinOuter}>
-          <View style={styles.pinInner} />
-        </View>
-        <View style={styles.pinTail} />
-      </View>
-    </Animated.View>
-  );
-};
-
 // ===== 상단 HUD =====
-const CameraHUD = ({ gpsStatus, onBack, buildingCount, accuracyInfo, debugInfo, arError, detectStatus }) => {
+const CameraHUD = ({ gpsStatus, onBack, accuracyInfo, debugInfo, arError, detectStatus }) => {
   const gpsColor = gpsStatus === 'active' ? Colors.successGreen : gpsStatus === 'error' ? Colors.liveRed : Colors.accentAmber;
   const hAcc = debugInfo?.hAcc != null ? `${debugInfo.hAcc.toFixed(0)}m` : '-';
   const hdAcc = debugInfo?.hdAcc != null ? `${debugInfo.hdAcc.toFixed(0)}°` : '-';
@@ -164,7 +64,7 @@ const CameraHUD = ({ gpsStatus, onBack, buildingCount, accuracyInfo, debugInfo, 
         <Text style={styles.hudBackText}>{'\u2039'}</Text>
       </TouchableOpacity>
 
-      {/* 모드 배지 (터치 불가 — 상태 확인 전용) */}
+      {/* 모드 배지 */}
       <View
         style={[styles.hudModeBadge, { backgroundColor: badgeColor }]}
         pointerEvents="none"
@@ -172,25 +72,23 @@ const CameraHUD = ({ gpsStatus, onBack, buildingCount, accuracyInfo, debugInfo, 
         <Text style={styles.hudModeText}>{badgeLabel}</Text>
       </View>
 
-      {/* arError 표시 (있을 때만) */}
+      {/* arError 표시 */}
       {arError && (
         <View style={styles.hudErrorBadge}>
           <Text style={styles.hudErrorText}>{arError}</Text>
         </View>
       )}
 
-      {/* 정확도 + FOV + 건물수 압축 표시 */}
+      {/* 정확도 + 건물수 */}
       <View style={styles.hudInfoPill}>
         <Text style={styles.hudInfoText}>{hAcc}</Text>
         <Text style={styles.hudInfoSep}>·</Text>
         <Text style={styles.hudInfoText}>{hdAcc}</Text>
         <Text style={styles.hudInfoSep}>·</Text>
-        <Text style={styles.hudInfoText}>±{debugInfo?.fov || 30}°</Text>
-        <Text style={styles.hudInfoSep}>·</Text>
         <Text style={styles.hudInfoText}>건물{debugInfo?.buildingCount || 0}</Text>
       </View>
 
-      {/* GPS 상태 (색상 점만) */}
+      {/* GPS 상태 점 */}
       <View style={styles.hudGps}>
         <View style={[styles.hudGpsDot, { backgroundColor: gpsColor }]} />
       </View>
@@ -214,14 +112,10 @@ const ScanCameraScreen = ({ route, navigation }) => {
   const [selectedBuildingId, setSelectedBuildingId] = useState(focusBuildingId || null);
   const [gpsStatus, setGpsStatus] = useState('searching');
   const [cameraPermissionDenied, setCameraPermissionDenied] = useState(false);
-  const [cameraReady, setCameraReady] = useState(false); // 네비게이션 애니메이션 완료 후 카메라 마운트
+  const [cameraReady, setCameraReady] = useState(false);
 
   const [timeContext, setTimeContext] = useState(null);
   const [geminiResults, setGeminiResults] = useState(new Map());
-  const [gaugeProgress, setGaugeProgress] = useState(0);
-  const [scanComplete, setScanComplete] = useState(false);
-  const [scanCompleteMessage, setScanCompleteMessage] = useState(null); // 0.5초 표시 후 소멸
-  const [profileData, setProfileData] = useState(null); // scan-complete API 응답
   const [profileError, setProfileError] = useState(null);
   const [xrayActive, setXrayActive] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -233,17 +127,11 @@ const ScanCameraScreen = ({ route, navigation }) => {
   const lastHeadingRef = useRef(0);
   const geminiTimerRef = useRef(null);
   const geminiAnalyzingRef = useRef(false);
-  const gaugeTimerRef = useRef(null);
-  const focusedIdRef = useRef(null);
-  const outOfFocusCountRef = useRef(0);
-  const focusedBuildingRef = useRef(null); // scanComplete 시점의 건물 캡처용
-  const pendingSwitchRef = useRef(null);
-  const switchCountRef = useRef(0);
   const sessionIdRef = useRef(`session_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`);
 
   const { gyroscope, accelerometer, cameraAngle, isStable, motionState, getSnapshot } = useSensorData({ enabled: gpsStatus === 'active' });
 
-  // ARCore Geospatial 추적 (단일 정확도 시스템)
+  // ARCore Geospatial 추적
   const {
     geoPose, vpsAvailable, trackingState, isLocalized, isARMode, accuracyInfo, arError,
     handlePoseUpdate, handleTrackingStateChanged, handleReady, handleError,
@@ -253,23 +141,14 @@ const ScanCameraScreen = ({ route, navigation }) => {
   const geoPoseRef = useRef(null);
   useEffect(() => { geoPoseRef.current = geoPose; }, [geoPose]);
 
-  // VPS 기반 FOV: 정확도 좋으면 좁게(25°), 나쁘면 넓게(30°)
-  const currentAccuracy = geoPose?.horizontalAccuracy ?? 999;
-  const focusAngle = geoPose
-    ? Math.min(30, Math.max(25, 25 + (currentAccuracy - 2) * 0.556))
-    : 30;
-  const highAccuracy = currentAccuracy < 10;
-  const stickinessBonus = highAccuracy ? GEO_PARAMS.STICKINESS_BONUS : STICKINESS_BONUS;
-  const switchThreshold = highAccuracy ? GEO_PARAMS.SWITCH_THRESHOLD : SWITCH_THRESHOLD;
-
-  // === 메인 감지: VPS 전용 (카메라 스캔 컨셉) ===
+  // === 메인 감지: VPS 전용 ===
   const { buildings: detectedBuildings, loading: detectLoading, status: detectStatus } = useBuildingDetect({
     geoPose,
     geoPoseRef,
     enabled: !sheetOpen,
   });
 
-  // AR 앵커 관리 (Geospatial localized + 바텀시트 닫혀있을 때)
+  // AR 앵커 관리
   const { anchors: arAnchors, handleAnchorPositionsUpdate } = useGeospatialAnchors({
     buildings: detectedBuildings,
     isLocalized,
@@ -300,184 +179,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
     ? { ...(detectedBuildings.find(b => b.id === selectedBuildingId) || {}), ...(buildingDetail || {}) }
     : null;
 
-  // 건물별 confidence 계산 + 정렬 (VPS 전용)
-  const rankedBuildings = useMemo(() => {
-    if (!detectedBuildings.length || !geoPose) return [];
-    return matchBuildingsGeo(geoPose, detectedBuildings, timeContext, geminiResults);
-  }, [detectedBuildings, geoPose, timeContext, geminiResults]);
-
-  // 포커스 영역 내 중심에 가장 가까운 건물 1개 계산 (바텀시트 열리면 중단)
-  const focusedBuilding = useMemo(() => {
-    if (sheetOpen) return null; // 바텀시트 열려있으면 감지 중단
-    if (!rankedBuildings.length) return null;
-    // heading ± focusAngle 범위 내 건물만 필터
-    const inFocus = rankedBuildings.filter(b => {
-      const bearing = b.bearing ?? 0;
-      let diff = bearing - heading;
-      if (diff > 180) diff -= 360;
-      if (diff < -180) diff += 360;
-      return Math.abs(diff) <= focusAngle;
-    });
-    if (!inFocus.length) return null;
-
-    const currentFocusedId = focusedIdRef.current;
-
-    const scored = inFocus.map(b => {
-      const bearingDiff = Math.abs(((b.bearing ?? 0) - heading + 540) % 360 - 180);
-      const isCurrentFocus = b.id === currentFocusedId;
-      const adjustedDiff = isCurrentFocus ? Math.max(0, bearingDiff - stickinessBonus) : bearingDiff;
-      return { building: b, bearingDiff, adjustedDiff };
-    });
-
-    scored.sort((a, b) => a.adjustedDiff - b.adjustedDiff);
-    const best = scored[0]?.building ?? null;
-
-    // 현재 포커스 건물이 아직 inFocus 안에 있으면, 새 건물이 switchThreshold 이상 더 가까울 때만 전환
-    if (currentFocusedId && best?.id !== currentFocusedId) {
-      const currentInList = scored.find(s => s.building.id === currentFocusedId);
-      if (currentInList) {
-        const bestRaw = scored.find(s => s.building.id === best?.id);
-        if (bestRaw && currentInList.bearingDiff - bestRaw.bearingDiff < switchThreshold) {
-          return currentInList.building;
-        }
-      }
-    }
-
-    return best;
-  }, [rankedBuildings, heading, sheetOpen, focusAngle, stickinessBonus, switchThreshold]);
-
-  // focusedBuilding이 유효할 때 ref에 캡처 (scanComplete effect에서 안전하게 참조)
-  useEffect(() => {
-    if (focusedBuilding) focusedBuildingRef.current = focusedBuilding;
-  }, [focusedBuilding]);
-
-  // ===== 게이지 시스템 (디바운스 리셋) =====
-  // 높은 정확도: 더 빠른 전환/리셋
-  const focusResetThreshold = highAccuracy ? GEO_PARAMS.FOCUS_RESET : FOCUS_RESET_THRESHOLD;
-  const switchConfirmThreshold = highAccuracy ? GEO_PARAMS.SWITCH_CONFIRM : SWITCH_CONFIRM_THRESHOLD;
-
-  useEffect(() => {
-    const newId = focusedBuilding?.id || null;
-
-    // 포커스 건물 변경 감지
-    if (newId !== focusedIdRef.current) {
-      if (newId === null) {
-        // 포커스 잃음 → 카운터 증가, 임계값 도달 시에만 리셋
-        outOfFocusCountRef.current += 1;
-        pendingSwitchRef.current = null;
-        switchCountRef.current = 0;
-        if (outOfFocusCountRef.current >= focusResetThreshold) {
-          focusedIdRef.current = null;
-          outOfFocusCountRef.current = 0;
-          setGaugeProgress(0);
-          setScanComplete(false);
-          setScanCompleteMessage(null);
-          if (gaugeTimerRef.current) clearInterval(gaugeTimerRef.current);
-          gaugeTimerRef.current = null;
-        }
-        // 임계값 미달 → 기존 게이지 유지 (일시적 흔들림 무시)
-        return;
-      } else if (focusedIdRef.current && newId !== focusedIdRef.current) {
-        // 다른 건물로 전환 → 즉시 게이지 리셋 + 디바운스 확정
-        if (gaugeTimerRef.current) clearInterval(gaugeTimerRef.current);
-        gaugeTimerRef.current = null;
-        setGaugeProgress(0);
-        setScanComplete(false);
-        setScanCompleteMessage(null);
-
-        if (pendingSwitchRef.current === newId) {
-          switchCountRef.current++;
-          if (switchCountRef.current >= switchConfirmThreshold) {
-            // 전환 확정
-            focusedIdRef.current = newId;
-            outOfFocusCountRef.current = 0;
-            pendingSwitchRef.current = null;
-            switchCountRef.current = 0;
-          }
-        } else {
-          // 새로운 후보 건물 등장 → 카운트 시작
-          pendingSwitchRef.current = newId;
-          switchCountRef.current = 1;
-        }
-      } else {
-        // null → 새 건물 (첫 포커스)
-        focusedIdRef.current = newId;
-        outOfFocusCountRef.current = 0;
-        pendingSwitchRef.current = null;
-        switchCountRef.current = 0;
-      }
-    } else {
-      // 같은 건물 유지 → 카운터 리셋
-      outOfFocusCountRef.current = 0;
-      pendingSwitchRef.current = null;
-      switchCountRef.current = 0;
-    }
-
-    // 포커스 건물 있으면 게이지 시작 (바텀시트 열려있으면 중단)
-    if (focusedIdRef.current && !scanComplete && !sheetOpen) {
-      gaugeTimerRef.current = setInterval(() => {
-        setGaugeProgress(prev => {
-          const next = prev + (GAUGE_TICK / GAUGE_DURATION);
-          if (next >= 1) {
-            clearInterval(gaugeTimerRef.current);
-            gaugeTimerRef.current = null;
-            setScanComplete(true);
-            return 1;
-          }
-          return next;
-        });
-      }, GAUGE_TICK);
-    }
-
-    return () => {
-      if (gaugeTimerRef.current) clearInterval(gaugeTimerRef.current);
-    };
-  }, [focusedBuilding?.id, scanComplete, sheetOpen]);
-
-  // 게이지 완료 시 → 햅틱 + 0.5초 메시지 + scan-complete API + 바텀시트
-  // 충돌2 수정: focusedBuildingRef 사용하여 sheetOpen→null 타이밍 이슈 방지
-  useEffect(() => {
-    // focusedBuilding이 이미 null(sheetOpen)일 수 있으므로 ref에서 가져옴
-    const building = focusedBuilding || focusedBuildingRef.current;
-    if (!scanComplete || !building) return;
-
-    // 1. 햅틱 피드백
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-
-    // 2. "스캔 완료!" 0.5초 표시 후 소멸
-    setScanCompleteMessage(`${building.name} 스캔 완료!`);
-    const msgTimer = setTimeout(() => setScanCompleteMessage(null), 500);
-
-    // 3. 바텀시트 즉시 열기 (스켈레톤 표시 → useBuildingDetail이 프로필 로드)
-    setSelectedBuildingId(building.id);
-    setProfileError(null);
-    setProfileData(null); // 스켈레톤 표시
-
-    setTimeout(() => bottomSheetRef.current?.snapToIndex(1), 50);
-
-    // 백그라운드에서 scan-complete API 호출 (DB 건물만)
-    const buildingId = building.id;
-    if (!buildingId.startsWith('kakao_') && !buildingId.startsWith('osm_')) {
-      postScanComplete(buildingId, {
-        confidence: building.confidencePercent || building.confidence || 50,
-        sensorData: {
-          gps: { lat: userLocation?.lat, lng: userLocation?.lng, accuracy: 10 },
-          compass: { heading },
-        },
-      }).catch(() => {});
-    }
-
-    // scan log + behavior
-    postScanLog({ sessionId: sessionIdRef.current, buildingId, eventType: 'gaze_scan', userLat: userLocation?.lat, userLng: userLocation?.lng, deviceHeading: heading, metadata: { confidence: building.confidence } }).catch(() => {});
-    behaviorTracker.trackEvent('gaze_scan', { buildingId, buildingName: building.name, metadata: { confidence: building.confidence, mode: accuracyInfo?.modeLabel, hAcc: accuracyInfo?.hAcc } });
-
-    saveRecentScan(building);
-    triggerGeminiAnalysis(building);
-
-    return () => clearTimeout(msgTimer);
-  }, [scanComplete]);
-
-  // geoPose → userLocation/heading 브릿지 (geoPose 도착 시 자동 덮어쓰기)
+  // geoPose → userLocation/heading 브릿지
   useEffect(() => {
     if (!geoPose) return;
     setUserLocation({ lat: geoPose.latitude, lng: geoPose.longitude });
@@ -485,22 +187,18 @@ const ScanCameraScreen = ({ route, navigation }) => {
       lastHeadingRef.current = geoPose.heading;
       setHeading(geoPose.heading);
     }
-    // geoPose가 있으면 위치 확보된 것이므로 active 전환
     setGpsStatus('active');
   }, [geoPose]);
 
-  // ===== focusBuildingId로 진입 시 바텀시트 자동 오픈 =====
+  // focusBuildingId로 진입 시 바텀시트 자동 오픈
   useEffect(() => {
     if (focusBuildingId && selectedBuildingId === focusBuildingId && gpsStatus === 'active') {
-      setScanComplete(true);
       setProfileError(null);
-      setProfileData(null);
       setTimeout(() => bottomSheetRef.current?.snapToIndex(1), 200);
     }
   }, [focusBuildingId, gpsStatus]);
 
-  // ===== 네비게이션 애니메이션 완료 후 카메라 마운트 =====
-  // Cold start 시 Surface 레이아웃 전에 세션이 시작되는 문제 방지
+  // 네비게이션 애니메이션 완료 후 카메라 마운트
   useEffect(() => {
     const handle = InteractionManager.runAfterInteractions(() => {
       if (isMountedRef.current) setCameraReady(true);
@@ -525,12 +223,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
     behaviorTracker.updateSensorData({ heading, ...getSnapshot() });
   }, [heading, gyroscope, accelerometer]);
 
-  useEffect(() => {
-    const visible = focusedBuilding ? [{ id: focusedBuilding.id, name: focusedBuilding.name }] : [];
-    behaviorTracker.updateVisibleBuildings(visible);
-  }, [focusedBuilding]);
-
-  // Gemini Vision: 주기적 (안정 + 선택 건물, 바텀시트 열려있으면 중단)
+  // Gemini Vision: 주기적
   useEffect(() => {
     if (!isStable || !selectedBuildingId || !cameraRef.current || sheetOpen) return;
     const run = async () => {
@@ -566,7 +259,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
     })();
   }, [cameraPermission]);
 
-  // 위치 권한 요청 (GPS 위치 자체는 스캔에서 미사용, 권한만 확보)
+  // 위치 권한 요청
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -578,12 +271,11 @@ const ScanCameraScreen = ({ route, navigation }) => {
     return () => { cancelled = true; };
   }, []);
 
-  // 나침반 (항상 실행, geoPose 없을 때만 갱신)
+  // 나침반 (geoPose 없을 때 폴백)
   useEffect(() => {
     Magnetometer.setUpdateInterval(200);
     const sub = Magnetometer.addListener((data) => {
       if (isMountedRef.current && data) {
-        // geoPose가 없을 때만 나침반 heading 사용 (geoPose.heading 우선)
         if (!geoPoseRef.current) {
           const h = computeHeading(data.x, data.y);
           if (Math.abs(h - lastHeadingRef.current) >= 5) { lastHeadingRef.current = h; setHeading(h); }
@@ -640,37 +332,32 @@ const ScanCameraScreen = ({ route, navigation }) => {
     } catch {}
   }, [userLocation, heading]);
 
-  const handleLabelPress = useCallback((building) => {
-    if (!building) return;
+  // 앵커 라벨 탭 → 바텀시트 열기
+  const handleAnchorTap = useCallback((anchor) => {
+    if (!anchor) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setSelectedBuildingId(building.id);
-    setScanComplete(true);
-    setProfileError(null);
-    setProfileData(null); // 스켈레톤 표시
 
-    // 바텀시트 즉시 열기
+    const building = detectedBuildings.find(b => String(b.id) === anchor.buildingId);
+    setSelectedBuildingId(anchor.buildingId);
+    setProfileError(null);
+
     setTimeout(() => bottomSheetRef.current?.snapToIndex(1), 50);
 
-    postScanLog({ sessionId: sessionIdRef.current, buildingId: building.id, eventType: 'pin_tapped', userLat: userLocation?.lat, userLng: userLocation?.lng, deviceHeading: heading, metadata: { confidence: building.confidence } }).catch(() => {});
-    behaviorTracker.trackEvent('pin_click', { buildingId: building.id, buildingName: building.name, metadata: { confidence: building.confidence, mode: accuracyInfo?.modeLabel, hAcc: accuracyInfo?.hAcc } });
-    saveRecentScan(building);
-    triggerGeminiAnalysis(building);
-  }, [userLocation, heading, accuracyInfo, saveRecentScan, triggerGeminiAnalysis]);
+    // 로깅
+    postScanLog({ sessionId: sessionIdRef.current, buildingId: anchor.buildingId, eventType: 'anchor_tap', userLat: userLocation?.lat, userLng: userLocation?.lng, deviceHeading: heading, metadata: {} }).catch(() => {});
+    behaviorTracker.trackEvent('anchor_tap', { buildingId: anchor.buildingId, buildingName: anchor.buildingName, metadata: { mode: accuracyInfo?.modeLabel, hAcc: accuracyInfo?.hAcc } });
 
-  // 스캔 상태 초기화 (바텀시트 닫기, 드래그 닫기 공용)
+    if (building) {
+      saveRecentScan(building);
+      triggerGeminiAnalysis(building);
+    }
+  }, [detectedBuildings, userLocation, heading, accuracyInfo, saveRecentScan, triggerGeminiAnalysis]);
+
+  // 상태 초기화
   const resetScanState = useCallback(() => {
     setSelectedBuildingId(null);
-    setScanComplete(false);
-    setGaugeProgress(0);
-    setProfileData(null);
     setProfileError(null);
-    setScanCompleteMessage(null);
     setXrayActive(false);
-    focusedIdRef.current = null;
-    outOfFocusCountRef.current = 0;
-    focusedBuildingRef.current = null;
-    pendingSwitchRef.current = null;
-    switchCountRef.current = 0;
   }, []);
 
   const handleCloseSheet = useCallback(() => {
@@ -682,10 +369,8 @@ const ScanCameraScreen = ({ route, navigation }) => {
   const handleXrayToggle = useCallback(() => {
     setXrayActive(prev => {
       if (!prev) {
-        // 열기: 바텀시트 축소
         bottomSheetRef.current?.snapToIndex(0);
       } else {
-        // 닫기: 바텀시트 복원
         bottomSheetRef.current?.snapToIndex(1);
       }
       return !prev;
@@ -697,16 +382,14 @@ const ScanCameraScreen = ({ route, navigation }) => {
     navigation.navigate('BehaviorReport', { buildingId: selectedBuilding.id, buildingName: selectedBuilding.name });
   }, [selectedBuilding, navigation]);
 
-  // 안내 텍스트 결정
+  // 안내 텍스트
   const guideMessage = useMemo(() => {
-    if (sheetOpen || scanComplete) return scanCompleteMessage || null;
-    if (scanCompleteMessage) return scanCompleteMessage;
+    if (sheetOpen) return null;
     if (!geoPose) return 'VPS 위치를 잡는 중...';
     if (detectLoading) return '건물 탐색 중...';
     if (detectedBuildings.length === 0) return '주변에 건물이 없습니다';
-    if (!focusedBuilding) return '건물에 카메라를 맞춰주세요';
-    return `${focusedBuilding.name} 스캔 중...`;
-  }, [geoPose, detectLoading, detectedBuildings.length, focusedBuilding, scanComplete, scanCompleteMessage, sheetOpen]);
+    return null; // 앵커 라벨이 보이면 안내 불필요
+  }, [geoPose, detectLoading, detectedBuildings.length, sheetOpen]);
 
   return (
     <GestureHandlerRootView style={styles.container}>
@@ -745,43 +428,32 @@ const ScanCameraScreen = ({ route, navigation }) => {
             <CameraView ref={cameraRef} style={StyleSheet.absoluteFillObject} facing="back" />
           )}
 
-          {/* Layer 1: 포커스 가이드 */}
-          <FocusGuide isActive={!!focusedBuilding} buildingCount={detectedBuildings.length} />
-
-          {/* Layer 1.5: AR 앵커 라벨 (Geospatial 모드) */}
+          {/* Layer 1: AR 앵커 라벨 (핀 스타일, 터치 가능) */}
           {isARMode && isLocalized && !sheetOpen && arAnchors.length > 0 && (
             <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
-              {arAnchors.map(anchor => {
-                const isFocused = focusedBuilding?.id === anchor.buildingId;
-                return (
-                  <View
-                    key={anchor.buildingId}
-                    style={[
-                      styles.arLabel,
-                      { left: anchor.screenX - 60, top: anchor.screenY - 20 },
-                      isFocused && styles.arLabelFocused,
-                    ]}
-                    pointerEvents="none"
-                  >
-                    <Text style={[styles.arLabelName, isFocused && styles.arLabelNameFocused]} numberOfLines={1}>
+              {arAnchors.map(anchor => (
+                <TouchableOpacity
+                  key={anchor.buildingId}
+                  style={[
+                    styles.arAnchor,
+                    { left: anchor.screenX - 55, top: anchor.screenY - 48 },
+                  ]}
+                  activeOpacity={0.7}
+                  onPress={() => handleAnchorTap(anchor)}
+                >
+                  {/* 카드 */}
+                  <View style={styles.arAnchorCard}>
+                    <Text style={styles.arAnchorName} numberOfLines={1}>
                       {anchor.buildingName || '건물'}
                     </Text>
-                    <Text style={styles.arLabelDist}>{formatDistance(anchor.distance || 0)}</Text>
+                    <Text style={styles.arAnchorDist}>
+                      {formatDistance(anchor.distance || 0)}
+                    </Text>
                   </View>
-                );
-              })}
-            </View>
-          )}
-
-          {/* Layer 2: 포커스된 건물 라벨 (바텀시트 열리면 숨김) */}
-          {focusedBuilding && !sheetOpen && (
-            <View style={styles.focusedLabelContainer} pointerEvents="box-none">
-              <FocusedLabel
-                building={focusedBuilding}
-                confidence={focusedBuilding.confidencePercent}
-                gaugeProgress={gaugeProgress}
-                onPress={handleLabelPress}
-              />
+                  {/* 핀 꼬리 */}
+                  <View style={styles.arAnchorTail} />
+                </TouchableOpacity>
+              ))}
             </View>
           )}
         </>
@@ -794,32 +466,30 @@ const ScanCameraScreen = ({ route, navigation }) => {
         </View>
       )}
 
-      {/* Layer 3: 상단 HUD */}
+      {/* Layer 2: 상단 HUD */}
       <CameraHUD
         gpsStatus={gpsStatus}
         onBack={() => navigation.goBack()}
-        buildingCount={detectedBuildings.length}
         accuracyInfo={accuracyInfo}
         arError={arError}
         detectStatus={detectStatus}
         debugInfo={{
           hAcc: geoPose?.horizontalAccuracy ?? null,
           hdAcc: geoPose?.headingAccuracy ?? null,
-          fov: Math.round(focusAngle),
           buildingCount: detectedBuildings.length,
         }}
       />
 
-      {/* Layer 3.5: X-Ray 오버레이 */}
+      {/* Layer 2.5: X-Ray 오버레이 */}
       <XRayOverlay
-        floors={(profileData || buildingDetail)?.floors || []}
+        floors={buildingDetail?.floors || []}
         visible={xrayActive && !!selectedBuildingId}
       />
 
-      {/* 안내 텍스트 (null이면 숨김) */}
+      {/* 안내 텍스트 */}
       {guideMessage && <GuideText text={guideMessage} />}
 
-      {/* Layer 4: 바텀시트 */}
+      {/* Layer 3: 바텀시트 */}
       <BottomSheet
         ref={bottomSheetRef}
         index={-1}
@@ -833,7 +503,6 @@ const ScanCameraScreen = ({ route, navigation }) => {
           if (selectedBuildingId && isOpen) {
             behaviorTracker.trackEvent('card_open', { buildingId: selectedBuildingId, buildingName: selectedBuilding?.name });
           }
-          // 드래그로 완전히 닫힌 경우 상태 정리
           if (index === -1 && selectedBuildingId) {
             resetScanState();
           }
@@ -842,8 +511,8 @@ const ScanCameraScreen = ({ route, navigation }) => {
         <BottomSheetView style={{ flex: 1 }}>
           {selectedBuildingId ? (
             <BuildingProfileSheet
-              buildingProfile={profileData || buildingDetail}
-              loading={detailLoading && !profileData && !buildingDetail}
+              buildingProfile={buildingDetail}
+              loading={detailLoading && !buildingDetail}
               enriching={enriching}
               error={profileError}
               onClose={handleCloseSheet}
@@ -852,17 +521,11 @@ const ScanCameraScreen = ({ route, navigation }) => {
               onLazyLoad={fetchLazyTab}
               onRetry={() => {
                 setProfileError(null);
-                if (selectedBuildingId) {
-                  setProfileData(null);
-                  // refetch는 useBuildingDetail이 처리
-                }
               }}
             />
           ) : (
             <View style={styles.bsEmpty}>
-              <Text style={styles.bsEmptyText}>
-                {gpsStatus === 'searching' ? '주변 건물을 탐색 중...' : '건물에 카메라를 맞춰 스캔해보세요'}
-              </Text>
+              <Text style={styles.bsEmptyText}>건물 라벨을 터치해 정보를 확인하세요</Text>
             </View>
           )}
         </BottomSheetView>
@@ -872,8 +535,6 @@ const ScanCameraScreen = ({ route, navigation }) => {
 };
 
 // ===== 스타일 =====
-const GUIDE_LEFT = (SW - GUIDE_WIDTH) / 2;
-
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
 
@@ -891,60 +552,48 @@ const styles = StyleSheet.create({
   gpsErrorBanner: { position: 'absolute', top: 100, left: SPACING.lg, right: SPACING.lg, backgroundColor: 'rgba(239,68,68,0.9)', borderRadius: 12, paddingHorizontal: SPACING.lg, paddingVertical: SPACING.sm, zIndex: 100 },
   gpsErrorText: { fontSize: 13, fontWeight: '600', color: '#FFF', textAlign: 'center' },
 
-  // AR 앵커 라벨
-  arLabel: { position: 'absolute', backgroundColor: 'rgba(0,0,0,0.65)', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5, alignItems: 'center', minWidth: 80 },
-  arLabelFocused: { backgroundColor: 'rgba(59,130,246,0.8)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.5)' },
-  arLabelName: { fontSize: 12, fontWeight: '600', color: 'rgba(255,255,255,0.85)' },
-  arLabelNameFocused: { color: '#FFF', fontWeight: '700' },
-  arLabelDist: { fontSize: 10, color: 'rgba(255,255,255,0.6)', marginTop: 1 },
+  // AR 앵커 라벨 (핀 스타일)
+  arAnchor: {
+    position: 'absolute',
+    alignItems: 'center',
+  },
+  arAnchorCard: {
+    backgroundColor: 'rgba(0,0,0,0.75)',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    alignItems: 'center',
+    minWidth: 110,
+    minHeight: 44, // 터치 영역 최소 높이
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)',
+  },
+  arAnchorName: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFF',
+    maxWidth: 160,
+  },
+  arAnchorDist: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: 'rgba(255,255,255,0.6)',
+    marginTop: 2,
+  },
+  arAnchorTail: {
+    width: 0,
+    height: 0,
+    borderLeftWidth: 6,
+    borderRightWidth: 6,
+    borderTopWidth: 8,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+    borderTopColor: 'rgba(0,0,0,0.75)',
+    marginTop: -1,
+  },
 
   loadingView: { flex: 1, backgroundColor: '#0D1230', justifyContent: 'center', alignItems: 'center' },
   loadingText: { fontSize: 14, color: '#B0B0B0', marginTop: SPACING.md },
-
-  // ===== 포커스 가이드 =====
-  dimTop: { width: SW, height: GUIDE_TOP, backgroundColor: 'rgba(0,0,0,0.4)' },
-  dimRow: { flexDirection: 'row', height: GUIDE_HEIGHT },
-  dimSide: { width: GUIDE_LEFT, backgroundColor: 'rgba(0,0,0,0.4)' },
-  guideHole: { width: GUIDE_WIDTH, height: GUIDE_HEIGHT },
-  dimBottom: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', alignItems: 'center', paddingTop: SPACING.md },
-  nearbyCountText: { fontSize: 13, fontWeight: '500', color: 'rgba(255,255,255,0.6)' },
-
-  // 코너 라인
-  corner: { position: 'absolute', width: CORNER_LEN, height: CORNER_LEN },
-  cornerTL: { top: 0, left: 0, borderTopWidth: CORNER_W, borderLeftWidth: CORNER_W, borderColor: 'rgba(255,255,255,0.7)', borderTopLeftRadius: 4 },
-  cornerTR: { top: 0, right: 0, borderTopWidth: CORNER_W, borderRightWidth: CORNER_W, borderColor: 'rgba(255,255,255,0.7)', borderTopRightRadius: 4 },
-  cornerBL: { bottom: 0, left: 0, borderBottomWidth: CORNER_W, borderLeftWidth: CORNER_W, borderColor: 'rgba(255,255,255,0.7)', borderBottomLeftRadius: 4 },
-  cornerBR: { bottom: 0, right: 0, borderBottomWidth: CORNER_W, borderRightWidth: CORNER_W, borderColor: 'rgba(255,255,255,0.7)', borderBottomRightRadius: 4 },
-  cornerActive: { borderColor: Colors.accentAmber },
-
-  // ===== 포커스 라벨 =====
-  focusedLabelContainer: {
-    position: 'absolute',
-    left: 0, right: 0,
-    top: GUIDE_TOP + GUIDE_HEIGHT + 12,
-    alignItems: 'center', zIndex: 10,
-  },
-  focusedLabelWrap: { alignItems: 'center' },
-  focusedCard: {
-    backgroundColor: '#FFF', borderRadius: 14,
-    paddingHorizontal: SPACING.lg, paddingVertical: SPACING.md,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 10, elevation: 8,
-    minWidth: 200, maxWidth: SW * 0.75,
-  },
-  focusedName: { fontSize: 17, fontWeight: '700', color: Colors.textPrimary, marginBottom: 2 },
-  focusedType: { fontSize: 13, color: Colors.textSecondary, marginBottom: 6 },
-  focusedMetaRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
-  focusedDistance: { fontSize: 13, fontWeight: '600', color: Colors.textSecondary },
-  focusedConfBadge: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 2 },
-  focusedConfText: { fontSize: 12, fontWeight: '700' },
-  gaugeBarBg: { height: 5, backgroundColor: '#E5E7EB', borderRadius: 3, overflow: 'hidden' },
-  gaugeBarFill: { height: 5, borderRadius: 3 },
-
-  // 핀
-  focusedPin: { alignItems: 'center', marginTop: -2 },
-  pinOuter: { width: 20, height: 20, borderRadius: 10, backgroundColor: Colors.accentAmber, justifyContent: 'center', alignItems: 'center' },
-  pinInner: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#FFF' },
-  pinTail: { width: 0, height: 0, borderLeftWidth: 6, borderRightWidth: 6, borderTopWidth: 8, borderLeftColor: 'transparent', borderRightColor: 'transparent', borderTopColor: Colors.accentAmber, marginTop: -2 },
 
   // ===== HUD =====
   hud: {
@@ -975,7 +624,6 @@ const styles = StyleSheet.create({
   bsHandle: { backgroundColor: 'rgba(255,255,255,0.2)', width: 36, height: 4, borderRadius: 2 },
   bsEmpty: { alignItems: 'center', paddingVertical: SPACING.xxl },
   bsEmptyText: { fontSize: 15, color: '#B0B0B0' },
-
 });
 
 export default ScanCameraScreen;
