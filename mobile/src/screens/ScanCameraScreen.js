@@ -155,6 +155,17 @@ const ScanCameraScreen = ({ route, navigation }) => {
     enabled: isARMode && isLocalized && !sheetOpen,
   });
 
+  // === 디버그: 앵커 렌더링 체인 점검 ===
+  useEffect(() => {
+    console.log(`[ANCHOR_DEBUG] isARMode=${isARMode} isLocalized=${isLocalized} sheetOpen=${sheetOpen}`);
+    console.log(`[ANCHOR_DEBUG] detectStatus=${detectStatus} buildings=${detectedBuildings.length} anchors=${arAnchors.length}`);
+    console.log(`[ANCHOR_DEBUG] geoPose hAcc=${geoPose?.horizontalAccuracy} arError=${arError}`);
+    if (detectedBuildings.length > 0) {
+      const b = detectedBuildings[0];
+      console.log(`[ANCHOR_DEBUG] 첫번째 건물: id=${b.id} lat=${b.lat} lng=${b.lng} distance=${b.distance}`);
+    }
+  }, [isARMode, isLocalized, sheetOpen, detectStatus, detectedBuildings.length, arAnchors.length, geoPose?.horizontalAccuracy, arError]);
+
   // 선택된 건물의 메타 정보
   const selectedBuildingMeta = useMemo(() => {
     if (!selectedBuildingId) return null;

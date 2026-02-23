@@ -40,6 +40,7 @@ const useGeospatialAnchors = ({ buildings = [], isLocalized = false, enabled = f
 
   // 건물 변경 시 앵커 동기화
   useEffect(() => {
+    console.log(`[ANCHOR_SYNC] enabled=${enabled} isLocalized=${isLocalized} creating=${creatingRef.current} targetBuildings=${targetBuildings.length}`);
     if (!enabled || !isLocalized || creatingRef.current) return;
 
     const targetIds = new Set(targetBuildings.map(b => String(b.id)));
@@ -67,14 +68,16 @@ const useGeospatialAnchors = ({ buildings = [], isLocalized = false, enabled = f
           // 건물 위 15m 높이에 앵커 배치 (라벨이 건물 위에 보이도록)
           const bLat = building.lat || building.latitude;
           const bLng = building.lng || building.longitude;
+          console.log(`[ANCHOR_CREATE] id=${id} lat=${bLat} lng=${bLng}`);
           const success = await createTerrainAnchor(
             id, bLat, bLng, 15
           );
+          console.log(`[ANCHOR_CREATE] id=${id} success=${success}`);
           if (success && isMountedRef.current) {
             activeAnchorIds.current.add(id);
           }
-        } catch {
-          // 앵커 생성 실패 (무시)
+        } catch (err) {
+          console.warn(`[ANCHOR_CREATE] id=${id} error:`, err);
         }
       }
       creatingRef.current = false;
@@ -106,6 +109,7 @@ const useGeospatialAnchors = ({ buildings = [], isLocalized = false, enabled = f
   const handleAnchorPositionsUpdate = useCallback((event) => {
     const data = event?.nativeEvent || event;
     const anchors = data?.anchors;
+    console.log(`[ANCHOR_POS] 이벤트 수신: anchors=${Array.isArray(anchors) ? anchors.length : 'null'}`);
     if (!Array.isArray(anchors)) return;
 
     const positions = {};
