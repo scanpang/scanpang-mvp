@@ -24,7 +24,20 @@ const withARCore = (config) => {
       });
     }
 
-    // Google Geospatial API 키
+    // ARCore Geospatial API 키 (com.google.android.ar.API_KEY)
+    const hasARKey = application['meta-data'].some(
+      (m) => m.$?.['android:name'] === 'com.google.android.ar.API_KEY'
+    );
+    if (!hasARKey) {
+      application['meta-data'].push({
+        $: {
+          'android:name': 'com.google.android.ar.API_KEY',
+          'android:value': 'AIzaSyCU4jTboGsuPzzSGE-BH-HbPorYLNoVGNE',
+        },
+      });
+    }
+
+    // Google Maps/Places API 키 (기존 호환)
     const hasGeoKey = application['meta-data'].some(
       (m) => m.$?.['android:name'] === 'com.google.android.geo.API_KEY'
     );
