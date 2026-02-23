@@ -137,19 +137,9 @@ function generateFallbackData(buildingUse, totalFloors, basementFloors, building
  * @returns {Object|null} 통합 프로필 (없으면 null)
  */
 async function getProfile(buildingId) {
-  // 9개 테이블 병렬 조회
-  const [
-    buildingRes,
-    floorsRes,
-    facilitiesRes,
-    statsRes,
-    liveFeedsRes,
-    amenitiesRes,
-    realEstateRes,
-    restaurantsRes,
-    tourismRes,
-    promotionRes,
-  ] = await Promise.all([
+  // 10개 테이블 병렬 조회 (일부 실패해도 나머지 정상 반환)
+  const emptyResult = { rows: [] };
+  const results = await Promise.allSettled([
     // 1. 건물 기본 정보
     db.query(
       `SELECT
@@ -256,6 +246,13 @@ async function getProfile(buildingId) {
       [buildingId]
     ),
   ]);
+
+  // 실패한 쿼리는 빈 결과로 대체
+  const settled = (i) => results[i].status === 'fulfilled' ? results[i].value : emptyResult;
+  const [
+    buildingRes, floorsRes, facilitiesRes, statsRes, liveFeedsRes,
+    amenitiesRes, realEstateRes, restaurantsRes, tourismRes, promotionRes,
+  ] = Array.from({ length: 10 }, (_, i) => settled(i));
 
   // 건물 없으면 null
   if (buildingRes.rows.length === 0) {
