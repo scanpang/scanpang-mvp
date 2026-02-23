@@ -1,7 +1,7 @@
 /**
  * useBuildingDetect - VPS + OSM 건물 감지 전용 훅
  * - VPS 필수: geoPose 없거나 horizontalAccuracy >= 10 → inactive
- * - 디바운싱: heading 10° 변화, 위치 5m 변화, 또는 5초 경과 시 재요청
+ * - 디바운싱: 위치 5m 변화 또는 8초 경과 시 재요청 (heading 제거 → 클라이언트 실시간 FOV)
  * - 출력: { buildings, loading, status }
  *   status: 'inactive' | 'detecting' | 'ready'
  */
@@ -10,9 +10,8 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { detectBuildings } from '../services/api';
 
 // 디바운싱 임계값
-const HEADING_THRESHOLD = 10;    // heading 10° 변화 시 재요청
 const POSITION_THRESHOLD = 5;    // 5m 이동 시 재요청
-const TIME_THRESHOLD = 5000;     // 5초 경과 시 재요청
+const TIME_THRESHOLD = 8000;     // 8초 경과 시 재요청
 
 // 위치 변화 계산 (미터)
 function distanceBetween(lat1, lng1, lat2, lng2) {
@@ -21,29 +20,24 @@ function distanceBetween(lat1, lng1, lat2, lng2) {
   return Math.sqrt(dlat * dlat + dlng * dlng);
 }
 
-// heading 차이 계산 (0~180)
-function headingDiff(a, b) {
-  return Math.abs(((a - b + 540) % 360) - 180);
-}
-
 /**
  * @param {Object} params
  * @param {Object|null} params.geoPose - ARCore Geospatial pose
- * @param {number} params.fov - 포커스 각도
+ * @param {Object} params.geoPoseRef - geoPose stale closure 방지용 ref
  * @param {boolean} params.enabled - 훅 활성화 여부
  * @returns {{ buildings: Array, loading: boolean, status: string }}
  */
-const useBuildingDetect = ({ geoPose = null, fov = 30, enabled = true } = {}) => {
+const useBuildingDetect = ({ geoPose = null, geoPoseRef = null, enabled = true } = {}) => {
   const [buildings, setBuildings] = useState([]);
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState('inactive');
 
   const isMounted = useRef(true);
   const requestId = useRef(0);
-  const lastRequest = useRef(null);    // { lat, lng, heading, time }
+  const lastRequest = useRef(null);    // { lat, lng, time }
   const timerRef = useRef(null);
 
-  const fetchDetect = useCallback(async (lat, lng, heading, horizontalAccuracy, currentFov) => {
+  const fetchDetect = useCallback(async (lat, lng, horizontalAccuracy) => {
     if (!isMounted.current) return;
 
     const myId = ++requestId.current;
@@ -52,9 +46,8 @@ const useBuildingDetect = ({ geoPose = null, fov = 30, enabled = true } = {}) =>
 
     try {
       const response = await detectBuildings({
-        lat, lng, heading,
+        lat, lng,
         horizontalAccuracy,
-        fov: currentFov,
       });
 
       if (!isMounted.current || myId !== requestId.current) return;
@@ -74,7 +67,7 @@ const useBuildingDetect = ({ geoPose = null, fov = 30, enabled = true } = {}) =>
 
       setBuildings(withConfidence);
       setStatus('ready');
-      lastRequest.current = { lat, lng, heading, time: Date.now() };
+      lastRequest.current = { lat, lng, time: Date.now() };
     } catch (err) {
       if (!isMounted.current || myId !== requestId.current) return;
       console.warn('[useBuildingDetect] API 실패:', err.message);
@@ -96,8 +89,8 @@ const useBuildingDetect = ({ geoPose = null, fov = 30, enabled = true } = {}) =>
       return;
     }
 
-    const { latitude, longitude, heading, horizontalAccuracy } = geoPose;
-    if (latitude == null || longitude == null || heading == null) return;
+    const { latitude, longitude, horizontalAccuracy } = geoPose;
+    if (latitude == null || longitude == null) return;
 
     // 디바운싱 체크
     const last = lastRequest.current;
@@ -107,33 +100,35 @@ const useBuildingDetect = ({ geoPose = null, fov = 30, enabled = true } = {}) =>
       // 첫 요청
       shouldFetch = true;
     } else {
-      const hDiff = headingDiff(heading, last.heading);
       const pDiff = distanceBetween(latitude, longitude, last.lat, last.lng);
       const tDiff = Date.now() - last.time;
 
-      if (hDiff >= HEADING_THRESHOLD || pDiff >= POSITION_THRESHOLD || tDiff >= TIME_THRESHOLD) {
+      if (pDiff >= POSITION_THRESHOLD || tDiff >= TIME_THRESHOLD) {
         shouldFetch = true;
       }
     }
 
     if (shouldFetch) {
-      fetchDetect(latitude, longitude, heading, horizontalAccuracy, fov);
+      fetchDetect(latitude, longitude, horizontalAccuracy);
     }
 
-    // 5초 주기 타이머 (변화 없어도 갱신)
-    if (timerRef.current) clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => {
-      if (!isMounted.current || !enabled) return;
-      const gp = geoPose; // 클로저 캡처
-      if (gp && gp.horizontalAccuracy < 10) {
-        fetchDetect(gp.latitude, gp.longitude, gp.heading, gp.horizontalAccuracy, fov);
-      }
-    }, TIME_THRESHOLD);
+    // 8초 주기 타이머 (변화 없어도 갱신) — 이미 실행 중이면 중복 생성 방지
+    if (!timerRef.current) {
+      timerRef.current = setTimeout(() => {
+        timerRef.current = null; // 실행 후 초기화
+        if (!isMounted.current || !enabled) return;
+        // stale closure 방지: geoPoseRef에서 최신 값 참조
+        const gp = geoPoseRef?.current;
+        if (gp && gp.horizontalAccuracy < 10) {
+          fetchDetect(gp.latitude, gp.longitude, gp.horizontalAccuracy);
+        }
+      }, TIME_THRESHOLD);
+    }
 
     return () => {
       if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
     };
-  }, [enabled, geoPose?.latitude, geoPose?.longitude, geoPose?.heading, geoPose?.horizontalAccuracy, fov, fetchDetect]);
+  }, [enabled, geoPose?.latitude, geoPose?.longitude, geoPose?.horizontalAccuracy, geoPoseRef, fetchDetect]);
 
   useEffect(() => {
     isMounted.current = true;

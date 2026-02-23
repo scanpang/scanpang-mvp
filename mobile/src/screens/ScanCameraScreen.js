@@ -271,7 +271,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
   // === 메인 감지: VPS + OSM (VPS 전용, GPS 폴백 없음) ===
   const { buildings: detectedBuildings, loading: detectLoading, status: detectStatus } = useBuildingDetect({
     geoPose,
-    fov: Math.round(focusAngle),
+    geoPoseRef,
     enabled: !sheetOpen,
   });
 

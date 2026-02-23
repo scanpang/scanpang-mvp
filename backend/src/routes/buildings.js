@@ -291,27 +291,25 @@ router.post('/identify', async (req, res, next) => {
 
 /**
  * POST /api/buildings/detect
- * VPS + OSM 건물 감지: heading 방향 FOV 내 건물 반환
- * Body: { lat, lng, heading, horizontalAccuracy, fov }
+ * VPS + OSM 건물 감지: 반경 내 전체 건물 반환 (FOV 필터는 클라이언트에서 실시간 수행)
+ * Body: { lat, lng, horizontalAccuracy }
  */
 router.post('/detect', async (req, res, next) => {
   try {
-    const { lat, lng, heading, horizontalAccuracy, fov } = req.body;
+    const { lat, lng, horizontalAccuracy } = req.body;
 
-    if (lat == null || lng == null || heading == null) {
+    if (lat == null || lng == null) {
       return res.status(400).json({
         success: false,
-        error: 'lat, lng, heading 파라미터가 필요합니다.',
+        error: 'lat, lng 파라미터가 필요합니다.',
       });
     }
 
     const parsedLat = parseFloat(lat);
     const parsedLng = parseFloat(lng);
-    const parsedHeading = parseFloat(heading);
     const parsedHAcc = parseFloat(horizontalAccuracy) || 999;
-    const parsedFov = parseFloat(fov) || 30;
 
-    if (isNaN(parsedLat) || isNaN(parsedLng) || isNaN(parsedHeading)) {
+    if (isNaN(parsedLat) || isNaN(parsedLng)) {
       return res.status(400).json({
         success: false,
         error: '유효하지 않은 값입니다.',
@@ -337,19 +335,12 @@ router.post('/detect', async (req, res, next) => {
       osmResults = [];
     }
 
-    // FOV 필터 (heading ± fov)
-    let filtered = osmResults.filter(b => {
-      if (b.bearing == null) return true; // bearing 없으면 일단 포함
-      const diff = ((b.bearing - parsedHeading + 540) % 360) - 180;
-      return Math.abs(diff) <= parsedFov;
-    });
-
-    // 거리순 정렬, 상위 10개
-    filtered.sort((a, b) => (a.distanceMeters || a.distance || 999) - (b.distanceMeters || b.distance || 999));
-    filtered = filtered.slice(0, 10);
+    // 거리순 정렬, 상위 10개 (FOV 필터 없이 반경 내 전체 반환)
+    osmResults.sort((a, b) => (a.distanceMeters || a.distance || 999) - (b.distanceMeters || b.distance || 999));
+    const top10 = osmResults.slice(0, 10);
 
     // 상위 3개 이름없는 건물 → 카카오 coordToAddress로 이름 보강
-    const enrichTargets = filtered.filter(b => b.needsEnrich || !b.name || b.name === '건물').slice(0, 3);
+    const enrichTargets = top10.filter(b => b.needsEnrich || !b.name || b.name === '건물').slice(0, 3);
     if (enrichTargets.length > 0) {
       const enrichResults = await Promise.allSettled(
         enrichTargets.map(b => kakaoLocal.coordToAddress(b.lat, b.lng))
@@ -377,13 +368,11 @@ router.post('/detect', async (req, res, next) => {
 
     res.json({
       success: true,
-      data: filtered,
+      data: top10,
       meta: {
-        count: filtered.length,
+        count: top10.length,
         osmTotal: osmResults.length,
         radius,
-        heading: parsedHeading,
-        fov: parsedFov,
         horizontalAccuracy: parsedHAcc,
         source: 'osm_vps',
       },
