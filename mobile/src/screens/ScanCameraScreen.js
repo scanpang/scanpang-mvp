@@ -54,9 +54,6 @@ const SWITCH_THRESHOLD = 3; // 새 건물이 3° 이상 더 가까워야 전환
 const SWITCH_CONFIRM_THRESHOLD = 5; // 5틱 연속 같은 새 건물이어야 전환
 const SNAP_POINTS = ['1%', '50%', '90%'];
 
-// GPS 캐시 키
-const GPS_CACHE_KEY = '@scanpang_last_gps';
-
 const computeHeading = (x, y) => {
   let angle = Math.atan2(y, x) * (180 / Math.PI);
   return (angle + 360) % 360;
@@ -157,11 +154,9 @@ const CameraHUD = ({ gpsStatus, onBack, buildingCount, accuracyInfo, debugInfo, 
   const hAcc = debugInfo?.hAcc != null ? `${debugInfo.hAcc.toFixed(0)}m` : '-';
   const hdAcc = debugInfo?.hdAcc != null ? `${debugInfo.hdAcc.toFixed(0)}°` : '-';
 
-  // 모드 배지 색상: VPS=초록, GPS=노랑, OFF=회색
-  const badgeColor = detectStatus === 'inactive' ? '#888'
-    : debugInfo?.detectSource === 'vps' ? '#00C853' : '#FFC107';
-  const badgeLabel = detectStatus === 'inactive' ? 'OFF'
-    : debugInfo?.detectSource === 'vps' ? 'VPS' : 'GPS';
+  // 모드 배지 색상: VPS=초록, OFF=회색
+  const badgeColor = detectStatus === 'inactive' ? '#888' : '#00C853';
+  const badgeLabel = detectStatus === 'inactive' ? 'OFF' : 'VPS';
 
   return (
     <View style={styles.hud}>
@@ -220,7 +215,6 @@ const ScanCameraScreen = ({ route, navigation }) => {
   const [gpsStatus, setGpsStatus] = useState('searching');
   const [cameraPermissionDenied, setCameraPermissionDenied] = useState(false);
   const [cameraReady, setCameraReady] = useState(false); // 네비게이션 애니메이션 완료 후 카메라 마운트
-  const [gpsAccuracy, setGpsAccuracy] = useState(null); // GPS 폴백 모드 수평 정확도(m)
 
   const [timeContext, setTimeContext] = useState(null);
   const [geminiResults, setGeminiResults] = useState(new Map());
@@ -234,7 +228,6 @@ const ScanCameraScreen = ({ route, navigation }) => {
 
   const bottomSheetRef = useRef(null);
   const cameraRef = useRef(null);
-  const locationSubRef = useRef(null);
   const magnetSubRef = useRef(null);
   const isMountedRef = useRef(true);
   const lastHeadingRef = useRef(0);
@@ -259,11 +252,9 @@ const ScanCameraScreen = ({ route, navigation }) => {
   // stale closure 방지용 ref
   const geoPoseRef = useRef(null);
   useEffect(() => { geoPoseRef.current = geoPose; }, [geoPose]);
-  const userLocationRef = useRef(null);
-  useEffect(() => { userLocationRef.current = userLocation; }, [userLocation]);
 
   // VPS 기반 FOV: 정확도 좋으면 좁게(25°), 나쁘면 넓게(30°)
-  const currentAccuracy = geoPose?.horizontalAccuracy ?? gpsAccuracy ?? 999;
+  const currentAccuracy = geoPose?.horizontalAccuracy ?? 999;
   const focusAngle = geoPose
     ? Math.min(30, Math.max(25, 25 + (currentAccuracy - 2) * 0.556))
     : 30;
@@ -271,12 +262,10 @@ const ScanCameraScreen = ({ route, navigation }) => {
   const stickinessBonus = highAccuracy ? GEO_PARAMS.STICKINESS_BONUS : STICKINESS_BONUS;
   const switchThreshold = highAccuracy ? GEO_PARAMS.SWITCH_THRESHOLD : SWITCH_THRESHOLD;
 
-  // === 메인 감지: VPS 우선, GPS 폴백 (VPS 콜드스타트 대응) ===
-  const { buildings: detectedBuildings, loading: detectLoading, status: detectStatus, source: detectSource } = useBuildingDetect({
+  // === 메인 감지: VPS 전용 (카메라 스캔 컨셉) ===
+  const { buildings: detectedBuildings, loading: detectLoading, status: detectStatus } = useBuildingDetect({
     geoPose,
     geoPoseRef,
-    userLocation,
-    userLocationRef,
     enabled: !sheetOpen,
   });
 
@@ -311,20 +300,11 @@ const ScanCameraScreen = ({ route, navigation }) => {
     ? { ...(detectedBuildings.find(b => b.id === selectedBuildingId) || {}), ...(buildingDetail || {}) }
     : null;
 
-  // 건물별 confidence 계산 + 정렬 (VPS 우선, GPS 폴백)
+  // 건물별 confidence 계산 + 정렬 (VPS 전용)
   const rankedBuildings = useMemo(() => {
-    if (!detectedBuildings.length) return [];
-    // VPS geoPose 우선, 없으면 GPS 좌표 + 나침반 heading으로 폴백
-    const pose = geoPose || (userLocation ? {
-      latitude: userLocation.lat,
-      longitude: userLocation.lng,
-      heading,
-      horizontalAccuracy: gpsAccuracy ?? 50,
-      headingAccuracy: 30, // 나침반 기본 정확도
-    } : null);
-    if (!pose) return [];
-    return matchBuildingsGeo(pose, detectedBuildings, timeContext, geminiResults);
-  }, [detectedBuildings, geoPose, userLocation, heading, gpsAccuracy, timeContext, geminiResults]);
+    if (!detectedBuildings.length || !geoPose) return [];
+    return matchBuildingsGeo(geoPose, detectedBuildings, timeContext, geminiResults);
+  }, [detectedBuildings, geoPose, timeContext, geminiResults]);
 
   // 포커스 영역 내 중심에 가장 가까운 건물 1개 계산 (바텀시트 열리면 중단)
   const focusedBuilding = useMemo(() => {
@@ -528,29 +508,6 @@ const ScanCameraScreen = ({ route, navigation }) => {
     return () => handle.cancel();
   }, []);
 
-  // ===== GPS 캐시 → 빠른 초기 위치 + 상태 전환 =====
-  useEffect(() => {
-    (async () => {
-      try {
-        const cached = await AsyncStorage.getItem(GPS_CACHE_KEY);
-        if (cached) {
-          const { lat, lng } = JSON.parse(cached);
-          if (lat && lng && !userLocation) {
-            setUserLocation({ lat, lng });
-            setGpsStatus('active'); // 캐시 위치로도 즉시 건물 탐색 시작
-          }
-        }
-      } catch {}
-    })();
-  }, []);
-
-  // GPS 위치 변경 시 캐시 저장
-  useEffect(() => {
-    if (userLocation) {
-      AsyncStorage.setItem(GPS_CACHE_KEY, JSON.stringify(userLocation)).catch(() => {});
-    }
-  }, [userLocation]);
-
   // BehaviorTracker 세션 + 서버 시각
   useEffect(() => {
     behaviorTracker.startSession({ startLat: userLocation?.lat, startLng: userLocation?.lng });
@@ -609,30 +566,16 @@ const ScanCameraScreen = ({ route, navigation }) => {
     })();
   }, [cameraPermission]);
 
-  // 위치 추적 (항상 실행, geoPose 없을 때만 갱신)
+  // 위치 권한 요청 (GPS 위치 자체는 스캔에서 미사용, 권한만 확보)
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted') { if (!cancelled) setGpsStatus('error'); return; }
-        const sub = await Location.watchPositionAsync(
-          { accuracy: Location.Accuracy.High, timeInterval: 3000, distanceInterval: 5 },
-          (loc) => {
-            if (!cancelled && isMountedRef.current) {
-              // geoPose가 없을 때만 GPS 위치 사용 (geoPose 우선)
-              if (!geoPoseRef.current) {
-                setUserLocation({ lat: loc.coords.latitude, lng: loc.coords.longitude });
-                setGpsStatus('active');
-              }
-              if (loc.coords.accuracy != null) setGpsAccuracy(loc.coords.accuracy);
-            }
-          }
-        );
-        locationSubRef.current = sub;
+        if (status !== 'granted') { if (!cancelled) setGpsStatus('error'); }
       } catch { if (!cancelled) setGpsStatus('error'); }
     })();
-    return () => { cancelled = true; locationSubRef.current?.remove(); };
+    return () => { cancelled = true; };
   }, []);
 
   // 나침반 (항상 실행, geoPose 없을 때만 갱신)
@@ -758,7 +701,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
   const guideMessage = useMemo(() => {
     if (sheetOpen || scanComplete) return scanCompleteMessage || null;
     if (scanCompleteMessage) return scanCompleteMessage;
-    if (!geoPose && !userLocation) return 'GPS 위치를 잡는 중...';
+    if (!geoPose) return 'VPS 위치를 잡는 중...';
     if (detectLoading) return '건물 탐색 중...';
     if (detectedBuildings.length === 0) return '주변에 건물이 없습니다';
     if (!focusedBuilding) return '건물에 카메라를 맞춰주세요';
@@ -860,11 +803,10 @@ const ScanCameraScreen = ({ route, navigation }) => {
         arError={arError}
         detectStatus={detectStatus}
         debugInfo={{
-          hAcc: geoPose?.horizontalAccuracy ?? gpsAccuracy ?? null,
+          hAcc: geoPose?.horizontalAccuracy ?? null,
           hdAcc: geoPose?.headingAccuracy ?? null,
           fov: Math.round(focusAngle),
           buildingCount: detectedBuildings.length,
-          detectSource,
         }}
       />
 
