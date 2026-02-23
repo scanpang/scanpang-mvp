@@ -33,7 +33,7 @@ const useGeospatialAnchors = ({ buildings = [], isLocalized = false, enabled = f
   const targetBuildings = useMemo(() => {
     if (!buildings.length) return [];
     return buildings
-      .filter(b => b.distance != null && b.distance <= ANCHOR_RANGE && b.latitude && b.longitude)
+      .filter(b => b.distance != null && b.distance <= ANCHOR_RANGE && (b.lat || b.latitude) && (b.lng || b.longitude))
       .sort((a, b) => (a.distance || 0) - (b.distance || 0))
       .slice(0, MAX_ANCHORS);
   }, [buildings]);
@@ -65,8 +65,10 @@ const useGeospatialAnchors = ({ buildings = [], isLocalized = false, enabled = f
         const id = String(building.id);
         try {
           // 건물 위 15m 높이에 앵커 배치 (라벨이 건물 위에 보이도록)
+          const bLat = building.lat || building.latitude;
+          const bLng = building.lng || building.longitude;
           const success = await createTerrainAnchor(
-            id, building.latitude, building.longitude, 15
+            id, bLat, bLng, 15
           );
           if (success && isMountedRef.current) {
             activeAnchorIds.current.add(id);
