@@ -318,10 +318,12 @@ router.post('/detect', async (req, res, next) => {
     // OSM 건물 조회 (고정 반경 200m, hAcc 컷오프 없음 — 스코어링이 정확도 반영)
     const radius = 200;
     let osmResults = [];
+    console.log(`[detect] OSM 조회 시작: lat=${parsedLat} lng=${parsedLng} radius=${radius}`);
     try {
       osmResults = await osmBuildings.fetchNearbyFromOSM(parsedLat, parsedLng, radius, { includeUnnamed: true });
+      console.log(`[detect] OSM 조회 완료: ${osmResults.length}개 건물`);
     } catch (err) {
-      console.warn('[detect] OSM 조회 실패:', err.message);
+      console.warn(`[detect] OSM 조회 실패: ${err.code || ''} ${err.message}`);
       osmResults = [];
     }
 

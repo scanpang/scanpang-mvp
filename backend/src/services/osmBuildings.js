@@ -6,7 +6,11 @@
  */
 const axios = require('axios');
 
-const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
+// 메인 + 폴백 Overpass 서버
+const OVERPASS_URLS = [
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
+];
 
 // ===== 캐시 =====
 const nearbyCache = new Map();       // 위치별 건물 목록 캐시
@@ -46,14 +50,28 @@ async function fetchNearbyFromOSM(lat, lng, radius = 500, { includeUnnamed = fal
   `;
 
   try {
-    const response = await axios.post(
-      OVERPASS_URL,
-      `data=${encodeURIComponent(query)}`,
-      {
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        timeout: 6000,
+    // Overpass 서버 순차 시도 (메인 실패 시 폴백)
+    let response = null;
+    let lastErr = null;
+    for (const url of OVERPASS_URLS) {
+      try {
+        console.log(`[OSM] Overpass 요청 시작: ${url} (lat=${lat}, lng=${lng}, r=${radius})`);
+        response = await axios.post(
+          url,
+          `data=${encodeURIComponent(query)}`,
+          {
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            timeout: 12000,
+          }
+        );
+        console.log(`[OSM] Overpass 응답 OK: status=${response.status} elements=${response.data?.elements?.length || 0}`);
+        break; // 성공하면 루프 종료
+      } catch (err) {
+        lastErr = err;
+        console.warn(`[OSM] Overpass 실패 (${url}): ${err.code || ''} ${err.message} status=${err.response?.status || 'N/A'}`);
       }
-    );
+    }
+    if (!response) throw lastErr;
 
     const elements = response.data?.elements || [];
 
@@ -165,7 +183,11 @@ async function fetchNearbyFromOSM(lat, lng, radius = 500, { includeUnnamed = fal
     console.log(`[OSM] ${buildings.length}개 건물 조회 (반경 ${radius}m)`);
     return buildings;
   } catch (err) {
-    console.warn('[OSM] Overpass API 실패:', err.message);
+    console.warn(`[OSM] Overpass API 최종 실패: code=${err.code || 'N/A'} status=${err.response?.status || 'N/A'} msg=${err.message}`);
+    if (err.response?.data) {
+      const body = typeof err.response.data === 'string' ? err.response.data.substring(0, 200) : JSON.stringify(err.response.data).substring(0, 200);
+      console.warn(`[OSM] 응답 본문: ${body}`);
+    }
     return [];
   }
 }
