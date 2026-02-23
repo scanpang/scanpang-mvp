@@ -27,6 +27,7 @@ import NearbyBuildings from '../components/home/NearbyBuildings';
 import RecentActivity from '../components/home/RecentActivity';
 
 const RECENT_SCANS_KEY_HOME = '@scanpang_recent_scans';
+const GPS_CACHE_KEY = '@scanpang_last_gps';
 const POINTS_PER_SCAN = 50;
 const DAILY_LIMIT = 500;
 
@@ -68,14 +69,31 @@ const HomeScreen = ({ navigation }) => {
     scanCount: 0, todayEarned: 0, dailyLimit: DAILY_LIMIT, remaining: DAILY_LIMIT, totalPoints: 0,
   });
 
-  // 위치 가져오기 + 역지오코딩
+  // GPS 캐시 → 즉시 위치 확보 (콜드스타트 대응)
+  useEffect(() => {
+    (async () => {
+      try {
+        const cached = await AsyncStorage.getItem(GPS_CACHE_KEY);
+        if (cached && !userLocation) {
+          const { lat, lng } = JSON.parse(cached);
+          if (lat && lng) setUserLocation({ lat, lng });
+        }
+      } catch {}
+    })();
+  }, []);
+
+  // 위치 가져오기 + 역지오코딩 + 캐시 저장
   useEffect(() => {
     (async () => {
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status === 'granted') {
           const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-          setUserLocation({ lat: loc.coords.latitude, lng: loc.coords.longitude });
+          const newLoc = { lat: loc.coords.latitude, lng: loc.coords.longitude };
+          setUserLocation(newLoc);
+
+          // GPS 캐시 저장 (다음 앱 실행 시 즉시 사용)
+          AsyncStorage.setItem(GPS_CACHE_KEY, JSON.stringify(newLoc)).catch(() => {});
 
           // 역지오코딩으로 동적 위치명
           try {

@@ -157,9 +157,11 @@ const CameraHUD = ({ gpsStatus, onBack, buildingCount, accuracyInfo, debugInfo, 
   const hAcc = debugInfo?.hAcc != null ? `${debugInfo.hAcc.toFixed(0)}m` : '-';
   const hdAcc = debugInfo?.hdAcc != null ? `${debugInfo.hdAcc.toFixed(0)}°` : '-';
 
-  // 모드 배지 색상: VPS 활성=초록, 비활성=회색
-  const badgeColor = detectStatus !== 'inactive' ? '#00C853' : '#888';
-  const badgeLabel = detectStatus !== 'inactive' ? 'VPS' : 'OFF';
+  // 모드 배지 색상: VPS=초록, GPS=노랑, OFF=회색
+  const badgeColor = detectStatus === 'inactive' ? '#888'
+    : debugInfo?.detectSource === 'vps' ? '#00C853' : '#FFC107';
+  const badgeLabel = detectStatus === 'inactive' ? 'OFF'
+    : debugInfo?.detectSource === 'vps' ? 'VPS' : 'GPS';
 
   return (
     <View style={styles.hud}>
@@ -269,10 +271,12 @@ const ScanCameraScreen = ({ route, navigation }) => {
   const stickinessBonus = highAccuracy ? GEO_PARAMS.STICKINESS_BONUS : STICKINESS_BONUS;
   const switchThreshold = highAccuracy ? GEO_PARAMS.SWITCH_THRESHOLD : SWITCH_THRESHOLD;
 
-  // === 메인 감지: VPS 전용 ===
-  const { buildings: detectedBuildings, loading: detectLoading, status: detectStatus } = useBuildingDetect({
+  // === 메인 감지: VPS 우선, GPS 폴백 (VPS 콜드스타트 대응) ===
+  const { buildings: detectedBuildings, loading: detectLoading, status: detectStatus, source: detectSource } = useBuildingDetect({
     geoPose,
     geoPoseRef,
+    userLocation,
+    userLocationRef,
     enabled: !sheetOpen,
   });
 
@@ -307,11 +311,20 @@ const ScanCameraScreen = ({ route, navigation }) => {
     ? { ...(detectedBuildings.find(b => b.id === selectedBuildingId) || {}), ...(buildingDetail || {}) }
     : null;
 
-  // 건물별 confidence 계산 + 정렬 (VPS 전용, matchBuildingsGeo만 사용)
+  // 건물별 confidence 계산 + 정렬 (VPS 우선, GPS 폴백)
   const rankedBuildings = useMemo(() => {
-    if (!detectedBuildings.length || !geoPose) return [];
-    return matchBuildingsGeo(geoPose, detectedBuildings, timeContext, geminiResults);
-  }, [detectedBuildings, geoPose, timeContext, geminiResults]);
+    if (!detectedBuildings.length) return [];
+    // VPS geoPose 우선, 없으면 GPS 좌표 + 나침반 heading으로 폴백
+    const pose = geoPose || (userLocation ? {
+      latitude: userLocation.lat,
+      longitude: userLocation.lng,
+      heading,
+      horizontalAccuracy: gpsAccuracy ?? 50,
+      headingAccuracy: 30, // 나침반 기본 정확도
+    } : null);
+    if (!pose) return [];
+    return matchBuildingsGeo(pose, detectedBuildings, timeContext, geminiResults);
+  }, [detectedBuildings, geoPose, userLocation, heading, gpsAccuracy, timeContext, geminiResults]);
 
   // 포커스 영역 내 중심에 가장 가까운 건물 1개 계산 (바텀시트 열리면 중단)
   const focusedBuilding = useMemo(() => {
@@ -745,7 +758,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
   const guideMessage = useMemo(() => {
     if (sheetOpen || scanComplete) return scanCompleteMessage || null;
     if (scanCompleteMessage) return scanCompleteMessage;
-    if (!geoPose) return 'VPS 위치를 잡는 중...';
+    if (!geoPose && !userLocation) return 'GPS 위치를 잡는 중...';
     if (detectLoading) return '건물 탐색 중...';
     if (detectedBuildings.length === 0) return '주변에 건물이 없습니다';
     if (!focusedBuilding) return '건물에 카메라를 맞춰주세요';
@@ -851,6 +864,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
           hdAcc: geoPose?.headingAccuracy ?? null,
           fov: Math.round(focusAngle),
           buildingCount: detectedBuildings.length,
+          detectSource,
         }}
       />
 
