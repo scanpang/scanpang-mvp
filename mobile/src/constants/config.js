@@ -11,7 +11,7 @@ export const BHDB_API_URL = 'https://scanpang-bhdb.vercel.app/api/v1/ingest';
 export const BHDB_API_KEY = 'sk-test-scanpang-2024';
 
 export const TIMEOUTS = {
-  default: 5000,
+  default: 15000,
   geminiVision: 25000,
   geminiChat: 25000,
 };
