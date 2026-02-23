@@ -7,7 +7,10 @@ import android.os.Handler
 import android.os.Looper
 import com.google.ar.core.*
 import com.google.ar.core.exceptions.*
+import android.util.Log
 import java.util.concurrent.ConcurrentHashMap
+
+private const val TAG = "GeospatialManager"
 
 /**
  * ARCore Geospatial 세션 관리
@@ -65,13 +68,17 @@ class GeospatialManager(private val context: Context) {
         return try {
             // ARCore 설치 확인 (프롬프트 없이)
             val installStatus = ArCoreApk.getInstance().requestInstall(activity, false)
+            Log.d(TAG, "[createSession] installStatus=$installStatus")
             if (installStatus != ArCoreApk.InstallStatus.INSTALLED) {
+                Log.e(TAG, "[createSession] ARCore 미설치: $installStatus")
                 return "arcore_not_installed"
             }
 
             session = Session(activity).also { s ->
                 // Geospatial 모드 지원 확인
-                if (!s.isGeospatialModeSupported(Config.GeospatialMode.ENABLED)) {
+                val geoSupported = s.isGeospatialModeSupported(Config.GeospatialMode.ENABLED)
+                Log.d(TAG, "[createSession] geospatialModeSupported=$geoSupported")
+                if (!geoSupported) {
                     s.close()
                     session = null
                     return "geospatial_not_supported"
@@ -88,6 +95,7 @@ class GeospatialManager(private val context: Context) {
                 }
                 isDepthSupported = (config.depthMode == Config.DepthMode.AUTOMATIC)
                 s.configure(config)
+                Log.d(TAG, "[createSession] 세션 생성 완료 — geospatial=ENABLED, depth=$isDepthSupported")
             }
             null // 성공
         } catch (e: UnavailableArcoreNotInstalledException) {
@@ -107,25 +115,59 @@ class GeospatialManager(private val context: Context) {
      * GL 스레드에서 매 프레임 호출
      * 카메라 프레임 업데이트 + Earth 상태 추출
      */
+    // update 에러 로그 쓰로틀링
+    private var lastUpdateErrorLog = 0L
+    private var frameCount = 0L
+
     fun update(): Frame? {
         val session = this.session ?: return null
         return try {
             val frame = session.update()
+            frameCount++
+            if (frameCount == 1L) {
+                Log.d(TAG, "[update] 첫 프레임 수신")
+            } else if (frameCount % 300 == 0L) {
+                // ~300프레임(약 10초)마다 상태 로그
+                val earth = session.earth
+                Log.d(TAG, "[update] frame#$frameCount, earth=${earth != null}, trackingState=${earth?.trackingState}")
+            }
             processEarthState(session)
             frame
         } catch (e: CameraNotAvailableException) {
+            val now = System.currentTimeMillis()
+            if (now - lastUpdateErrorLog > 5000) {
+                lastUpdateErrorLog = now
+                Log.e(TAG, "[update] CameraNotAvailable: ${e.message}")
+            }
             null
         } catch (e: Exception) {
+            val now = System.currentTimeMillis()
+            if (now - lastUpdateErrorLog > 5000) {
+                lastUpdateErrorLog = now
+                Log.e(TAG, "[update] 예외: ${e.message}")
+            }
             null
         }
     }
 
+    // Earth null 로그 쓰로틀링
+    private var lastEarthNullLog = 0L
+
     private fun processEarthState(session: Session) {
-        val earth = session.earth ?: return
+        val earth = session.earth
+        if (earth == null) {
+            val now = System.currentTimeMillis()
+            if (now - lastEarthNullLog > 3000) {
+                lastEarthNullLog = now
+                Log.w(TAG, "[processEarthState] session.earth=null — Geospatial 비활성?")
+            }
+            return
+        }
         val state = earth.trackingState
 
         // Tracking 상태 변화 감지
         if (state != lastTrackingState) {
+            Log.d(TAG, "[processEarthState] trackingState 변경: $lastTrackingState → $state")
             lastTrackingState = state
             currentTrackingState = when (state) {
                 TrackingState.TRACKING -> "tracking"
@@ -142,11 +184,30 @@ class GeospatialManager(private val context: Context) {
     /**
      * 현재 Geospatial pose 반환 (동기)
      */
+    // getPose 로그 쓰로틀링
+    private var lastPoseLog = 0L
+
     fun getCurrentPose(): Map<String, Any>? {
-        val earth = session?.earth ?: return null
-        if (earth.trackingState != TrackingState.TRACKING) return null
+        val earth = session?.earth
+        if (earth == null) {
+            val now = System.currentTimeMillis()
+            if (now - lastPoseLog > 5000) {
+                lastPoseLog = now
+                Log.w(TAG, "[getCurrentPose] session.earth=null")
+            }
+            return null
+        }
+        if (earth.trackingState != TrackingState.TRACKING) {
+            val now = System.currentTimeMillis()
+            if (now - lastPoseLog > 3000) {
+                lastPoseLog = now
+                Log.w(TAG, "[getCurrentPose] trackingState=${earth.trackingState} (TRACKING 아님)")
+            }
+            return null
+        }
 
         val pose = earth.cameraGeospatialPose
+        Log.d(TAG, "[getCurrentPose] lat=${pose.latitude}, lng=${pose.longitude}, hAcc=${pose.horizontalAccuracy}, hdAcc=${pose.headingAccuracy}")
         return mapOf(
             "latitude" to pose.latitude,
             "longitude" to pose.longitude,
@@ -185,16 +246,19 @@ class GeospatialManager(private val context: Context) {
     fun checkVPSAvailability(lat: Double, lng: Double, callback: (Boolean) -> Unit) {
         val session = this.session
         if (session == null) {
+            Log.w(TAG, "[checkVPS] session=null")
             callback(false)
             return
         }
         try {
             session.checkVpsAvailabilityAsync(lat, lng) { availability ->
+                Log.d(TAG, "[checkVPS] lat=$lat, lng=$lng → $availability")
                 mainHandler.post {
                     callback(availability == VpsAvailability.AVAILABLE)
                 }
             }
         } catch (e: Exception) {
+            Log.e(TAG, "[checkVPS] 예외: ${e.message}")
             callback(false)
         }
     }
