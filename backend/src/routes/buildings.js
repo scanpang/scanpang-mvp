@@ -498,8 +498,73 @@ router.get('/:id/profile', async (req, res, next) => {
           error: '건물 데이터가 만료되었습니다. 다시 스캔해주세요.',
         });
       }
+
+      const oLat = osmData.lat;
+      const oLng = osmData.lng;
+      const oName = req.query.name || osmData.name || '건물';
+
+      // 카카오 역지오코딩 + 건물 내 업소 검색 병렬 (regionCode 확보)
+      const [addrResult, kwResult] = await Promise.allSettled([
+        kakaoLocal.coordToAddress(oLat, oLng),
+        (oName && !oName.startsWith('건물'))
+          ? kakaoLocal.searchByKeyword(oName, oLat, oLng, 100)
+          : Promise.resolve([]),
+      ]);
+
+      const regionCode = addrResult.status === 'fulfilled' ? addrResult.value : null;
+      let inBuildingPlaces = kwResult.status === 'fulfilled' ? kwResult.value : [];
+
+      // 주소 기반 필터 (같은 건물)
+      if (regionCode?.roadAddress && inBuildingPlaces.length > 0) {
+        inBuildingPlaces = kakaoLocal.filterByAddress(inBuildingPlaces, regionCode.roadAddress);
+      }
+
       const profile = osmBuildings.generateOsmProfile(osmData);
-      // enrich 가능 여부 추가
+
+      // regionCode 보강 → enrich에서 건축물대장 호출 가능
+      if (regionCode) {
+        profile.meta.regionCode = regionCode;
+        if (!profile.building.address && regionCode.address) {
+          profile.building.address = regionCode.address;
+        }
+        if (regionCode.roadAddress) {
+          profile.building.roadAddress = regionCode.roadAddress;
+        }
+        if (regionCode.buildingName && (!profile.building.name || profile.building.name.startsWith('건물'))) {
+          profile.building.name = regionCode.buildingName;
+        }
+      }
+
+      // 건물 내 업소 → restaurants 추가 (실제 데이터)
+      if (inBuildingPlaces.length > 0) {
+        const restaurants = inBuildingPlaces
+          .filter(p => ['FD6', 'CE7'].includes(p.categoryCode) || ['음식점', '카페'].includes(p.category))
+          .map(p => ({
+            name: p.name,
+            category: p.category || '',
+            sub_category: p.categoryDetail || '',
+            signature_menu: null,
+            price_range: null,
+            wait_teams: null,
+            rating: null,
+            review_count: null,
+            is_open: null,
+            phone: p.phone || null,
+            kakaoUrl: p.placeUrl || null,
+          }));
+        if (restaurants.length > 0) {
+          profile.restaurants = restaurants;
+          profile.meta.hasRestaurants = true;
+        }
+        // 통계: 입점 업소 수 반영
+        profile.stats = {
+          raw: [
+            ...(profile.stats?.raw || []),
+            { type: 'tenants', value: `${inBuildingPlaces.length}개`, displayOrder: 3 },
+          ],
+        };
+      }
+
       profile.meta.enrichAvailable = true;
       return res.json({ success: true, data: profile });
     }
