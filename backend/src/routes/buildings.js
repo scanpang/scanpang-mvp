@@ -290,6 +290,110 @@ router.post('/identify', async (req, res, next) => {
 });
 
 /**
+ * POST /api/buildings/detect
+ * VPS + OSM 건물 감지: heading 방향 FOV 내 건물 반환
+ * Body: { lat, lng, heading, horizontalAccuracy, fov }
+ */
+router.post('/detect', async (req, res, next) => {
+  try {
+    const { lat, lng, heading, horizontalAccuracy, fov } = req.body;
+
+    if (lat == null || lng == null || heading == null) {
+      return res.status(400).json({
+        success: false,
+        error: 'lat, lng, heading 파라미터가 필요합니다.',
+      });
+    }
+
+    const parsedLat = parseFloat(lat);
+    const parsedLng = parseFloat(lng);
+    const parsedHeading = parseFloat(heading);
+    const parsedHAcc = parseFloat(horizontalAccuracy) || 999;
+    const parsedFov = parseFloat(fov) || 30;
+
+    if (isNaN(parsedLat) || isNaN(parsedLng) || isNaN(parsedHeading)) {
+      return res.status(400).json({
+        success: false,
+        error: '유효하지 않은 값입니다.',
+      });
+    }
+
+    // VPS 정확도 검증 (10m 미만 필수)
+    if (parsedHAcc >= 10) {
+      return res.json({
+        success: true,
+        data: [],
+        meta: { count: 0, reason: 'VPS 정확도 부족', horizontalAccuracy: parsedHAcc },
+      });
+    }
+
+    // OSM 건물 조회 (정확도 기반 반경: 좋으면 80m, 나쁘면 120m)
+    const radius = parsedHAcc < 5 ? 80 : 120;
+    let osmResults = [];
+    try {
+      osmResults = await osmBuildings.fetchNearbyFromOSM(parsedLat, parsedLng, radius, { includeUnnamed: true });
+    } catch (err) {
+      console.warn('[detect] OSM 조회 실패:', err.message);
+      osmResults = [];
+    }
+
+    // FOV 필터 (heading ± fov)
+    let filtered = osmResults.filter(b => {
+      if (b.bearing == null) return true; // bearing 없으면 일단 포함
+      const diff = ((b.bearing - parsedHeading + 540) % 360) - 180;
+      return Math.abs(diff) <= parsedFov;
+    });
+
+    // 거리순 정렬, 상위 10개
+    filtered.sort((a, b) => (a.distanceMeters || a.distance || 999) - (b.distanceMeters || b.distance || 999));
+    filtered = filtered.slice(0, 10);
+
+    // 상위 3개 이름없는 건물 → 카카오 coordToAddress로 이름 보강
+    const enrichTargets = filtered.filter(b => b.needsEnrich || !b.name || b.name === '건물').slice(0, 3);
+    if (enrichTargets.length > 0) {
+      const enrichResults = await Promise.allSettled(
+        enrichTargets.map(b => kakaoLocal.coordToAddress(b.lat, b.lng))
+      );
+      enrichResults.forEach((result, i) => {
+        if (result.status === 'fulfilled' && result.value) {
+          const addr = result.value;
+          const target = enrichTargets[i];
+          if (addr.buildingName) {
+            target.name = addr.buildingName;
+            target.needsEnrich = false;
+          } else if (addr.roadAddress) {
+            target.name = addr.roadAddress;
+            target.needsEnrich = false;
+          }
+          if (addr.address) target.address = target.address || addr.address;
+          if (addr.roadAddress) target.roadAddress = addr.roadAddress;
+          if (addr.zoneNo) target.zoneNo = addr.zoneNo;
+          // regionCode 정보 추가
+          if (addr.sigunguCd) target.sigunguCd = addr.sigunguCd;
+          if (addr.bjdongCd) target.bjdongCd = addr.bjdongCd;
+        }
+      });
+    }
+
+    res.json({
+      success: true,
+      data: filtered,
+      meta: {
+        count: filtered.length,
+        osmTotal: osmResults.length,
+        radius,
+        heading: parsedHeading,
+        fov: parsedFov,
+        horizontalAccuracy: parsedHAcc,
+        source: 'osm_vps',
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
  * GET /api/buildings/:id/profile
  * 건물 상세 프로필 (1차 빠른 응답)
  */
