@@ -50,6 +50,10 @@ router.get('/nearby', async (req, res, next) => {
     let primaryResults = [];
     let source = 'kakao';
 
+    // === Primary + DB 병렬 실행 ===
+    const dbPromise = geospatial.findNearbyBuildings(parsedLat, parsedLng, parsedRadius, parsedHeading)
+      .catch(err => { console.warn('[nearby] DB 조회 실패 (무시):', err.message); return []; });
+
     // === VPS 모드: OSM primary + 카카오 이름 보강 ===
     if (querySource === 'osm_vps') {
       source = 'osm_vps';
@@ -107,13 +111,8 @@ router.get('/nearby', async (req, res, next) => {
       }
     }
 
-    // 3. DB: 보조 소스
-    let dbBuildings = [];
-    try {
-      dbBuildings = await geospatial.findNearbyBuildings(parsedLat, parsedLng, parsedRadius, parsedHeading);
-    } catch (err) {
-      console.warn('[nearby] DB 조회 실패 (무시):', err.message);
-    }
+    // DB 결과 대기 (이미 병렬 실행 중)
+    let dbBuildings = await dbPromise;
 
     // heading 필터 적용 (±90°)
     if (parsedHeading !== null && primaryResults.length > 0) {
