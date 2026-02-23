@@ -1,7 +1,7 @@
 /**
- * useBuildingDetect - VPS + OSM 건물 감지 전용 훅
- * - VPS 필수: geoPose 없거나 horizontalAccuracy >= 10 → inactive
- * - 디바운싱: 위치 5m 변화 또는 8초 경과 시 재요청 (heading 제거 → 클라이언트 실시간 FOV)
+ * useBuildingDetect - VPS 전용 건물 감지 훅
+ * - VPS(geoPose)만 사용, GPS 폴백 없음
+ * - 디바운싱: 위치 5m 변화 또는 8초 경과 시 재요청
  * - 출력: { buildings, loading, status }
  *   status: 'inactive' | 'detecting' | 'ready'
  */
@@ -22,7 +22,7 @@ function distanceBetween(lat1, lng1, lat2, lng2) {
 
 /**
  * @param {Object} params
- * @param {Object|null} params.geoPose - ARCore Geospatial pose
+ * @param {Object|null} params.geoPose - ARCore Geospatial pose (VPS 전용)
  * @param {Object} params.geoPoseRef - geoPose stale closure 방지용 ref
  * @param {boolean} params.enabled - 훅 활성화 여부
  * @returns {{ buildings: Array, loading: boolean, status: string }}
@@ -81,26 +81,31 @@ const useBuildingDetect = ({ geoPose = null, geoPoseRef = null, enabled = true }
   }, []);
 
   useEffect(() => {
-    // VPS 비활성 조건
-    if (!enabled || !geoPose || (geoPose.horizontalAccuracy != null && geoPose.horizontalAccuracy >= 10)) {
+    if (!enabled) {
       setStatus('inactive');
-      // 타이머 정리
       if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
       return;
     }
 
-    const { latitude, longitude, horizontalAccuracy } = geoPose;
-    if (latitude == null || longitude == null) return;
+    // VPS 전용: geoPose 없으면 inactive
+    if (!geoPose || geoPose.latitude == null) {
+      setStatus('inactive');
+      if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+      return;
+    }
+
+    const lat = geoPose.latitude;
+    const lng = geoPose.longitude;
+    const hAcc = geoPose.horizontalAccuracy ?? 50;
 
     // 디바운싱 체크
     const last = lastRequest.current;
     let shouldFetch = false;
 
     if (!last) {
-      // 첫 요청
       shouldFetch = true;
     } else {
-      const pDiff = distanceBetween(latitude, longitude, last.lat, last.lng);
+      const pDiff = distanceBetween(lat, lng, last.lat, last.lng);
       const tDiff = Date.now() - last.time;
 
       if (pDiff >= POSITION_THRESHOLD || tDiff >= TIME_THRESHOLD) {
@@ -109,18 +114,18 @@ const useBuildingDetect = ({ geoPose = null, geoPoseRef = null, enabled = true }
     }
 
     if (shouldFetch) {
-      fetchDetect(latitude, longitude, horizontalAccuracy);
+      fetchDetect(lat, lng, hAcc);
     }
 
-    // 8초 주기 타이머 (변화 없어도 갱신) — 이미 실행 중이면 중복 생성 방지
+    // 8초 주기 타이머 (변화 없어도 갱신)
     if (!timerRef.current) {
       timerRef.current = setTimeout(() => {
-        timerRef.current = null; // 실행 후 초기화
+        timerRef.current = null;
         if (!isMounted.current || !enabled) return;
-        // stale closure 방지: geoPoseRef에서 최신 값 참조
+        // stale closure 방지: ref에서 최신 값 참조
         const gp = geoPoseRef?.current;
-        if (gp && gp.horizontalAccuracy < 10) {
-          fetchDetect(gp.latitude, gp.longitude, gp.horizontalAccuracy);
+        if (gp && gp.latitude != null) {
+          fetchDetect(gp.latitude, gp.longitude, gp.horizontalAccuracy ?? 50);
         }
       }, TIME_THRESHOLD);
     }

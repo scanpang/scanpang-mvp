@@ -316,17 +316,8 @@ router.post('/detect', async (req, res, next) => {
       });
     }
 
-    // VPS 정확도 검증 (10m 미만 필수)
-    if (parsedHAcc >= 10) {
-      return res.json({
-        success: true,
-        data: [],
-        meta: { count: 0, reason: 'VPS 정확도 부족', horizontalAccuracy: parsedHAcc },
-      });
-    }
-
-    // OSM 건물 조회 (정확도 기반 반경: 좋으면 80m, 나쁘면 120m)
-    const radius = parsedHAcc < 5 ? 80 : 120;
+    // OSM 건물 조회 (고정 반경 200m, hAcc 컷오프 없음 — 스코어링이 정확도 반영)
+    const radius = 200;
     let osmResults = [];
     try {
       osmResults = await osmBuildings.fetchNearbyFromOSM(parsedLat, parsedLng, radius, { includeUnnamed: true });

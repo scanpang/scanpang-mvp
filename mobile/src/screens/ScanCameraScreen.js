@@ -30,7 +30,6 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { Colors, SPACING, TOUCH } from '../constants/theme';
 import { postScanLog, postScanComplete, getServerTimeContext, analyzeFrame } from '../services/api';
-import useNearbyBuildings from '../hooks/useNearbyBuildings';
 import useBuildingDetect from '../hooks/useBuildingDetect';
 import useBuildingDetail from '../hooks/useBuildingDetail';
 import useSensorData from '../hooks/useSensorData';
@@ -153,14 +152,14 @@ const FocusedLabel = ({ building, confidence, gaugeProgress, onPress }) => {
 };
 
 // ===== 상단 HUD =====
-const CameraHUD = ({ gpsStatus, onBack, buildingCount, accuracyInfo, debugInfo, arError, detectStatus, nearbyEnabled }) => {
+const CameraHUD = ({ gpsStatus, onBack, buildingCount, accuracyInfo, debugInfo, arError, detectStatus }) => {
   const gpsColor = gpsStatus === 'active' ? Colors.successGreen : gpsStatus === 'error' ? Colors.liveRed : Colors.accentAmber;
   const hAcc = debugInfo?.hAcc != null ? `${debugInfo.hAcc.toFixed(0)}m` : '-';
   const hdAcc = debugInfo?.hdAcc != null ? `${debugInfo.hdAcc.toFixed(0)}°` : '-';
 
-  // 모드 배지 색상: VPS 활성=초록, nearby=주황, 둘 다 비활성=회색
-  const badgeColor = detectStatus !== 'inactive' ? '#00C853' : nearbyEnabled ? '#FF9800' : '#888';
-  const badgeLabel = detectStatus !== 'inactive' ? 'VPS' : nearbyEnabled ? 'GPS' : 'OFF';
+  // 모드 배지 색상: VPS 활성=초록, 비활성=회색
+  const badgeColor = detectStatus !== 'inactive' ? '#00C853' : '#888';
+  const badgeLabel = detectStatus !== 'inactive' ? 'VPS' : 'OFF';
 
   return (
     <View style={styles.hud}>
@@ -255,9 +254,11 @@ const ScanCameraScreen = ({ route, navigation }) => {
     handlePoseUpdate, handleTrackingStateChanged, handleReady, handleError,
   } = useGeospatialTracking({ enabled: true });
 
-  // geoPose stale closure 방지용 ref
+  // stale closure 방지용 ref
   const geoPoseRef = useRef(null);
   useEffect(() => { geoPoseRef.current = geoPose; }, [geoPose]);
+  const userLocationRef = useRef(null);
+  useEffect(() => { userLocationRef.current = userLocation; }, [userLocation]);
 
   // VPS 기반 FOV: 정확도 좋으면 좁게(25°), 나쁘면 넓게(30°)
   const currentAccuracy = geoPose?.horizontalAccuracy ?? gpsAccuracy ?? 999;
@@ -268,19 +269,11 @@ const ScanCameraScreen = ({ route, navigation }) => {
   const stickinessBonus = highAccuracy ? GEO_PARAMS.STICKINESS_BONUS : STICKINESS_BONUS;
   const switchThreshold = highAccuracy ? GEO_PARAMS.SWITCH_THRESHOLD : SWITCH_THRESHOLD;
 
-  // === 메인 감지: VPS + OSM (VPS 전용, GPS 폴백 없음) ===
+  // === 메인 감지: VPS 전용 ===
   const { buildings: detectedBuildings, loading: detectLoading, status: detectStatus } = useBuildingDetect({
     geoPose,
     geoPoseRef,
     enabled: !sheetOpen,
-  });
-
-  // === nearby 독립 토글 (감지와 무관) ===
-  const [nearbyEnabled, setNearbyEnabled] = useState(false);
-  const { buildings: nearbyBuildings } = useNearbyBuildings({
-    latitude: userLocation?.lat, longitude: userLocation?.lng,
-    heading, radius: 200, source: 'auto',
-    enabled: nearbyEnabled && gpsStatus === 'active' && !sheetOpen,
   });
 
   // AR 앵커 관리 (Geospatial localized + 바텀시트 닫혀있을 때)
@@ -290,11 +283,10 @@ const ScanCameraScreen = ({ route, navigation }) => {
     enabled: isARMode && isLocalized && !sheetOpen,
   });
 
-  // 선택된 건물의 메타 정보 (detect/nearby 양쪽에서 검색)
+  // 선택된 건물의 메타 정보
   const selectedBuildingMeta = useMemo(() => {
     if (!selectedBuildingId) return null;
-    const found = detectedBuildings.find(b => b.id === selectedBuildingId)
-      || nearbyBuildings.find(b => b.id === selectedBuildingId);
+    const found = detectedBuildings.find(b => b.id === selectedBuildingId);
     if (!found) return null;
     return {
       lat: found.lat,
@@ -304,7 +296,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
       category: found.category || '',
       categoryDetail: found.categoryDetail || '',
     };
-  }, [selectedBuildingId, detectedBuildings, nearbyBuildings]);
+  }, [selectedBuildingId, detectedBuildings]);
 
   const { building: buildingDetail, loading: detailLoading, enriching, fetchLazyTab } = useBuildingDetail(
     selectedBuildingId,
@@ -312,7 +304,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
   );
 
   const selectedBuilding = selectedBuildingId
-    ? { ...(detectedBuildings.find(b => b.id === selectedBuildingId) || nearbyBuildings.find(b => b.id === selectedBuildingId) || {}), ...(buildingDetail || {}) }
+    ? { ...(detectedBuildings.find(b => b.id === selectedBuildingId) || {}), ...(buildingDetail || {}) }
     : null;
 
   // 건물별 confidence 계산 + 정렬 (VPS 전용, matchBuildingsGeo만 사용)
@@ -577,7 +569,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
       try {
         const photo = await cameraRef.current.takePictureAsync({ base64: true, quality: 0.3, skipProcessing: true });
         if (!photo?.base64 || !isMountedRef.current) return;
-        const b = detectedBuildings.find(x => x.id === selectedBuildingId) || nearbyBuildings.find(x => x.id === selectedBuildingId);
+        const b = detectedBuildings.find(x => x.id === selectedBuildingId);
         const res = await analyzeFrame(photo.base64, {
           buildingId: selectedBuildingId, buildingName: b?.name,
           lat: userLocation?.lat, lng: userLocation?.lng, heading,
@@ -591,7 +583,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
     geminiTimerRef.current = setInterval(run, 15000);
     const init = setTimeout(run, 3000);
     return () => { clearInterval(geminiTimerRef.current); clearTimeout(init); };
-  }, [isStable, selectedBuildingId, detectedBuildings, nearbyBuildings, userLocation, heading, sheetOpen]);
+  }, [isStable, selectedBuildingId, detectedBuildings, userLocation, heading, sheetOpen]);
 
   // 카메라 권한
   useEffect(() => {
@@ -753,13 +745,12 @@ const ScanCameraScreen = ({ route, navigation }) => {
   const guideMessage = useMemo(() => {
     if (sheetOpen || scanComplete) return scanCompleteMessage || null;
     if (scanCompleteMessage) return scanCompleteMessage;
-    if (gpsStatus === 'searching') return '위치를 탐색하고 있습니다...';
-    if (detectStatus === 'inactive') return 'VPS 신호를 기다리는 중...';
+    if (!geoPose) return 'VPS 위치를 잡는 중...';
     if (detectLoading) return '건물 탐색 중...';
     if (detectedBuildings.length === 0) return '주변에 건물이 없습니다';
     if (!focusedBuilding) return '건물에 카메라를 맞춰주세요';
     return `${focusedBuilding.name} 스캔 중...`;
-  }, [gpsStatus, detectStatus, detectLoading, detectedBuildings.length, focusedBuilding, scanComplete, scanCompleteMessage, sheetOpen]);
+  }, [geoPose, detectLoading, detectedBuildings.length, focusedBuilding, scanComplete, scanCompleteMessage, sheetOpen]);
 
   return (
     <GestureHandlerRootView style={styles.container}>
@@ -855,7 +846,6 @@ const ScanCameraScreen = ({ route, navigation }) => {
         accuracyInfo={accuracyInfo}
         arError={arError}
         detectStatus={detectStatus}
-        nearbyEnabled={nearbyEnabled}
         debugInfo={{
           hAcc: geoPose?.horizontalAccuracy ?? gpsAccuracy ?? null,
           hdAcc: geoPose?.headingAccuracy ?? null,
@@ -869,18 +859,6 @@ const ScanCameraScreen = ({ route, navigation }) => {
         floors={(profileData || buildingDetail)?.floors || []}
         visible={xrayActive && !!selectedBuildingId}
       />
-
-      {/* nearby 토글 버튼 */}
-      {!sheetOpen && (
-        <TouchableOpacity
-          onPress={() => setNearbyEnabled(prev => !prev)}
-          style={[styles.nearbyToggle, nearbyEnabled && styles.nearbyToggleActive]}
-        >
-          <Text style={styles.nearbyToggleText}>
-            {nearbyEnabled ? 'Nearby ON' : 'Nearby'}
-          </Text>
-        </TouchableOpacity>
-      )}
 
       {/* 안내 텍스트 (null이면 숨김) */}
       {guideMessage && <GuideText text={guideMessage} />}
@@ -1031,11 +1009,6 @@ const styles = StyleSheet.create({
   hudInfoSep: { fontSize: 11, color: 'rgba(255,255,255,0.3)' },
   hudGps: { marginLeft: 'auto' },
   hudGpsDot: { width: 8, height: 8, borderRadius: 4 },
-
-  // nearby 토글
-  nearbyToggle: { position: 'absolute', bottom: SH * 0.2, right: SPACING.lg, backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, zIndex: 10 },
-  nearbyToggleActive: { backgroundColor: 'rgba(255,152,0,0.8)' },
-  nearbyToggleText: { fontSize: 12, fontWeight: '700', color: '#FFF' },
 
   // 안내 텍스트
   guideTextWrap: { position: 'absolute', bottom: SH * 0.14, left: 0, right: 0, alignItems: 'center', zIndex: 5 },
