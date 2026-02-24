@@ -1,317 +1,233 @@
 package expo.modules.scanpangarcore
 
-import android.app.Activity
-import android.app.Application
 import android.content.Context
-import android.opengl.GLES20
-import android.opengl.GLSurfaceView
-import android.os.Bundle
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.ImageFormat
+import android.graphics.Matrix
+import android.graphics.Rect
+import android.graphics.YuvImage
 import android.os.Handler
 import android.os.Looper
-import android.view.WindowManager
+import android.util.Log
+import android.util.Size
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.ImageProxy
+import androidx.camera.core.Preview
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.view.PreviewView
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.LifecycleRegistry
 import expo.modules.kotlin.AppContext
 import expo.modules.kotlin.viewevent.EventDispatcher
 import expo.modules.kotlin.views.ExpoView
-import javax.microedition.khronos.egl.EGLConfig
-import javax.microedition.khronos.opengles.GL10
+import java.io.ByteArrayOutputStream
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+
+private const val TAG = "ScanPangARCoreView"
 
 /**
- * ARCore 카메라 프리뷰 네이티브 뷰
- * GLSurfaceView로 ARCore 카메라 프레임 렌더링 + Geospatial pose 이벤트 발행
+ * CameraX 카메라 프리뷰 + YOLO TFLite 건물 감지 뷰
  *
- * 초기화 순서 (GL Surface 기반):
- *   1. init: GLSurfaceView 생성 + 렌더러 등록
- *   2. GL thread: onSurfaceCreated → 텍스처 생성 → mainHandler로 세션 초기화 요청
- *   3. Main thread: initializeSession → 세션 생성 → displayGeometry 설정 → resume
- *   4. GL thread: queueEvent → setCameraTexture (GL 컨텍스트 보장)
- *   5. GL thread: onDrawFrame → session.update() → 카메라 렌더링
- *
- * EGL 컨텍스트 소실 시 (홈 복귀 등):
- *   onSurfaceCreated 재호출 → 새 텍스처 생성 → 기존 세션에 재등록
+ * ARCore GLSurfaceView → CameraX PreviewView 전환
+ * LifecycleOwner 구현 (CameraX 요구)
  */
-class ScanPangARCoreView(context: Context, appContext: AppContext) : ExpoView(context, appContext) {
+class ScanPangARCoreView(context: Context, appContext: AppContext) : ExpoView(context, appContext), LifecycleOwner {
 
     // View 이벤트 (JS로 전달)
-    val onGeospatialPoseUpdate by EventDispatcher()
-    val onTrackingStateChanged by EventDispatcher()
     val onObjectDetection by EventDispatcher()
     val onReady by EventDispatcher()
     val onError by EventDispatcher()
 
-    private val glSurfaceView: GLSurfaceView
-    val geospatialManager: GeospatialManager
-    private val backgroundRenderer = BackgroundRenderer()
-    // View.post 대신 Handler 사용 (View 미attach 상태에서도 확실히 실행)
+    private val previewView: PreviewView
     private val mainHandler = Handler(Looper.getMainLooper())
 
-    // ARCore Scene Semantics 건물 감지
-    private val buildingDetector = BuildingSemanticDetector()
+    // YOLO 건물 감지기
+    private val buildingDetector = YoloBuildingDetector(context)
 
-    private var isSessionCreated = false
-    private var isPaused = false
-    private var cameraTextureId = -1  // GL 스레드에서 생성된 텍스처 ID
-    private var hasRenderedFirstFrame = false  // 깜빡임 방지용
+    // CameraX
+    private var cameraProvider: ProcessCameraProvider? = null
+    private lateinit var analysisExecutor: ExecutorService
 
-    // 포즈 업데이트 쓰로틀링 (150ms 간격)
-    private var lastPoseUpdateTime = 0L
-    private val POSE_UPDATE_INTERVAL = 150L
+    // LifecycleOwner 구현
+    private val lifecycleRegistry = LifecycleRegistry(this)
 
-    // Activity lifecycle 연동
-    private var lifecycleRegistered = false
-    private var resumeTimestamp = 0L              // resume 직후 안정화 대기용
-    private val RESUME_STABILIZE_MS = 500L        // resume 후 500ms간 pose 이벤트 무시
-
-    // 뷰포트 크기 + 디스플레이 회전 (세션 생성 시 적용)
-    private var viewWidth = 0
-    private var viewHeight = 0
-    private var displayRotation = 0
+    override val lifecycle: Lifecycle
+        get() = lifecycleRegistry
 
     init {
-        geospatialManager = GeospatialManager(context)
-
         // 모듈에 활성 뷰 등록
         ScanPangARCoreModule.activeView = this
 
-        // GLSurfaceView 설정 (렌더러 등록 → GL 스레드 시작)
-        glSurfaceView = GLSurfaceView(context).apply {
-            preserveEGLContextOnPause = true
-            setEGLContextClientVersion(2)
-            setEGLConfigChooser(8, 8, 8, 8, 16, 0)
-            setRenderer(ARRenderer())
-            renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
+        // PreviewView 설정
+        previewView = PreviewView(context).apply {
+            implementationMode = PreviewView.ImplementationMode.PERFORMANCE
+            scaleType = PreviewView.ScaleType.FILL_CENTER
         }
 
-        addView(glSurfaceView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
-    }
+        addView(previewView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
 
-    /**
-     * ARCore 세션 초기화 (메인 스레드에서 실행)
-     * onSurfaceCreated에서만 호출됨 → GL 텍스처 생성 보장
-     */
-    private fun initializeSession() {
-        if (isSessionCreated) return
-        if (cameraTextureId < 0) return  // GL 텍스처 미생성 안전 가드
+        // 분석 스레드
+        analysisExecutor = Executors.newSingleThreadExecutor()
 
-        val activity = appContext.currentActivity
-        if (activity == null) {
-            onError(mapOf("error" to "no_activity"))
-            return
-        }
-
-        // ARCore 지원 확인
-        if (geospatialManager.checkAvailability() == "unsupported") {
-            onError(mapOf("error" to "arcore_unsupported"))
-            return
-        }
-
-        // 세션 생성 (null=성공, 문자열=에러 코드)
-        val sessionError = geospatialManager.createSession(activity)
-        if (sessionError == null) {
-            isSessionCreated = true
-
-            // ※ setCameraTexture는 GL스레드에서만 호출해야 함
-            // → onSurfaceCreated에서 queueEvent로 처리
-
-            // 1. 디스플레이 지오메트리 설정 (onSurfaceChanged에서 캐시된 값)
-            if (viewWidth > 0 && viewHeight > 0) {
-                geospatialManager.setDisplayGeometry(displayRotation, viewWidth, viewHeight)
+        // YOLO 모델 초기화 (백그라운드)
+        analysisExecutor.execute {
+            buildingDetector.initialize()
+            if (buildingDetector.isInitialized) {
+                mainHandler.post {
+                    onReady(mapOf("status" to "model_loaded"))
+                }
+            } else {
+                mainHandler.post {
+                    onError(mapOf("error" to "model_load_failed"))
+                }
             }
-
-            // 2. 세션 시작 → 카메라 피드 활성화
-            geospatialManager.resume()
-
-            onReady(mapOf("status" to "session_created"))
-        } else {
-            onError(mapOf("error" to sessionError))
         }
-    }
-
-    fun pauseSession() {
-        if (!isPaused && isSessionCreated) {
-            isPaused = true
-            hasRenderedFirstFrame = false
-            geospatialManager.pause()
-            glSurfaceView.onPause()
-        }
-    }
-
-    fun resumeSession() {
-        if (isPaused && isSessionCreated) {
-            isPaused = false
-            resumeTimestamp = System.currentTimeMillis()  // 안정화 대기 시작
-            geospatialManager.resume()
-            glSurfaceView.onResume()
-            // onResume 후 GL 스레드가 재시작됨:
-            // - EGL 컨텍스트 유지 → onSurfaceChanged만 호출 → 정상 렌더링
-            // - EGL 컨텍스트 소실 → onSurfaceCreated 재호출 → 텍스처 재등록
-        }
-    }
-
-    fun destroySession() {
-        geospatialManager.destroy()
-        isSessionCreated = false
-        hasRenderedFirstFrame = false
     }
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
-        registerActivityLifecycle()
-        if (isPaused) {
-            resumeSession()
-        }
+        lifecycleRegistry.currentState = Lifecycle.State.STARTED
+        startCamera()
     }
 
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
-        unregisterActivityLifecycle()
-        buildingDetector.destroy()
+        lifecycleRegistry.currentState = Lifecycle.State.DESTROYED
         if (ScanPangARCoreModule.activeView == this) {
             ScanPangARCoreModule.activeView = null
         }
-        destroySession()
-    }
-
-    // ===== Activity lifecycle 연동 =====
-    // 백그라운드 진입 시 세션 pause, 복귀 시 resume
-    private fun registerActivityLifecycle() {
-        if (lifecycleRegistered) return
-        val activity = appContext.currentActivity ?: return
-        activity.application.registerActivityLifecycleCallbacks(activityCallbacks)
-        lifecycleRegistered = true
-    }
-
-    private fun unregisterActivityLifecycle() {
-        if (!lifecycleRegistered) return
-        try {
-            val activity = appContext.currentActivity
-            activity?.application?.unregisterActivityLifecycleCallbacks(activityCallbacks)
-        } catch (_: Exception) {}
-        lifecycleRegistered = false
-    }
-
-    private val activityCallbacks = object : Application.ActivityLifecycleCallbacks {
-        override fun onActivityPaused(activity: Activity) {
-            if (activity == appContext.currentActivity) pauseSession()
-        }
-        override fun onActivityResumed(activity: Activity) {
-            if (activity == appContext.currentActivity) resumeSession()
-        }
-        override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {}
-        override fun onActivityStarted(activity: Activity) {}
-        override fun onActivityStopped(activity: Activity) {}
-        override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) {}
-        override fun onActivityDestroyed(activity: Activity) {}
+        buildingDetector.destroy()
+        cameraProvider?.unbindAll()
+        analysisExecutor.shutdown()
     }
 
     /**
-     * GL 렌더러 — onSurfaceCreated가 세션 초기화의 유일한 트리거
+     * CameraX 카메라 시작
      */
-    private inner class ARRenderer : GLSurfaceView.Renderer {
+    private fun startCamera() {
+        val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
+        cameraProviderFuture.addListener({
+            try {
+                val provider = cameraProviderFuture.get()
+                cameraProvider = provider
 
-        override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
-            GLES20.glClearColor(0f, 0f, 0f, 1f)
+                // 프리뷰
+                val preview = Preview.Builder()
+                    .build()
+                    .also { it.surfaceProvider = previewView.surfaceProvider }
 
-            // GL 텍스처 생성 (항상 새로 생성 — EGL 컨텍스트 소실 대응)
-            backgroundRenderer.createOnGlThread()
-            cameraTextureId = backgroundRenderer.getTextureId()
-            hasRenderedFirstFrame = false
+                // 이미지 분석 (YOLO 추론)
+                val imageAnalysis = ImageAnalysis.Builder()
+                    .setTargetResolution(Size(640, 480))
+                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                    .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
+                    .build()
 
-            if (isSessionCreated) {
-                // EGL 컨텍스트 재생성됨 (홈 복귀 등):
-                // 기존 세션은 살아있지만 GL 텍스처가 새로 만들어졌으므로 재등록
-                geospatialManager.setCameraTexture(cameraTextureId)
-            } else {
-                // 최초 마운트: 메인스레드에서 세션 생성 후, GL스레드로 돌아와서 텍스처 등록
+                imageAnalysis.setAnalyzer(analysisExecutor) { imageProxy ->
+                    processImage(imageProxy)
+                }
+
+                // 후면 카메라
+                val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+
+                // 바인딩
+                provider.unbindAll()
+                provider.bindToLifecycle(this, cameraSelector, preview, imageAnalysis)
+
+                Log.d(TAG, "[startCamera] CameraX 바인딩 완료")
+            } catch (e: Exception) {
+                Log.e(TAG, "[startCamera] 카메라 시작 실패: ${e.message}")
                 mainHandler.post {
-                    initializeSession()
-                    // 세션 생성 완료 후 GL스레드에서 텍스처 등록
-                    glSurfaceView.queueEvent {
-                        if (isSessionCreated && cameraTextureId >= 0) {
-                            geospatialManager.setCameraTexture(cameraTextureId)
+                    onError(mapOf("error" to "camera_start_failed: ${e.message}"))
+                }
+            }
+        }, ContextCompat.getMainExecutor(context))
+    }
+
+    /**
+     * ImageProxy → Bitmap 변환 → YOLO 추론
+     */
+    private fun processImage(imageProxy: ImageProxy) {
+        if (!buildingDetector.isInitialized) {
+            imageProxy.close()
+            return
+        }
+
+        try {
+            val bitmap = imageProxyToBitmap(imageProxy)
+            if (bitmap != null) {
+                buildingDetector.processFrame(bitmap, object : YoloBuildingDetector.ResultCallback {
+                    override fun onDetections(detections: List<YoloBuildingDetector.Detection>, timestamp: Long) {
+                        val detectionsData = detections.map { d ->
+                            mapOf(
+                                "left" to d.left.toDouble(),
+                                "top" to d.top.toDouble(),
+                                "right" to d.right.toDouble(),
+                                "bottom" to d.bottom.toDouble(),
+                                "centerX" to d.centerX.toDouble(),
+                                "confidence" to d.confidence.toDouble()
+                            )
+                        }
+                        mainHandler.post {
+                            onObjectDetection(mapOf(
+                                "detections" to detectionsData,
+                                "timestamp" to timestamp
+                            ))
                         }
                     }
-                }
+                })
+                bitmap.recycle()
             }
+        } catch (e: Exception) {
+            Log.w(TAG, "[processImage] 처리 실패: ${e.message}")
+        } finally {
+            imageProxy.close()
         }
+    }
 
-        override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
-            GLES20.glViewport(0, 0, width, height)
-            viewWidth = width
-            viewHeight = height
-            val wm = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
-            displayRotation = wm.defaultDisplay.rotation
-            geospatialManager.setDisplayGeometry(displayRotation, width, height)
-        }
+    /**
+     * YUV_420_888 ImageProxy → Bitmap 변환
+     */
+    private fun imageProxyToBitmap(imageProxy: ImageProxy): Bitmap? {
+        return try {
+            val yBuffer = imageProxy.planes[0].buffer
+            val uBuffer = imageProxy.planes[1].buffer
+            val vBuffer = imageProxy.planes[2].buffer
 
-        override fun onDrawFrame(gl: GL10?) {
-            // 세션 미생성/일시정지: 검은 화면
-            if (!isSessionCreated || isPaused) {
-                GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT or GLES20.GL_DEPTH_BUFFER_BIT)
-                return
+            val ySize = yBuffer.remaining()
+            val uSize = uBuffer.remaining()
+            val vSize = vBuffer.remaining()
+
+            val nv21 = ByteArray(ySize + uSize + vSize)
+            yBuffer.get(nv21, 0, ySize)
+            vBuffer.get(nv21, ySize, vSize)
+            uBuffer.get(nv21, ySize + vSize, uSize)
+
+            val yuvImage = YuvImage(nv21, ImageFormat.NV21, imageProxy.width, imageProxy.height, null)
+            val out = ByteArrayOutputStream()
+            yuvImage.compressToJpeg(Rect(0, 0, imageProxy.width, imageProxy.height), 80, out)
+            val jpegBytes = out.toByteArray()
+
+            val bitmap = BitmapFactory.decodeByteArray(jpegBytes, 0, jpegBytes.size)
+
+            // 회전 보정
+            val rotation = imageProxy.imageInfo.rotationDegrees
+            if (rotation != 0 && bitmap != null) {
+                val matrix = Matrix().apply { postRotate(rotation.toFloat()) }
+                val rotated = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+                if (rotated != bitmap) bitmap.recycle()
+                rotated
+            } else {
+                bitmap
             }
-
-            // ARCore 프레임 업데이트
-            val frame = geospatialManager.update()
-
-            // 유효한 프레임이 없는 경우:
-            // - 첫 프레임 전: 검은 화면 (로딩 중)
-            // - 첫 프레임 후: glClear 스킵 → 이전 버퍼 유지 (깜빡임 방지)
-            if (frame == null || frame.timestamp == 0L) {
-                if (!hasRenderedFirstFrame) {
-                    GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT or GLES20.GL_DEPTH_BUFFER_BIT)
-                }
-                return
-            }
-
-            // 유효한 프레임: 클리어 + 카메라 배경 렌더링
-            GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT or GLES20.GL_DEPTH_BUFFER_BIT)
-            backgroundRenderer.draw(frame)
-            hasRenderedFirstFrame = true
-
-            // Scene Semantics 건물 감지 (GL 스레드, 동기 + 가벼움)
-            buildingDetector.processFrame(frame, object : BuildingSemanticDetector.ResultCallback {
-                override fun onBuildingRegions(regions: List<BuildingSemanticDetector.BuildingRegion>, timestamp: Long) {
-                    val regionsData = regions.map { r ->
-                        mapOf(
-                            "left" to r.left.toDouble(),
-                            "top" to r.top.toDouble(),
-                            "right" to r.right.toDouble(),
-                            "bottom" to r.bottom.toDouble(),
-                            "centerX" to r.centerX.toDouble(),
-                            "confidence" to r.confidence.toDouble()
-                        )
-                    }
-                    mainHandler.post {
-                        onObjectDetection(mapOf(
-                            "detections" to regionsData,
-                            "timestamp" to timestamp
-                        ))
-                    }
-                }
-            })
-
-            // Tracking 상태 변화 이벤트
-            if (geospatialManager.trackingStateChanged) {
-                val state = geospatialManager.currentTrackingState
-                mainHandler.post { onTrackingStateChanged(mapOf("state" to state)) }
-            }
-
-            // Geospatial pose + depth 업데이트 (150ms 쓰로틀)
-            // resume 직후 500ms간은 pose 이벤트 무시 (이벤트 폭주 방지)
-            val now = System.currentTimeMillis()
-            if (resumeTimestamp > 0 && now - resumeTimestamp < RESUME_STABILIZE_MS) return
-            if (now - lastPoseUpdateTime >= POSE_UPDATE_INTERVAL) {
-                lastPoseUpdateTime = now
-                val pose = geospatialManager.getCurrentPose()
-                if (pose != null) {
-                    // depth 정보 추가
-                    val poseWithDepth = pose.toMutableMap()
-                    val depthMeters = geospatialManager.getCenterDepth(frame)
-                    if (depthMeters != null) poseWithDepth["depthMeters"] = depthMeters
-                    poseWithDepth["depthSupported"] = geospatialManager.isDepthSupported
-                    mainHandler.post { onGeospatialPoseUpdate(poseWithDepth) }
-                }
-            }
+        } catch (e: Exception) {
+            Log.w(TAG, "[imageProxyToBitmap] 변환 실패: ${e.message}")
+            null
         }
     }
 }

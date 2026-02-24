@@ -1,5 +1,5 @@
-// ARCore Geospatial Config Plugin
-// AndroidManifest에 ARCore 메타데이터 + API 키 추가
+// CameraX + YOLO Config Plugin
+// AndroidManifest에 Google Maps/Places API 키만 유지
 const { withAndroidManifest } = require('expo/config-plugins');
 
 const withARCore = (config) => {
@@ -11,32 +11,6 @@ const withARCore = (config) => {
       application['meta-data'] = [];
     }
 
-    // ARCore meta-data (optional: 폴백 지원)
-    const hasARCoreMeta = application['meta-data'].some(
-      (m) => m.$?.['android:name'] === 'com.google.ar.core'
-    );
-    if (!hasARCoreMeta) {
-      application['meta-data'].push({
-        $: {
-          'android:name': 'com.google.ar.core',
-          'android:value': 'optional',
-        },
-      });
-    }
-
-    // ARCore Geospatial API 키 (com.google.android.ar.API_KEY)
-    const hasARKey = application['meta-data'].some(
-      (m) => m.$?.['android:name'] === 'com.google.android.ar.API_KEY'
-    );
-    if (!hasARKey) {
-      application['meta-data'].push({
-        $: {
-          'android:name': 'com.google.android.ar.API_KEY',
-          'android:value': 'AIzaSyCU4jTboGsuPzzSGE-BH-HbPorYLNoVGNE',
-        },
-      });
-    }
-
     // Google Maps/Places API 키 (기존 호환)
     const hasGeoKey = application['meta-data'].some(
       (m) => m.$?.['android:name'] === 'com.google.android.geo.API_KEY'
@@ -46,35 +20,6 @@ const withARCore = (config) => {
         $: {
           'android:name': 'com.google.android.geo.API_KEY',
           'android:value': 'AIzaSyCU4jTboGsuPzzSGE-BH-HbPorYLNoVGNE',
-        },
-      });
-    }
-
-    // AR 카메라 기능 (optional)
-    if (!manifest['uses-feature']) {
-      manifest['uses-feature'] = [];
-    }
-    const hasARFeature = manifest['uses-feature'].some(
-      (f) => f.$?.['android:name'] === 'android.hardware.camera.ar'
-    );
-    if (!hasARFeature) {
-      manifest['uses-feature'].push({
-        $: {
-          'android:name': 'android.hardware.camera.ar',
-          'android:required': 'false',
-        },
-      });
-    }
-
-    // OpenGL ES 3.0 (ARCore 요구)
-    const hasGLES = manifest['uses-feature'].some(
-      (f) => f.$?.['android:glEsVersion'] === '0x00030000'
-    );
-    if (!hasGLES) {
-      manifest['uses-feature'].push({
-        $: {
-          'android:glEsVersion': '0x00030000',
-          'android:required': 'false',
         },
       });
     }

@@ -1,7 +1,7 @@
 /**
- * useBuildingDetect - 건물 감지 훅 (VPS 전용)
- * - VPS(geoPose)만 사용, GPS 폴백 없음
- * - 스캔 컨셉: 카메라를 비춰야 감지 → VPS 필수
+ * useBuildingDetect - 건물 감지 훅 (GPS 기반)
+ * - GPS(geoPose)로 위치 확보 후 건물 API 호출
+ * - GPS 정확도 30m 초과 시 감지 비활성화
  * - 디바운싱: 위치 5m 변화 또는 8초 경과 시 재요청
  * - 출력: { buildings, loading, status }
  *   status: 'inactive' | 'detecting' | 'ready'
@@ -21,9 +21,12 @@ function distanceBetween(lat1, lng1, lat2, lng2) {
   return Math.sqrt(dlat * dlat + dlng * dlng);
 }
 
+// GPS 정확도 임계값 (30m 초과 시 감지 비활성화)
+const GPS_ACCURACY_THRESHOLD = 30;
+
 /**
  * @param {Object} params
- * @param {Object|null} params.geoPose - ARCore Geospatial pose (VPS 전용)
+ * @param {Object|null} params.geoPose - GPS pose { latitude, longitude, horizontalAccuracy, ... }
  * @param {Object} params.geoPoseRef - geoPose stale closure 방지용 ref
  * @param {boolean} params.enabled - 훅 활성화 여부
  * @returns {{ buildings: Array, loading: boolean, status: string }}
@@ -81,7 +84,7 @@ const useBuildingDetect = ({ geoPose = null, geoPoseRef = null, enabled = true }
     }
   }, []);
 
-  // VPS geoPose 좌표만 사용
+  // GPS geoPose 좌표 사용
   const effectiveLat = geoPose?.latitude ?? null;
   const effectiveLng = geoPose?.longitude ?? null;
   const effectiveHAcc = geoPose?.horizontalAccuracy ?? 50;
@@ -93,8 +96,8 @@ const useBuildingDetect = ({ geoPose = null, geoPoseRef = null, enabled = true }
       return;
     }
 
-    // VPS 위치 없으면 inactive (GPS 폴백 없음)
-    if (effectiveLat == null || effectiveLng == null) {
+    // 위치 없거나 GPS 정확도 30m 초과 시 inactive
+    if (effectiveLat == null || effectiveLng == null || effectiveHAcc > GPS_ACCURACY_THRESHOLD) {
       setStatus('inactive');
       if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
       return;

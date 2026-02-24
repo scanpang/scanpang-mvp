@@ -19,10 +19,29 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
+
+    // assets 디렉토리 (YOLO TFLite 모델)
+    sourceSets {
+        getByName("main") {
+            assets.srcDirs("src/main/assets")
+        }
+    }
 }
 
 dependencies {
     implementation(project(":expo-modules-core"))
-    implementation("com.google.ar:core:1.42.0")
-    api("com.google.android.gms:play-services-location:21.1.0")
+
+    // CameraX
+    val cameraxVersion = "1.3.4"
+    implementation("androidx.camera:camera-core:$cameraxVersion")
+    implementation("androidx.camera:camera-camera2:$cameraxVersion")
+    implementation("androidx.camera:camera-lifecycle:$cameraxVersion")
+    implementation("androidx.camera:camera-view:$cameraxVersion")
+
+    // TensorFlow Lite
+    implementation("org.tensorflow:tensorflow-lite:2.14.0")
+    implementation("org.tensorflow:tensorflow-lite-gpu:2.14.0")
+
+    // AndroidX Lifecycle (CameraX LifecycleOwner)
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
 }

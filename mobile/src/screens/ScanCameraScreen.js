@@ -1,7 +1,7 @@
 /**
- * ScanCameraScreen - VPS + Bearing 투영 기반 건물 스캔
- * - Layer 0: 전체화면 AR 카메라 프리뷰
- * - Layer 1: 방향 지시자 라벨 (bearing 투영, 터치 가능)
+ * ScanCameraScreen - GPS + YOLO TFLite 기반 건물 스캔
+ * - Layer 0: 전체화면 CameraX 프리뷰 (네이티브 ARCameraView)
+ * - Layer 1: 건물 바운딩박스 + 방향 라벨
  * - Layer 2: 상단 HUD
  * - Layer 3: 건물 프로필 바텀시트
  */
@@ -18,9 +18,7 @@ import {
   Linking,
   InteractionManager,
 } from 'react-native';
-import { CameraView, useCameraPermissions } from 'expo-camera';
-import * as Location from 'expo-location';
-import { Magnetometer } from 'expo-sensors';
+import { useCameraPermissions } from 'expo-camera';
 import * as Haptics from 'expo-haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import BottomSheet, { BottomSheetView } from '@gorhom/bottom-sheet';
@@ -36,7 +34,7 @@ import { behaviorTracker } from '../services/behaviorTracker';
 import BuildingProfileSheet from '../components/BuildingProfileSheet';
 import XRayOverlay from '../components/XRayOverlay';
 import { ARCameraView } from 'scanpang-arcore';
-import useGeospatialTracking from '../hooks/useGeospatialTracking';
+import useLocationTracking from '../hooks/useLocationTracking';
 import useBearingProjection from '../hooks/useBearingProjection';
 import useBuildingMatcher from '../hooks/useBuildingMatcher';
 import BearingLabels from '../components/BearingLabels';
@@ -47,20 +45,15 @@ const { width: SW, height: SH } = Dimensions.get('window');
 const RECENT_SCANS_KEY = '@scanpang_recent_scans';
 const SNAP_POINTS = ['1%', '50%', '90%'];
 
-const computeHeading = (x, y) => {
-  let angle = Math.atan2(y, x) * (180 / Math.PI);
-  return (angle + 360) % 360;
-};
-
 // ===== 상단 HUD =====
-const CameraHUD = ({ gpsStatus, onBack, accuracyInfo, debugInfo, arError, detectStatus }) => {
+const CameraHUD = ({ gpsStatus, onBack, accuracyInfo, debugInfo, detectStatus }) => {
   const gpsColor = gpsStatus === 'active' ? Colors.successGreen : gpsStatus === 'error' ? Colors.liveRed : Colors.accentAmber;
   const hAcc = debugInfo?.hAcc != null ? `${debugInfo.hAcc.toFixed(0)}m` : '-';
   const hdAcc = debugInfo?.hdAcc != null ? `${debugInfo.hdAcc.toFixed(0)}°` : '-';
 
-  // 모드 배지 색상: VPS=초록, OFF=회색
+  // 모드 배지 색상: GPS=초록, OFF=회색
   const badgeColor = detectStatus === 'inactive' ? '#888' : '#00C853';
-  const badgeLabel = detectStatus === 'inactive' ? 'OFF' : 'VPS';
+  const badgeLabel = detectStatus === 'inactive' ? 'OFF' : 'GPS';
 
   return (
     <View style={styles.hud}>
@@ -75,13 +68,6 @@ const CameraHUD = ({ gpsStatus, onBack, accuracyInfo, debugInfo, arError, detect
       >
         <Text style={styles.hudModeText}>{badgeLabel}</Text>
       </View>
-
-      {/* arError 표시 */}
-      {arError && (
-        <View style={styles.hudErrorBadge}>
-          <Text style={styles.hudErrorText}>{arError}</Text>
-        </View>
-      )}
 
       {/* 정확도 + 건물수 */}
       <View style={styles.hudInfoPill}>
@@ -127,7 +113,6 @@ const ScanCameraScreen = ({ route, navigation }) => {
 
   const bottomSheetRef = useRef(null);
   const cameraRef = useRef(null);
-  const magnetSubRef = useRef(null);
   const isMountedRef = useRef(true);
   const lastHeadingRef = useRef(0);
   const geminiTimerRef = useRef(null);
@@ -136,17 +121,16 @@ const ScanCameraScreen = ({ route, navigation }) => {
 
   const { gyroscope, accelerometer, cameraAngle, isStable, motionState, getSnapshot } = useSensorData({ enabled: gpsStatus === 'active' });
 
-  // ARCore Geospatial 추적
+  // GPS + 나침반 위치 추적
   const {
-    geoPose, vpsAvailable, trackingState, isLocalized, isARMode, accuracyInfo, arError,
-    handlePoseUpdate, handleTrackingStateChanged, handleReady, handleError,
-  } = useGeospatialTracking({ enabled: true });
+    geoPose, isLocalized, accuracyInfo, gpsError,
+  } = useLocationTracking({ enabled: true });
 
   // stale closure 방지용 ref
   const geoPoseRef = useRef(null);
   useEffect(() => { geoPoseRef.current = geoPose; }, [geoPose]);
 
-  // === 메인 감지: VPS 전용 ===
+  // === 메인 감지: GPS 기반 ===
   const { buildings: detectedBuildings, loading: detectLoading, status: detectStatus } = useBuildingDetect({
     geoPose,
     geoPoseRef,
@@ -159,18 +143,28 @@ const ScanCameraScreen = ({ route, navigation }) => {
     buildings: detectedBuildings,
   });
 
-  // === Scene Semantics 건물 감지 + bearing 매칭 ===
+  // === YOLO 건물 감지 + bearing 매칭 ===
   const { matchedBuildings, unmatchedRegions, hasDetection } = useBuildingMatcher({
     detections: objectDetections,
     projectedBuildings,
   });
 
-  // Scene Semantics 감지 이벤트 핸들러
+  // YOLO 감지 이벤트 핸들러
   const handleObjectDetection = useCallback((event) => {
     const { detections } = event.nativeEvent || event;
     if (detections) {
       setObjectDetections(detections);
     }
+  }, []);
+
+  // ARCameraView 이벤트 핸들러
+  const handleReady = useCallback(() => {
+    console.log('[ScanCamera] YOLO 모델 로드 완료');
+  }, []);
+
+  const handleError = useCallback((event) => {
+    const data = event?.nativeEvent || event;
+    console.warn('[ScanCamera] 네이티브 에러:', data?.error);
   }, []);
 
   // 선택된 건물의 메타 정보
@@ -207,6 +201,11 @@ const ScanCameraScreen = ({ route, navigation }) => {
     }
     setGpsStatus('active');
   }, [geoPose]);
+
+  // gpsError → gpsStatus 반영
+  useEffect(() => {
+    if (gpsError) setGpsStatus('error');
+  }, [gpsError]);
 
   // focusBuildingId로 진입 시 바텀시트 자동 오픈
   useEffect(() => {
@@ -276,33 +275,6 @@ const ScanCameraScreen = ({ route, navigation }) => {
       }
     })();
   }, [cameraPermission]);
-
-  // 위치 권한 요청
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted') { if (!cancelled) setGpsStatus('error'); }
-      } catch { if (!cancelled) setGpsStatus('error'); }
-    })();
-    return () => { cancelled = true; };
-  }, []);
-
-  // 나침반 (geoPose 없을 때 폴백)
-  useEffect(() => {
-    Magnetometer.setUpdateInterval(200);
-    const sub = Magnetometer.addListener((data) => {
-      if (isMountedRef.current && data) {
-        if (!geoPoseRef.current) {
-          const h = computeHeading(data.x, data.y);
-          if (Math.abs(h - lastHeadingRef.current) >= 5) { lastHeadingRef.current = h; setHeading(h); }
-        }
-      }
-    });
-    magnetSubRef.current = sub;
-    return () => magnetSubRef.current?.remove();
-  }, []);
 
   // AppState
   useEffect(() => {
@@ -403,10 +375,10 @@ const ScanCameraScreen = ({ route, navigation }) => {
   // 안내 텍스트
   const guideMessage = useMemo(() => {
     if (sheetOpen) return null;
-    if (!geoPose) return 'VPS 위치를 잡는 중...';
+    if (!geoPose) return 'GPS 위치를 잡는 중...';
     if (detectLoading) return '건물 탐색 중...';
     if (detectedBuildings.length === 0) return '주변에 건물이 없습니다';
-    return null; // 건물 감지 완료
+    return null;
   }, [geoPose, detectLoading, detectedBuildings.length, sheetOpen]);
 
   return (
@@ -433,18 +405,13 @@ const ScanCameraScreen = ({ route, navigation }) => {
         </View>
       ) : (
         <>
-          {isARMode ? (
-            <ARCameraView
-              style={StyleSheet.absoluteFillObject}
-              onGeospatialPoseUpdate={handlePoseUpdate}
-              onTrackingStateChanged={handleTrackingStateChanged}
-              onObjectDetection={handleObjectDetection}
-              onReady={handleReady}
-              onError={handleError}
-            />
-          ) : (
-            <CameraView ref={cameraRef} style={StyleSheet.absoluteFillObject} facing="back" />
-          )}
+          {/* CameraX 네이티브 프리뷰 + YOLO 감지 (항상 렌더) */}
+          <ARCameraView
+            style={StyleSheet.absoluteFillObject}
+            onObjectDetection={handleObjectDetection}
+            onReady={handleReady}
+            onError={handleError}
+          />
 
           {/* Layer 1a: 건물 바운딩박스 + 건물명 라벨 */}
           <DetectedBuildingOverlay
@@ -454,7 +421,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
             visible={isLocalized && !sheetOpen && (matchedBuildings.length > 0 || unmatchedRegions.length > 0)}
           />
 
-          {/* Layer 1b: 방향 지시자 라벨 (세그멘테이션 미감지 시 폴백) */}
+          {/* Layer 1b: 방향 지시자 라벨 (YOLO 미감지 시 폴백) */}
           <BearingLabels
             projectedBuildings={projectedBuildings}
             onSelect={handleLabelSelect}
@@ -475,7 +442,6 @@ const ScanCameraScreen = ({ route, navigation }) => {
         gpsStatus={gpsStatus}
         onBack={() => navigation.goBack()}
         accuracyInfo={accuracyInfo}
-        arError={arError}
         detectStatus={detectStatus}
         debugInfo={{
           hAcc: geoPose?.horizontalAccuracy ?? null,
@@ -572,8 +538,6 @@ const styles = StyleSheet.create({
   hudBackText: { fontSize: 22, color: '#FFF', marginTop: -2 },
   hudModeBadge: { backgroundColor: 'rgba(0,0,0,0.4)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14, justifyContent: 'center', alignItems: 'center' },
   hudModeText: { fontSize: 11, fontWeight: '900', color: '#FFF' },
-  hudErrorBadge: { backgroundColor: 'rgba(239,68,68,0.8)', paddingHorizontal: 6, paddingVertical: 3, borderRadius: 10 },
-  hudErrorText: { fontSize: 9, fontWeight: '700', color: '#FFF' },
   hudInfoPill: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.4)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14, gap: 2 },
   hudInfoText: { fontSize: 11, fontWeight: '600', color: 'rgba(255,255,255,0.8)' },
   hudInfoSep: { fontSize: 11, color: 'rgba(255,255,255,0.3)' },
