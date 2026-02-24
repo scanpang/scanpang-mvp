@@ -4,8 +4,6 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.util.Log
 import org.tensorflow.lite.Interpreter
-// GPU Delegate 제거 — GpuDelegateFactory$Options 클래스 누락으로 크래시 발생
-// import org.tensorflow.lite.gpu.GpuDelegate
 import java.io.FileInputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -18,15 +16,16 @@ import kotlin.math.min
 private const val TAG = "YoloBuildingDetector"
 
 /**
- * YOLO OIV7 TFLite 건물 감지기
- * - GPU Delegate 우선, 실패 시 CPU 4스레드 폴백
- * - 300ms 쓰로틀, AtomicBoolean 동시 실행 방지
- * - 건물 관련 5개 클래스만 필터: Building, House, Office building, Skyscraper, Tower
+ * YOLO OIV7 TFLite 건물+컵 감지기
+ * - CPU 4스레드, 300ms 쓰로틀
+ * - 건물 5개 클래스 (25% 임계값) + 컵 2개 클래스 (50% 임계값)
+ * - Detection.type으로 "building" / "cup" 구분
  */
 class YoloBuildingDetector(private val context: Context) {
 
     /**
      * 감지 결과 (정규화 좌표 0~1)
+     * type: "building" 또는 "cup"
      */
     data class Detection(
         val left: Float,
@@ -34,7 +33,8 @@ class YoloBuildingDetector(private val context: Context) {
         val right: Float,
         val bottom: Float,
         val centerX: Float,
-        val confidence: Float
+        val confidence: Float,
+        val type: String  // "building" or "cup"
     )
 
     interface ResultCallback {
@@ -44,7 +44,7 @@ class YoloBuildingDetector(private val context: Context) {
     private var interpreter: Interpreter? = null
     private val isProcessing = AtomicBoolean(false)
     private var lastProcessTime = 0L
-    private val THROTTLE_MS = 300L
+    private val THROTTLE_MS = 150L
 
     // 모델 파라미터
     private val INPUT_SIZE = 320
@@ -57,8 +57,13 @@ class YoloBuildingDetector(private val context: Context) {
     private val BUILDING_CLASS_INDICES = intArrayOf(70, 257, 354, 466, 546)
     // Building=70, House=257, Office building=354, Skyscraper=466, Tower=546
 
-    // NMS 임계값
-    private val CONFIDENCE_THRESHOLD = 0.25f
+    // OIV7 컵 관련 클래스 인덱스 (실내 테스트용)
+    private val CUP_CLASS_INDICES = intArrayOf(121, 345)
+    // Coffee cup=121, Mug=345
+
+    // 임계값
+    private val BUILDING_CONFIDENCE = 0.25f
+    private val CUP_CONFIDENCE = 0.30f
     private val NMS_IOU_THRESHOLD = 0.45f
 
     // 입력 버퍼 (재사용)
@@ -77,7 +82,7 @@ class YoloBuildingDetector(private val context: Context) {
         try {
             val modelBuffer = loadModelFile()
 
-            // CPU 4스레드 모드 (GPU Delegate는 버전 호환 문제로 제거)
+            // CPU 4스레드 모드
             val options = Interpreter.Options().apply {
                 setNumThreads(4)
             }
@@ -101,7 +106,7 @@ class YoloBuildingDetector(private val context: Context) {
     }
 
     /**
-     * Bitmap 프레임에서 건물 감지
+     * Bitmap 프레임에서 건물+컵 감지
      */
     fun processFrame(bitmap: Bitmap, callback: ResultCallback) {
         if (!isInitialized) return
@@ -121,7 +126,6 @@ class YoloBuildingDetector(private val context: Context) {
             resized.getPixels(pixels, 0, INPUT_SIZE, 0, 0, INPUT_SIZE, INPUT_SIZE)
 
             for (pixel in pixels) {
-                // RGB 정규화 0~1
                 buffer.putFloat(((pixel shr 16) and 0xFF) / 255.0f) // R
                 buffer.putFloat(((pixel shr 8) and 0xFF) / 255.0f)  // G
                 buffer.putFloat((pixel and 0xFF) / 255.0f)          // B
@@ -133,18 +137,50 @@ class YoloBuildingDetector(private val context: Context) {
             val output = outputBuffer!!
             interpreter!!.run(buffer, output)
 
-            // 후처리: [1][605][2100] → 전치하여 각 detection 파싱
+            // 후처리: [1][605][2100] → 각 detection에서 건물/컵 클래스 체크
             val rawDetections = mutableListOf<Detection>()
 
+            // 디버그: 전체 프레임에서 최대 confidence 추적
+            var debugMaxBuildingConf = 0f
+            var debugMaxCupConf = 0f
+
             for (d in 0 until NUM_DETECTIONS) {
-                // 건물 클래스 중 최대 confidence 찾기
-                var maxConf = 0f
+                // 건물 클래스 최대 confidence
+                var buildingConf = 0f
                 for (classIdx in BUILDING_CLASS_INDICES) {
-                    val conf = output[0][classIdx + 4][d]  // +4 = x,y,w,h 건너뛰기
-                    if (conf > maxConf) maxConf = conf
+                    val conf = output[0][classIdx + 4][d]
+                    if (conf > buildingConf) buildingConf = conf
                 }
 
-                if (maxConf < CONFIDENCE_THRESHOLD) continue
+                // 컵 클래스 최대 confidence
+                var cupConf = 0f
+                for (classIdx in CUP_CLASS_INDICES) {
+                    val conf = output[0][classIdx + 4][d]
+                    if (conf > cupConf) cupConf = conf
+                }
+
+                // 디버그 추적
+                if (buildingConf > debugMaxBuildingConf) debugMaxBuildingConf = buildingConf
+                if (cupConf > debugMaxCupConf) debugMaxCupConf = cupConf
+
+                // 어떤 타입인지 결정 (더 높은 confidence 우선)
+                val type: String
+                val maxConf: Float
+                if (buildingConf >= cupConf && buildingConf >= BUILDING_CONFIDENCE) {
+                    type = "building"
+                    maxConf = buildingConf
+                } else if (cupConf > buildingConf && cupConf >= CUP_CONFIDENCE) {
+                    type = "cup"
+                    maxConf = cupConf
+                } else if (buildingConf >= BUILDING_CONFIDENCE) {
+                    type = "building"
+                    maxConf = buildingConf
+                } else if (cupConf >= CUP_CONFIDENCE) {
+                    type = "cup"
+                    maxConf = cupConf
+                } else {
+                    continue  // 둘 다 임계값 미달
+                }
 
                 // 바운딩박스 (cx, cy, w, h → left, top, right, bottom)
                 val cx = output[0][0][d]
@@ -152,10 +188,16 @@ class YoloBuildingDetector(private val context: Context) {
                 val w = output[0][2][d]
                 val h = output[0][3][d]
 
-                val left = max(0f, (cx - w / 2) / INPUT_SIZE)
-                val top = max(0f, (cy - h / 2) / INPUT_SIZE)
-                val right = min(1f, (cx + w / 2) / INPUT_SIZE)
-                val bottom = min(1f, (cy + h / 2) / INPUT_SIZE)
+                // 디버그: 첫 번째 감지의 raw 좌표 출력
+                if (rawDetections.isEmpty()) {
+                    Log.d(TAG, "[bbox raw] cx=$cx, cy=$cy, w=$w, h=$h (INPUT_SIZE=$INPUT_SIZE)")
+                }
+
+                // 모델 출력이 이미 0~1 정규화 좌표 → INPUT_SIZE로 나누지 않음
+                val left = max(0f, cx - w / 2)
+                val top = max(0f, cy - h / 2)
+                val right = min(1f, cx + w / 2)
+                val bottom = min(1f, cy + h / 2)
 
                 rawDetections.add(Detection(
                     left = left,
@@ -163,16 +205,26 @@ class YoloBuildingDetector(private val context: Context) {
                     right = right,
                     bottom = bottom,
                     centerX = (left + right) / 2,
-                    confidence = maxConf
+                    confidence = maxConf,
+                    type = type
                 ))
             }
 
-            // NMS 적용
-            val nmsResults = applyNMS(rawDetections)
+            // 디버그 로그: 매 프레임 최대 confidence + 첫 감지 raw 좌표
+            val debugFirst = rawDetections.firstOrNull()
+            Log.d(TAG, "[processFrame] raw=${rawDetections.size}, maxBuilding=${String.format("%.3f", debugMaxBuildingConf)}, maxCup=${String.format("%.3f", debugMaxCupConf)}" +
+                if (debugFirst != null) ", first: l=${String.format("%.4f", debugFirst.left)} t=${String.format("%.4f", debugFirst.top)} r=${String.format("%.4f", debugFirst.right)} b=${String.format("%.4f", debugFirst.bottom)}" else "")
 
-            if (nmsResults.isNotEmpty()) {
-                callback.onDetections(nmsResults, now)
+            // NMS 적용 (타입별 분리)
+            val buildingDetections = applyNMS(rawDetections.filter { it.type == "building" })
+            val cupDetections = applyNMS(rawDetections.filter { it.type == "cup" })
+            val allResults = buildingDetections + cupDetections
+
+            // 감지 유무와 관계없이 항상 콜백 (0개일 때 JS에서 이전 박스 제거용)
+            if (allResults.isNotEmpty()) {
+                Log.d(TAG, "[processFrame] 감지! buildings=${buildingDetections.size}, cups=${cupDetections.size}")
             }
+            callback.onDetections(allResults, now)
         } catch (e: Exception) {
             Log.w(TAG, "[processFrame] 감지 실패: ${e.message}")
         } finally {
@@ -186,7 +238,6 @@ class YoloBuildingDetector(private val context: Context) {
     private fun applyNMS(detections: List<Detection>): List<Detection> {
         if (detections.isEmpty()) return emptyList()
 
-        // confidence 내림차순 정렬
         val sorted = detections.sortedByDescending { it.confidence }
         val selected = mutableListOf<Detection>()
         val suppressed = BooleanArray(sorted.size)

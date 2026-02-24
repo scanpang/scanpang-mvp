@@ -37,7 +37,6 @@ import { ARCameraView } from 'scanpang-arcore';
 import useLocationTracking from '../hooks/useLocationTracking';
 import useBearingProjection from '../hooks/useBearingProjection';
 import useBuildingMatcher from '../hooks/useBuildingMatcher';
-import BearingLabels from '../components/BearingLabels';
 import DetectedBuildingOverlay from '../components/DetectedBuildingOverlay';
 
 
@@ -144,7 +143,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
   });
 
   // === YOLO 건물 감지 + bearing 매칭 ===
-  const { matchedBuildings, unmatchedRegions, hasDetection } = useBuildingMatcher({
+  const { matchedBuildings, unmatchedRegions, cupRegions, hasDetection } = useBuildingMatcher({
     detections: objectDetections,
     projectedBuildings,
   });
@@ -153,6 +152,10 @@ const ScanCameraScreen = ({ route, navigation }) => {
   const handleObjectDetection = useCallback((event) => {
     const { detections } = event.nativeEvent || event;
     if (detections) {
+      // 디버그: 감지 결과 확인
+      if (detections.length > 0) {
+        console.log(`[ScanCamera] YOLO: ${detections.length}개 감지, types: ${detections.map(d => d.type).join(',')}, first: ${JSON.stringify(detections[0])}`);
+      }
       setObjectDetections(detections);
     }
   }, []);
@@ -413,19 +416,13 @@ const ScanCameraScreen = ({ route, navigation }) => {
             onError={handleError}
           />
 
-          {/* Layer 1a: 건물 바운딩박스 + 건물명 라벨 */}
+          {/* Layer 1: 건물 바운딩박스 + 라벨 + 컵 바운딩박스 */}
           <DetectedBuildingOverlay
             matchedBuildings={matchedBuildings}
             unmatchedRegions={unmatchedRegions}
+            cupRegions={cupRegions}
             onSelect={handleLabelSelect}
-            visible={isLocalized && !sheetOpen && (matchedBuildings.length > 0 || unmatchedRegions.length > 0)}
-          />
-
-          {/* Layer 1b: 방향 지시자 라벨 (YOLO 미감지 시 폴백) */}
-          <BearingLabels
-            projectedBuildings={projectedBuildings}
-            onSelect={handleLabelSelect}
-            visible={isLocalized && !sheetOpen && projectedBuildings.length > 0 && !hasDetection}
+            visible={!sheetOpen}
           />
         </>
       )}

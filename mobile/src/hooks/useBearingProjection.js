@@ -47,18 +47,16 @@ const normalizeAngleDiff = (diff) => {
 
 /**
  * 거리 기반 Y 좌표 계산
- * 가까운 건물: 화면 중앙~하단 (건물이 눈높이)
- * 먼 건물: 화면 상단 (수평선 가까이)
- *
- * Y 범위: HUD 아래 ~ 화면 60% 사이
+ * 수평선(화면 중앙) 기준으로 가까우면 약간 아래, 멀면 약간 위
+ * 범위를 좁게 하여 모든 라벨이 화면 중앙 부근에 모이도록
  */
 const computeScreenY = (distance, maxDistance) => {
   // 거리 비율 (0=가까움, 1=멀리)
   const ratio = Math.min(distance / maxDistance, 1);
-  // 가까울수록 아래, 멀수록 위
-  const minY = SH * 0.15; // HUD 아래
-  const maxY = SH * 0.55; // 화면 중간
-  return minY + (1 - ratio) * (maxY - minY);
+  // 화면 중앙(수평선) 근처에 배치 — 가까우면 살짝 아래, 멀면 살짝 위
+  const centerY = SH * 0.40; // 수평선 위치 (화면 40%)
+  const spread = SH * 0.08; // 위아래 퍼짐 범위
+  return centerY + (1 - ratio * 2) * spread;
 };
 
 const useBearingProjection = ({

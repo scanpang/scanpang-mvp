@@ -1,20 +1,15 @@
 /**
- * useBuildingMatcher - Scene Semantics 건물 영역 + bearing 투영 매칭 훅
+ * useBuildingMatcher - YOLO 감지 + bearing 투영 매칭 훅
  *
- * ARCore Scene Semantics에서 감지된 건물 바운딩박스와
- * bearing 투영으로 계산된 건물 스크린 좌표를 매칭하여
- * "이 바운딩박스가 어떤 건물인지" 결정
- *
- * 매칭 로직:
- * 1. bearing 건물의 screenX와 바운딩박스 centerX 비교
- * 2. X 차이가 화면 폭 25% 이내면 매칭
- * 3. 면적 큰 바운딩박스 우선 (화면에서 크게 보이는 건물)
- * 4. 매칭 안 되는 바운딩박스는 라벨 없이 테두리만 표시
+ * YOLO에서 감지된 건물 바운딩박스와 bearing 투영 건물을 1:1 매칭
+ * - 건물 바운딩박스 1개당 가장 일치하는 건물 라벨 1개만 표시
+ * - 바운딩박스 없는 건물 → 숨김
+ * - 컵은 바운딩박스만 표시 (라벨 없음)
  *
  * @param {Object} options
- * @param {Array} options.detections - Scene Semantics 건물 영역 (정규화 좌표 0~1)
+ * @param {Array} options.detections - YOLO 감지 결과 (정규화 좌표 0~1, type: "building"/"cup")
  * @param {Array} options.projectedBuildings - useBearingProjection 반환값
- * @returns {{ matchedBuildings: Array, unmatchedRegions: Array }}
+ * @returns {{ matchedBuildings, unmatchedRegions, cupRegions, hasDetection }}
  */
 import { useMemo, useRef } from 'react';
 import { Dimensions } from 'react-native';
@@ -30,22 +25,40 @@ const useBuildingMatcher = ({
 } = {}) => {
 
   // 이전 매칭 결과 캐시 (300ms 쓰로틀 갭 동안 깜빡임 방지)
-  const prevResultRef = useRef({ matched: [], unmatched: [] });
+  const prevResultRef = useRef({ matched: [], unmatched: [], cups: [] });
 
   const result = useMemo(() => {
-    // 투영된 건물이 없으면 매칭 불가
-    if (!projectedBuildings.length) {
-      prevResultRef.current = { matched: [], unmatched: [] };
-      return prevResultRef.current;
+    // 감지 결과가 없으면 즉시 비움 (이전 결과 유지 안 함)
+    if (!detections.length) {
+      const empty = { matched: [], unmatched: [], cups: [] };
+      prevResultRef.current = empty;
+      return empty;
     }
 
-    // 감지 결과가 없으면 이전 결과 유지
-    if (!detections.length) {
-      return prevResultRef.current;
+    // 건물/컵 분리
+    const buildingDetections = detections.filter(d => d.type === 'building');
+    const cupDetections = detections.filter(d => d.type === 'cup');
+
+    // 컵 → 스크린 좌표 변환 (바운딩박스만)
+    const cups = cupDetections.map(d => ({
+      detection: {
+        left: d.left * SW,
+        top: d.top * SH,
+        right: d.right * SW,
+        bottom: d.bottom * SH,
+        confidence: d.confidence,
+      },
+    }));
+
+    // 건물 감지가 없거나 투영 건물이 없으면 매칭 불가
+    if (!buildingDetections.length || !projectedBuildings.length) {
+      const res = { matched: [], unmatched: [], cups };
+      prevResultRef.current = res;
+      return res;
     }
 
     // 면적 계산 + 큰 순 정렬
-    const sortedDetections = detections
+    const sortedDetections = buildingDetections
       .map(d => {
         const cx = d.centerX != null ? d.centerX : (d.left + d.right) / 2;
         const area = (d.right - d.left) * (d.bottom - d.top);
@@ -96,18 +109,20 @@ const useBuildingMatcher = ({
           matchScore,
         });
       } else {
-        // 매칭 안 됨 → 테두리만 표시용
+        // 매칭 안 됨 → 건물 테두리만 표시
         unmatched.push({ detection: screenBox });
       }
     }
 
-    prevResultRef.current = { matched, unmatched };
-    return prevResultRef.current;
+    const res = { matched, unmatched, cups };
+    prevResultRef.current = res;
+    return res;
   }, [detections, projectedBuildings]);
 
   return {
     matchedBuildings: result.matched,
     unmatchedRegions: result.unmatched,
+    cupRegions: result.cups,
     hasDetection: result.matched.length > 0,
   };
 };

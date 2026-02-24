@@ -1,9 +1,9 @@
 /**
- * DetectedBuildingOverlay - 건물 바운딩박스 + 건물명 라벨 오버레이
+ * DetectedBuildingOverlay - 건물 바운딩박스 + 건물명 라벨 + 컵 바운딩박스
  *
- * Scene Semantics 감지 + bearing 매칭 결과를 화면에 표시
  * - 매칭된 건물: 초록 테두리 + 건물명/거리 라벨 → 탭 시 바텀시트
- * - 미매칭 영역: 반투명 테두리만 (라벨 없음)
+ * - 미매칭 건물 영역: 반투명 흰색 점선 테두리
+ * - 컵: 노란 테두리 (라벨 없음, 실내 테스트용)
  */
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
@@ -12,17 +12,19 @@ import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
  * @param {Object} props
  * @param {Array} props.matchedBuildings - [{ building, detection, matchScore }]
  * @param {Array} props.unmatchedRegions - [{ detection }]
+ * @param {Array} props.cupRegions - [{ detection }]
  * @param {Function} props.onSelect - (building) => void
  * @param {boolean} props.visible
  */
 const DetectedBuildingOverlay = ({
   matchedBuildings = [],
   unmatchedRegions = [],
+  cupRegions = [],
   onSelect,
   visible = true,
 }) => {
   if (!visible) return null;
-  if (matchedBuildings.length === 0 && unmatchedRegions.length === 0) return null;
+  if (matchedBuildings.length === 0 && unmatchedRegions.length === 0 && cupRegions.length === 0) return null;
 
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
@@ -58,7 +60,7 @@ const DetectedBuildingOverlay = ({
         );
       })}
 
-      {/* 미매칭 영역: 반투명 테두리만 */}
+      {/* 미매칭 건물 영역: 반투명 테두리만 */}
       {unmatchedRegions.map(({ detection }, idx) => {
         const { left, top, right, bottom } = detection;
         const width = right - left;
@@ -73,6 +75,27 @@ const DetectedBuildingOverlay = ({
                 left, top, width, height,
                 borderColor: 'rgba(255, 255, 255, 0.25)',
                 borderStyle: 'dashed',
+              },
+            ]}
+            pointerEvents="none"
+          />
+        );
+      })}
+
+      {/* 컵: 노란 테두리 (라벨 없음, 실내 테스트용) */}
+      {cupRegions.map(({ detection }, idx) => {
+        const { left, top, right, bottom } = detection;
+        const width = right - left;
+        const height = bottom - top;
+
+        return (
+          <View
+            key={`cup_${idx}`}
+            style={[
+              styles.boundingBox,
+              {
+                left, top, width, height,
+                borderColor: 'rgba(255, 215, 0, 0.7)',
               },
             ]}
             pointerEvents="none"

@@ -1,5 +1,7 @@
 package expo.modules.scanpangarcore
 
+import android.app.Activity
+import android.app.Application
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
@@ -8,6 +10,7 @@ import android.graphics.BitmapFactory
 import android.graphics.ImageFormat
 import android.graphics.Matrix
 import android.graphics.Rect
+import android.graphics.RectF
 import android.graphics.SurfaceTexture
 import android.graphics.YuvImage
 import android.hardware.camera2.CameraCaptureSession
@@ -16,6 +19,7 @@ import android.hardware.camera2.CameraDevice
 import android.hardware.camera2.CameraManager
 import android.hardware.camera2.CaptureRequest
 import android.hardware.camera2.params.StreamConfigurationMap
+import android.os.Bundle
 import android.util.Size
 import android.media.ImageReader
 import android.os.Handler
@@ -64,9 +68,32 @@ class ScanPangARCoreView(context: Context, appContext: AppContext) : ExpoView(co
     private var imageReaderHandler: Handler? = null
     private var sensorOrientation = 0
     private var analysisSize = Size(640, 480) // 카메라 지원 크기로 업데이트됨
+    private var previewSize = Size(1920, 1080) // 프리뷰 출력 크기 (비율 보정용)
+    private var isCameraActive = false // 생명주기 관리용
 
     // YOLO 분석
     private lateinit var analysisExecutor: ExecutorService
+
+    // Activity 생명주기 콜백 (백그라운드 시 카메라 해제)
+    private val lifecycleCallbacks = object : Application.ActivityLifecycleCallbacks {
+        override fun onActivityPaused(activity: Activity) {
+            Log.d(TAG, "[lifecycle] onPause — 카메라 해제")
+            isCameraActive = false
+            closeCamera()
+        }
+        override fun onActivityResumed(activity: Activity) {
+            Log.d(TAG, "[lifecycle] onResume — 카메라 재시작")
+            isCameraActive = true
+            if (textureView.isAvailable) {
+                openCamera()
+            }
+        }
+        override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {}
+        override fun onActivityStarted(activity: Activity) {}
+        override fun onActivityStopped(activity: Activity) {}
+        override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) {}
+        override fun onActivityDestroyed(activity: Activity) {}
+    }
 
     init {
         Log.d(TAG, "[init] 뷰 생성 시작")
@@ -101,6 +128,11 @@ class ScanPangARCoreView(context: Context, appContext: AppContext) : ExpoView(co
             }
         }
 
+        // Activity 생명주기 감시 등록
+        val activity = (context as? Activity) ?: (context as? android.content.ContextWrapper)?.baseContext as? Activity
+        activity?.application?.registerActivityLifecycleCallbacks(lifecycleCallbacks)
+        isCameraActive = true
+
         Log.d(TAG, "[init] 뷰 생성 완료")
     }
 
@@ -134,6 +166,12 @@ class ScanPangARCoreView(context: Context, appContext: AppContext) : ExpoView(co
         if (ScanPangARCoreModule.activeView == this) {
             ScanPangARCoreModule.activeView = null
         }
+
+        // 생명주기 콜백 해제
+        val activity = (context as? Activity) ?: (context as? android.content.ContextWrapper)?.baseContext as? Activity
+        activity?.application?.unregisterActivityLifecycleCallbacks(lifecycleCallbacks)
+
+        isCameraActive = false
         closeCamera()
         buildingDetector.destroy()
         analysisExecutor.shutdown()
@@ -154,6 +192,7 @@ class ScanPangARCoreView(context: Context, appContext: AppContext) : ExpoView(co
 
         override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture, width: Int, height: Int) {
             Log.d(TAG, "[SurfaceTexture] sizeChanged: ${width}x${height}")
+            configureTransform()
         }
 
         override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean {
@@ -169,6 +208,10 @@ class ScanPangARCoreView(context: Context, appContext: AppContext) : ExpoView(co
 
     // ===== Camera2 API =====
     private fun openCamera() {
+        if (!isCameraActive) {
+            Log.d(TAG, "[openCamera] 카메라 비활성 상태 — 무시")
+            return
+        }
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
             Log.e(TAG, "[openCamera] 카메라 권한 없음")
             mainHandler.post { onError(mapOf("error" to "camera_permission_denied")) }
@@ -187,20 +230,29 @@ class ScanPangARCoreView(context: Context, appContext: AppContext) : ExpoView(co
             val characteristics = cameraManager.getCameraCharacteristics(cameraId)
             sensorOrientation = characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 90
 
-            // ImageReader용 지원 크기 중 가장 작은 것 선택 (YOLO는 320x320으로 리사이즈하므로 작아도 됨)
+            // 프리뷰 + ImageReader 크기 선택
             val map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
             if (map != null) {
+                // 프리뷰용: SurfaceTexture 지원 크기 중 1920x1080에 가장 가까운 것
+                val previewSizes = map.getOutputSizes(SurfaceTexture::class.java)
+                if (previewSizes != null && previewSizes.isNotEmpty()) {
+                    previewSize = previewSizes.minByOrNull {
+                        Math.abs(it.width * it.height - 1920 * 1080)
+                    } ?: previewSize
+                    Log.d(TAG, "[openCamera] 프리뷰 크기 선택: $previewSize")
+                }
+
+                // ImageReader용: YUV 640x480에 가장 가까운 것
                 val yuvSizes = map.getOutputSizes(ImageFormat.YUV_420_888)
                 if (yuvSizes != null && yuvSizes.isNotEmpty()) {
-                    // 640x480에 가장 가까운 크기 선택
                     analysisSize = yuvSizes.minByOrNull {
                         Math.abs(it.width * it.height - 640 * 480)
                     } ?: analysisSize
-                    Log.d(TAG, "[openCamera] YUV 지원 크기: ${yuvSizes.take(5).joinToString()}, 선택: $analysisSize")
+                    Log.d(TAG, "[openCamera] YUV 분석 크기 선택: $analysisSize")
                 }
             }
 
-            Log.d(TAG, "[openCamera] cameraId=$cameraId, sensorOrientation=$sensorOrientation, analysisSize=$analysisSize")
+            Log.d(TAG, "[openCamera] cameraId=$cameraId, sensorOrientation=$sensorOrientation, preview=$previewSize, analysis=$analysisSize")
             cameraManager.openCamera(cameraId, cameraStateCallback, cameraHandler)
         } catch (e: Exception) {
             Log.e(TAG, "[openCamera] 실패: ${e.message}", e)
@@ -243,17 +295,19 @@ class ScanPangARCoreView(context: Context, appContext: AppContext) : ExpoView(co
         val surfaceTexture = textureView.surfaceTexture ?: return
 
         try {
-            // 프리뷰 Surface
-            surfaceTexture.setDefaultBufferSize(textureView.width, textureView.height)
+            // 프리뷰 Surface — 카메라 프리뷰 크기를 버퍼에 설정 (뷰 크기가 아닌 카메라 출력 크기!)
+            surfaceTexture.setDefaultBufferSize(previewSize.width, previewSize.height)
             val previewSurface = Surface(surfaceTexture)
 
+            // 비율 보정 Matrix 적용
+            configureTransform()
+
             // YOLO 분석용 ImageReader (카메라 지원 크기)
-            Log.d(TAG, "[createCaptureSession] ImageReader 크기: ${analysisSize.width}x${analysisSize.height}")
+            Log.d(TAG, "[createCaptureSession] ImageReader 크기: ${analysisSize.width}x${analysisSize.height}, 프리뷰: ${previewSize.width}x${previewSize.height}")
             imageReader = ImageReader.newInstance(analysisSize.width, analysisSize.height, ImageFormat.YUV_420_888, 2)
             imageReader!!.setOnImageAvailableListener({ reader ->
                 val image = reader.acquireLatestImage()
                 if (image == null) {
-                    Log.w(TAG, "[ImageReader] acquireLatestImage null")
                     return@setOnImageAvailableListener
                 }
                 processYuvImage(image)
@@ -292,6 +346,45 @@ class ScanPangARCoreView(context: Context, appContext: AppContext) : ExpoView(co
         }
     }
 
+    /**
+     * TextureView 비율 보정 — center-crop 방식
+     * 카메라 출력(보통 4:3)을 화면 비율에 맞게 확대하여 찌그러짐 없이 표시
+     */
+    private fun configureTransform() {
+        val viewWidth = textureView.width.toFloat()
+        val viewHeight = textureView.height.toFloat()
+        if (viewWidth == 0f || viewHeight == 0f) return
+
+        // 세로 모드: 센서가 landscape이므로 w/h 반전
+        val previewW = previewSize.height.toFloat()
+        val previewH = previewSize.width.toFloat()
+
+        val viewAspect = viewWidth / viewHeight
+        val previewAspect = previewW / previewH
+
+        val matrix = Matrix()
+        // 기준점을 뷰 중앙으로
+        val centerX = viewWidth / 2f
+        val centerY = viewHeight / 2f
+
+        // center-crop: 더 큰 비율 축을 기준으로 스케일
+        val scaleX: Float
+        val scaleY: Float
+        if (viewAspect > previewAspect) {
+            // 화면이 더 넓음 → 가로 맞춤, 세로 확대
+            scaleX = 1f
+            scaleY = (viewAspect / previewAspect)
+        } else {
+            // 화면이 더 좁음 → 세로 맞춤, 가로 확대
+            scaleX = (previewAspect / viewAspect)
+            scaleY = 1f
+        }
+
+        matrix.postScale(scaleX, scaleY, centerX, centerY)
+        textureView.setTransform(matrix)
+        Log.d(TAG, "[configureTransform] viewAspect=${viewAspect}, previewAspect=${previewAspect}, scale=${scaleX}x${scaleY}")
+    }
+
     private fun closeCamera() {
         try {
             captureSession?.close()
@@ -326,9 +419,11 @@ class ScanPangARCoreView(context: Context, appContext: AppContext) : ExpoView(co
                             "right" to d.right.toDouble(),
                             "bottom" to d.bottom.toDouble(),
                             "centerX" to d.centerX.toDouble(),
-                            "confidence" to d.confidence.toDouble()
+                            "confidence" to d.confidence.toDouble(),
+                            "type" to d.type  // "building" or "cup"
                         )
                     }
+                    Log.d(TAG, "[onDetections] JS로 전송: ${detectionsData.size}개 (types: ${detections.map { it.type }.distinct()})")
                     mainHandler.post {
                         onObjectDetection(mapOf(
                             "detections" to detectionsData,
