@@ -80,6 +80,8 @@ class GeospatialManager(private val context: Context) {
 
                 val config = Config(s).apply {
                     geospatialMode = Config.GeospatialMode.ENABLED
+                    // Scene Semantics: 건물 픽셀 감지용
+                    semanticMode = Config.SemanticMode.ENABLED
                     updateMode = Config.UpdateMode.LATEST_CAMERA_IMAGE
                     planeFindingMode = Config.PlaneFindingMode.DISABLED
                     // Depth API: 기기 지원 시 활성화 (건물 거리 측정용)
@@ -88,8 +90,9 @@ class GeospatialManager(private val context: Context) {
                     lightEstimationMode = Config.LightEstimationMode.DISABLED
                 }
                 isDepthSupported = (config.depthMode == Config.DepthMode.AUTOMATIC)
+                val semanticEnabled = (config.semanticMode == Config.SemanticMode.ENABLED)
                 s.configure(config)
-                Log.d(TAG, "[createSession] 세션 생성 완료 — geospatial=ENABLED, depth=$isDepthSupported")
+                Log.d(TAG, "[createSession] 세션 생성 완료 — geospatial=ENABLED, semantic=$semanticEnabled, depth=$isDepthSupported")
             }
             null // 성공
         } catch (e: UnavailableArcoreNotInstalledException) {

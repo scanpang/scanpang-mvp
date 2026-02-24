@@ -25,6 +25,4 @@ dependencies {
     implementation(project(":expo-modules-core"))
     implementation("com.google.ar:core:1.42.0")
     api("com.google.android.gms:play-services-location:21.1.0")
-    // ML Kit Object Detection — 건물 객체 인식
-    implementation("com.google.mlkit:object-detection:17.0.2")
 }

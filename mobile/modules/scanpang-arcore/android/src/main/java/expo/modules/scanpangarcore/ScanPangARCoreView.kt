@@ -44,8 +44,8 @@ class ScanPangARCoreView(context: Context, appContext: AppContext) : ExpoView(co
     // View.post 대신 Handler 사용 (View 미attach 상태에서도 확실히 실행)
     private val mainHandler = Handler(Looper.getMainLooper())
 
-    // ML Kit 객체 감지기
-    private val objectDetector = MLKitObjectDetector()
+    // ARCore Scene Semantics 건물 감지
+    private val buildingDetector = BuildingSemanticDetector()
 
     private var isSessionCreated = false
     private var isPaused = false
@@ -164,7 +164,7 @@ class ScanPangARCoreView(context: Context, appContext: AppContext) : ExpoView(co
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
         unregisterActivityLifecycle()
-        objectDetector.destroy()
+        buildingDetector.destroy()
         if (ScanPangARCoreModule.activeView == this) {
             ScanPangARCoreModule.activeView = null
         }
@@ -268,31 +268,22 @@ class ScanPangARCoreView(context: Context, appContext: AppContext) : ExpoView(co
             backgroundRenderer.draw(frame)
             hasRenderedFirstFrame = true
 
-            // ML Kit 객체 감지 (GL 스레드에서 호출, 내부적으로 비동기 처리)
-            objectDetector.processFrame(frame, displayRotation, object : MLKitObjectDetector.ResultCallback {
-                override fun onDetected(
-                    detections: List<MLKitObjectDetector.DetectedObject>,
-                    imageWidth: Int,
-                    imageHeight: Int,
-                    timestamp: Long
-                ) {
-                    if (detections.isEmpty()) return
-                    val detectionsData = detections.map { d ->
+            // Scene Semantics 건물 감지 (GL 스레드, 동기 + 가벼움)
+            buildingDetector.processFrame(frame, object : BuildingSemanticDetector.ResultCallback {
+                override fun onBuildingRegions(regions: List<BuildingSemanticDetector.BuildingRegion>, timestamp: Long) {
+                    val regionsData = regions.map { r ->
                         mapOf(
-                            "left" to d.left.toDouble(),
-                            "top" to d.top.toDouble(),
-                            "right" to d.right.toDouble(),
-                            "bottom" to d.bottom.toDouble(),
-                            "trackingId" to (d.trackingId ?: -1),
-                            "labels" to d.labels,
-                            "confidence" to d.confidence.toDouble()
+                            "left" to r.left.toDouble(),
+                            "top" to r.top.toDouble(),
+                            "right" to r.right.toDouble(),
+                            "bottom" to r.bottom.toDouble(),
+                            "centerX" to r.centerX.toDouble(),
+                            "confidence" to r.confidence.toDouble()
                         )
                     }
                     mainHandler.post {
                         onObjectDetection(mapOf(
-                            "detections" to detectionsData,
-                            "imageWidth" to imageWidth,
-                            "imageHeight" to imageHeight,
+                            "detections" to regionsData,
                             "timestamp" to timestamp
                         ))
                     }
