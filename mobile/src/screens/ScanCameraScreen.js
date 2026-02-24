@@ -38,7 +38,10 @@ import XRayOverlay from '../components/XRayOverlay';
 import { ARCameraView } from 'scanpang-arcore';
 import useGeospatialTracking from '../hooks/useGeospatialTracking';
 import useBearingProjection from '../hooks/useBearingProjection';
+import useBuildingMatcher from '../hooks/useBuildingMatcher';
 import BearingLabels from '../components/BearingLabels';
+import FocusRegion from '../components/FocusRegion';
+import DetectedBuildingOverlay from '../components/DetectedBuildingOverlay';
 
 
 const { width: SW, height: SH } = Dimensions.get('window');
@@ -121,6 +124,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
   const [profileError, setProfileError] = useState(null);
   const [xrayActive, setXrayActive] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [objectDetections, setObjectDetections] = useState([]);
 
   const bottomSheetRef = useRef(null);
   const cameraRef = useRef(null);
@@ -155,6 +159,20 @@ const ScanCameraScreen = ({ route, navigation }) => {
     geoPose,
     buildings: detectedBuildings,
   });
+
+  // === ML Kit 객체 감지 + 건물 매칭 ===
+  const { matchedBuildings, hasFocusDetection } = useBuildingMatcher({
+    detections: objectDetections,
+    projectedBuildings,
+  });
+
+  // ML Kit 감지 이벤트 핸들러
+  const handleObjectDetection = useCallback((event) => {
+    const { detections } = event.nativeEvent || event;
+    if (detections) {
+      setObjectDetections(detections);
+    }
+  }, []);
 
   // 선택된 건물의 메타 정보
   const selectedBuildingMeta = useMemo(() => {
@@ -421,6 +439,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
               style={StyleSheet.absoluteFillObject}
               onGeospatialPoseUpdate={handlePoseUpdate}
               onTrackingStateChanged={handleTrackingStateChanged}
+              onObjectDetection={handleObjectDetection}
               onReady={handleReady}
               onError={handleError}
             />
@@ -428,11 +447,24 @@ const ScanCameraScreen = ({ route, navigation }) => {
             <CameraView ref={cameraRef} style={StyleSheet.absoluteFillObject} facing="back" />
           )}
 
-          {/* Layer 1: 방향 지시자 라벨 (bearing 투영) */}
+          {/* Layer 1a: 포커스 영역 코너 라인 */}
+          <FocusRegion
+            detected={hasFocusDetection}
+            visible={isLocalized && !sheetOpen}
+          />
+
+          {/* Layer 1b: ML Kit 바운딩박스 + 건물 라벨 (우선) */}
+          <DetectedBuildingOverlay
+            matchedBuildings={matchedBuildings}
+            onSelect={handleLabelSelect}
+            visible={isLocalized && !sheetOpen && matchedBuildings.length > 0}
+          />
+
+          {/* Layer 1c: 방향 지시자 라벨 (ML Kit 미감지 시 폴백) */}
           <BearingLabels
             projectedBuildings={projectedBuildings}
             onSelect={handleLabelSelect}
-            visible={isLocalized && !sheetOpen && projectedBuildings.length > 0}
+            visible={isLocalized && !sheetOpen && projectedBuildings.length > 0 && matchedBuildings.length === 0}
           />
         </>
       )}

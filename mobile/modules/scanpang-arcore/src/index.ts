@@ -31,6 +31,24 @@ export interface ARErrorEvent {
   error: string;
 }
 
+// ML Kit 객체 감지 결과
+export interface DetectedObjectInfo {
+  left: number;     // 0~1 정규화 바운딩박스
+  top: number;
+  right: number;
+  bottom: number;
+  trackingId: number;
+  labels: string[];
+  confidence: number;
+}
+
+export interface ObjectDetectionEvent {
+  detections: DetectedObjectInfo[];
+  imageWidth: number;
+  imageHeight: number;
+  timestamp: number;
+}
+
 // API 함수
 
 /** ARCore Geospatial 지원 여부 (동기) */

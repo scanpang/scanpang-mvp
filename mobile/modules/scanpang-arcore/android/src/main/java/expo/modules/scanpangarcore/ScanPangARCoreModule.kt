@@ -55,6 +55,7 @@ class ScanPangARCoreModule : Module() {
             Events(
                 "onGeospatialPoseUpdate",
                 "onTrackingStateChanged",
+                "onObjectDetection",
                 "onReady",
                 "onError"
             )

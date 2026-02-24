@@ -34,6 +34,7 @@ class ScanPangARCoreView(context: Context, appContext: AppContext) : ExpoView(co
     // View 이벤트 (JS로 전달)
     val onGeospatialPoseUpdate by EventDispatcher()
     val onTrackingStateChanged by EventDispatcher()
+    val onObjectDetection by EventDispatcher()
     val onReady by EventDispatcher()
     val onError by EventDispatcher()
 
@@ -42,6 +43,9 @@ class ScanPangARCoreView(context: Context, appContext: AppContext) : ExpoView(co
     private val backgroundRenderer = BackgroundRenderer()
     // View.post 대신 Handler 사용 (View 미attach 상태에서도 확실히 실행)
     private val mainHandler = Handler(Looper.getMainLooper())
+
+    // ML Kit 객체 감지기
+    private val objectDetector = MLKitObjectDetector()
 
     private var isSessionCreated = false
     private var isPaused = false
@@ -160,6 +164,7 @@ class ScanPangARCoreView(context: Context, appContext: AppContext) : ExpoView(co
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
         unregisterActivityLifecycle()
+        objectDetector.destroy()
         if (ScanPangARCoreModule.activeView == this) {
             ScanPangARCoreModule.activeView = null
         }
@@ -262,6 +267,37 @@ class ScanPangARCoreView(context: Context, appContext: AppContext) : ExpoView(co
             GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT or GLES20.GL_DEPTH_BUFFER_BIT)
             backgroundRenderer.draw(frame)
             hasRenderedFirstFrame = true
+
+            // ML Kit 객체 감지 (GL 스레드에서 호출, 내부적으로 비동기 처리)
+            objectDetector.processFrame(frame, displayRotation, object : MLKitObjectDetector.ResultCallback {
+                override fun onDetected(
+                    detections: List<MLKitObjectDetector.DetectedObject>,
+                    imageWidth: Int,
+                    imageHeight: Int,
+                    timestamp: Long
+                ) {
+                    if (detections.isEmpty()) return
+                    val detectionsData = detections.map { d ->
+                        mapOf(
+                            "left" to d.left.toDouble(),
+                            "top" to d.top.toDouble(),
+                            "right" to d.right.toDouble(),
+                            "bottom" to d.bottom.toDouble(),
+                            "trackingId" to (d.trackingId ?: -1),
+                            "labels" to d.labels,
+                            "confidence" to d.confidence.toDouble()
+                        )
+                    }
+                    mainHandler.post {
+                        onObjectDetection(mapOf(
+                            "detections" to detectionsData,
+                            "imageWidth" to imageWidth,
+                            "imageHeight" to imageHeight,
+                            "timestamp" to timestamp
+                        ))
+                    }
+                }
+            })
 
             // Tracking 상태 변화 이벤트
             if (geospatialManager.trackingStateChanged) {
