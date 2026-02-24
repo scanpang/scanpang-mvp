@@ -119,7 +119,7 @@ class ScanPangARCoreView(context: Context, appContext: AppContext) : ExpoView(co
                 // 프리뷰
                 val preview = Preview.Builder()
                     .build()
-                    .also { it.surfaceProvider = previewView.surfaceProvider }
+                    .also { it.setSurfaceProvider(previewView.surfaceProvider) }
 
                 // 이미지 분석 (YOLO 추론)
                 val imageAnalysis = ImageAnalysis.Builder()
