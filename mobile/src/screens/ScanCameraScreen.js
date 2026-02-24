@@ -40,7 +40,6 @@ import useGeospatialTracking from '../hooks/useGeospatialTracking';
 import useBearingProjection from '../hooks/useBearingProjection';
 import useBuildingMatcher from '../hooks/useBuildingMatcher';
 import BearingLabels from '../components/BearingLabels';
-import FocusRegion from '../components/FocusRegion';
 import DetectedBuildingOverlay from '../components/DetectedBuildingOverlay';
 
 
@@ -160,13 +159,13 @@ const ScanCameraScreen = ({ route, navigation }) => {
     buildings: detectedBuildings,
   });
 
-  // === ML Kit 객체 감지 + 건물 매칭 ===
-  const { matchedBuildings, hasFocusDetection } = useBuildingMatcher({
+  // === Scene Semantics 건물 감지 + bearing 매칭 ===
+  const { matchedBuildings, unmatchedRegions, hasDetection } = useBuildingMatcher({
     detections: objectDetections,
     projectedBuildings,
   });
 
-  // ML Kit 감지 이벤트 핸들러
+  // Scene Semantics 감지 이벤트 핸들러
   const handleObjectDetection = useCallback((event) => {
     const { detections } = event.nativeEvent || event;
     if (detections) {
@@ -447,24 +446,19 @@ const ScanCameraScreen = ({ route, navigation }) => {
             <CameraView ref={cameraRef} style={StyleSheet.absoluteFillObject} facing="back" />
           )}
 
-          {/* Layer 1a: 포커스 영역 코너 라인 */}
-          <FocusRegion
-            detected={hasFocusDetection}
-            visible={isLocalized && !sheetOpen}
-          />
-
-          {/* Layer 1b: ML Kit 바운딩박스 + 건물 라벨 (우선) */}
+          {/* Layer 1a: 건물 바운딩박스 + 건물명 라벨 */}
           <DetectedBuildingOverlay
             matchedBuildings={matchedBuildings}
+            unmatchedRegions={unmatchedRegions}
             onSelect={handleLabelSelect}
-            visible={isLocalized && !sheetOpen && matchedBuildings.length > 0}
+            visible={isLocalized && !sheetOpen && (matchedBuildings.length > 0 || unmatchedRegions.length > 0)}
           />
 
-          {/* Layer 1c: 방향 지시자 라벨 (ML Kit 미감지 시 폴백) */}
+          {/* Layer 1b: 방향 지시자 라벨 (세그멘테이션 미감지 시 폴백) */}
           <BearingLabels
             projectedBuildings={projectedBuildings}
             onSelect={handleLabelSelect}
-            visible={isLocalized && !sheetOpen && projectedBuildings.length > 0 && matchedBuildings.length === 0}
+            visible={isLocalized && !sheetOpen && projectedBuildings.length > 0 && !hasDetection}
           />
         </>
       )}

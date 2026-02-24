@@ -1,32 +1,36 @@
 /**
- * DetectedBuildingOverlay - 바운딩박스 + 건물명 라벨 오버레이
+ * DetectedBuildingOverlay - 건물 바운딩박스 + 건물명 라벨 오버레이
  *
- * ML Kit 감지 + bearing 매칭 결과를 화면에 표시
- * - 바운딩박스 테두리 (감지 영역)
- * - 상단에 건물명 라벨
- * - 탭 시 onSelect 콜백 → 바텀시트 오픈
+ * Scene Semantics 감지 + bearing 매칭 결과를 화면에 표시
+ * - 매칭된 건물: 초록 테두리 + 건물명/거리 라벨 → 탭 시 바텀시트
+ * - 미매칭 영역: 반투명 테두리만 (라벨 없음)
  */
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 
 /**
  * @param {Object} props
- * @param {Array} props.matchedBuildings - useBuildingMatcher 반환값
- *   [{ building: { id, name, distance, ... }, detection: { left, top, right, bottom }, matchScore }]
+ * @param {Array} props.matchedBuildings - [{ building, detection, matchScore }]
+ * @param {Array} props.unmatchedRegions - [{ detection }]
  * @param {Function} props.onSelect - (building) => void
  * @param {boolean} props.visible
  */
-const DetectedBuildingOverlay = ({ matchedBuildings = [], onSelect, visible = true }) => {
-  if (!visible || matchedBuildings.length === 0) return null;
+const DetectedBuildingOverlay = ({
+  matchedBuildings = [],
+  unmatchedRegions = [],
+  onSelect,
+  visible = true,
+}) => {
+  if (!visible) return null;
+  if (matchedBuildings.length === 0 && unmatchedRegions.length === 0) return null;
 
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+      {/* 매칭된 건물: 초록 테두리 + 라벨 */}
       {matchedBuildings.map(({ building, detection, matchScore }) => {
         const { left, top, right, bottom } = detection;
         const width = right - left;
         const height = bottom - top;
-
-        // matchScore 기반 투명도 (높을수록 선명)
         const opacity = 0.5 + matchScore * 0.5;
         const borderColor = `rgba(0, 230, 118, ${opacity})`;
 
@@ -35,15 +39,11 @@ const DetectedBuildingOverlay = ({ matchedBuildings = [], onSelect, visible = tr
             key={building.id}
             style={[
               styles.boundingBox,
-              {
-                left, top, width, height,
-                borderColor,
-              },
+              { left, top, width, height, borderColor },
             ]}
             activeOpacity={0.7}
             onPress={() => onSelect?.(building)}
           >
-            {/* 건물명 라벨 (바운딩박스 상단) */}
             <View style={[styles.label, { backgroundColor: borderColor }]}>
               <Text style={styles.labelName} numberOfLines={1}>
                 {building.name}
@@ -55,6 +55,28 @@ const DetectedBuildingOverlay = ({ matchedBuildings = [], onSelect, visible = tr
               )}
             </View>
           </TouchableOpacity>
+        );
+      })}
+
+      {/* 미매칭 영역: 반투명 테두리만 */}
+      {unmatchedRegions.map(({ detection }, idx) => {
+        const { left, top, right, bottom } = detection;
+        const width = right - left;
+        const height = bottom - top;
+
+        return (
+          <View
+            key={`unmatched_${idx}`}
+            style={[
+              styles.boundingBox,
+              {
+                left, top, width, height,
+                borderColor: 'rgba(255, 255, 255, 0.25)',
+                borderStyle: 'dashed',
+              },
+            ]}
+            pointerEvents="none"
+          />
         );
       })}
     </View>
