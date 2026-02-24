@@ -1,26 +1,31 @@
 package expo.modules.scanpangarcore
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.ImageFormat
 import android.graphics.Matrix
 import android.graphics.Rect
+import android.graphics.SurfaceTexture
 import android.graphics.YuvImage
+import android.hardware.camera2.CameraCaptureSession
+import android.hardware.camera2.CameraCharacteristics
+import android.hardware.camera2.CameraDevice
+import android.hardware.camera2.CameraManager
+import android.hardware.camera2.CaptureRequest
+import android.hardware.camera2.params.StreamConfigurationMap
+import android.util.Size
+import android.media.ImageReader
 import android.os.Handler
+import android.os.HandlerThread
 import android.os.Looper
 import android.util.Log
-import android.util.Size
-import androidx.camera.core.CameraSelector
-import androidx.camera.core.ImageAnalysis
-import androidx.camera.core.ImageProxy
-import androidx.camera.core.Preview
-import androidx.camera.lifecycle.ProcessCameraProvider
-import androidx.camera.view.PreviewView
+import android.view.Surface
+import android.view.TextureView
+import android.view.View.MeasureSpec
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleOwner
-import androidx.lifecycle.LifecycleRegistry
 import expo.modules.kotlin.AppContext
 import expo.modules.kotlin.viewevent.EventDispatcher
 import expo.modules.kotlin.views.ExpoView
@@ -31,45 +36,55 @@ import java.util.concurrent.Executors
 private const val TAG = "ScanPangARCoreView"
 
 /**
- * CameraX 카메라 프리뷰 + YOLO TFLite 건물 감지 뷰
+ * TextureView + Camera2 API 카메라 프리뷰 + YOLO TFLite 건물 감지 뷰
  *
- * ARCore GLSurfaceView → CameraX PreviewView 전환
- * LifecycleOwner 구현 (CameraX 요구)
+ * CameraX PreviewView는 React Native ExpoView 안에서 Surface 생성 안 됨
+ * → TextureView + Camera2 직접 사용으로 해결
  */
-class ScanPangARCoreView(context: Context, appContext: AppContext) : ExpoView(context, appContext), LifecycleOwner {
+class ScanPangARCoreView(context: Context, appContext: AppContext) : ExpoView(context, appContext) {
 
     // View 이벤트 (JS로 전달)
     val onObjectDetection by EventDispatcher()
     val onReady by EventDispatcher()
     val onError by EventDispatcher()
 
-    private val previewView: PreviewView
+    private val textureView: TextureView
     private val mainHandler = Handler(Looper.getMainLooper())
 
     // YOLO 건물 감지기
     private val buildingDetector = YoloBuildingDetector(context)
 
-    // CameraX
-    private var cameraProvider: ProcessCameraProvider? = null
+    // Camera2
+    private var cameraDevice: CameraDevice? = null
+    private var captureSession: CameraCaptureSession? = null
+    private var imageReader: ImageReader? = null
+    private var cameraThread: HandlerThread? = null
+    private var cameraHandler: Handler? = null
+    private var imageReaderThread: HandlerThread? = null
+    private var imageReaderHandler: Handler? = null
+    private var sensorOrientation = 0
+    private var analysisSize = Size(640, 480) // 카메라 지원 크기로 업데이트됨
+
+    // YOLO 분석
     private lateinit var analysisExecutor: ExecutorService
 
-    // LifecycleOwner 구현
-    private val lifecycleRegistry = LifecycleRegistry(this)
-
-    override val lifecycle: Lifecycle
-        get() = lifecycleRegistry
-
     init {
+        Log.d(TAG, "[init] 뷰 생성 시작")
+
         // 모듈에 활성 뷰 등록
         ScanPangARCoreModule.activeView = this
 
-        // PreviewView 설정
-        previewView = PreviewView(context).apply {
-            implementationMode = PreviewView.ImplementationMode.PERFORMANCE
-            scaleType = PreviewView.ScaleType.FILL_CENTER
-        }
+        // TextureView 설정
+        textureView = TextureView(context)
+        addView(textureView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
 
-        addView(previewView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+        // 카메라 스레드
+        cameraThread = HandlerThread("CameraThread").also { it.start() }
+        cameraHandler = Handler(cameraThread!!.looper)
+
+        // ImageReader 전용 스레드 (카메라 스레드와 분리)
+        imageReaderThread = HandlerThread("ImageReaderThread").also { it.start() }
+        imageReaderHandler = Handler(imageReaderThread!!.looper)
 
         // 분석 스레드
         analysisExecutor = Executors.newSingleThreadExecutor()
@@ -78,126 +93,264 @@ class ScanPangARCoreView(context: Context, appContext: AppContext) : ExpoView(co
         analysisExecutor.execute {
             buildingDetector.initialize()
             if (buildingDetector.isInitialized) {
-                mainHandler.post {
-                    onReady(mapOf("status" to "model_loaded"))
-                }
+                mainHandler.post { onReady(mapOf("status" to "model_loaded")) }
+                Log.d(TAG, "[init] YOLO 모델 로드 완료")
             } else {
-                mainHandler.post {
-                    onError(mapOf("error" to "model_load_failed"))
-                }
+                mainHandler.post { onError(mapOf("error" to "model_load_failed")) }
+                Log.e(TAG, "[init] YOLO 모델 로드 실패")
             }
         }
+
+        Log.d(TAG, "[init] 뷰 생성 완료")
     }
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
-        lifecycleRegistry.currentState = Lifecycle.State.STARTED
-        startCamera()
+        Log.d(TAG, "[onAttachedToWindow] w=${width} h=${height}")
+        // SurfaceTextureListener는 init보다 뒤에 선언되어 있으므로 여기서 설정
+        textureView.surfaceTextureListener = surfaceTextureListener
+    }
+
+    /**
+     * React Native Yoga는 네이티브 addView() 자식을 레이아웃하지 않음
+     * TextureView에 수동으로 크기 배정
+     */
+    override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
+        super.onLayout(changed, left, top, right, bottom)
+        val w = right - left
+        val h = bottom - top
+        if (w > 0 && h > 0) {
+            textureView.measure(
+                MeasureSpec.makeMeasureSpec(w, MeasureSpec.EXACTLY),
+                MeasureSpec.makeMeasureSpec(h, MeasureSpec.EXACTLY)
+            )
+            textureView.layout(0, 0, w, h)
+        }
     }
 
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
-        lifecycleRegistry.currentState = Lifecycle.State.DESTROYED
+        Log.d(TAG, "[onDetachedFromWindow] 정리 시작")
         if (ScanPangARCoreModule.activeView == this) {
             ScanPangARCoreModule.activeView = null
         }
+        closeCamera()
         buildingDetector.destroy()
-        cameraProvider?.unbindAll()
         analysisExecutor.shutdown()
+        cameraThread?.quitSafely()
+        cameraThread = null
+        cameraHandler = null
+        imageReaderThread?.quitSafely()
+        imageReaderThread = null
+        imageReaderHandler = null
     }
 
-    /**
-     * CameraX 카메라 시작
-     */
-    private fun startCamera() {
-        val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
-        cameraProviderFuture.addListener({
-            try {
-                val provider = cameraProviderFuture.get()
-                cameraProvider = provider
+    // ===== TextureView.SurfaceTextureListener =====
+    private val surfaceTextureListener = object : TextureView.SurfaceTextureListener {
+        override fun onSurfaceTextureAvailable(surface: SurfaceTexture, width: Int, height: Int) {
+            Log.d(TAG, "[SurfaceTexture] available: ${width}x${height}")
+            openCamera()
+        }
 
-                // 프리뷰
-                val preview = Preview.Builder()
-                    .build()
-                    .also { it.setSurfaceProvider(previewView.surfaceProvider) }
+        override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture, width: Int, height: Int) {
+            Log.d(TAG, "[SurfaceTexture] sizeChanged: ${width}x${height}")
+        }
 
-                // 이미지 분석 (YOLO 추론)
-                val imageAnalysis = ImageAnalysis.Builder()
-                    .setTargetResolution(Size(640, 480))
-                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                    .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
-                    .build()
+        override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean {
+            Log.d(TAG, "[SurfaceTexture] destroyed")
+            closeCamera()
+            return true
+        }
 
-                imageAnalysis.setAnalyzer(analysisExecutor) { imageProxy ->
-                    processImage(imageProxy)
-                }
-
-                // 후면 카메라
-                val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
-
-                // 바인딩
-                provider.unbindAll()
-                provider.bindToLifecycle(this, cameraSelector, preview, imageAnalysis)
-
-                Log.d(TAG, "[startCamera] CameraX 바인딩 완료")
-            } catch (e: Exception) {
-                Log.e(TAG, "[startCamera] 카메라 시작 실패: ${e.message}")
-                mainHandler.post {
-                    onError(mapOf("error" to "camera_start_failed: ${e.message}"))
-                }
-            }
-        }, ContextCompat.getMainExecutor(context))
+        override fun onSurfaceTextureUpdated(surface: SurfaceTexture) {
+            // 매 프레임 호출 — 로그 안 찍음
+        }
     }
 
-    /**
-     * ImageProxy → Bitmap 변환 → YOLO 추론
-     */
-    private fun processImage(imageProxy: ImageProxy) {
-        if (!buildingDetector.isInitialized) {
-            imageProxy.close()
+    // ===== Camera2 API =====
+    private fun openCamera() {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            Log.e(TAG, "[openCamera] 카메라 권한 없음")
+            mainHandler.post { onError(mapOf("error" to "camera_permission_denied")) }
             return
         }
 
         try {
-            val bitmap = imageProxyToBitmap(imageProxy)
-            if (bitmap != null) {
-                buildingDetector.processFrame(bitmap, object : YoloBuildingDetector.ResultCallback {
-                    override fun onDetections(detections: List<YoloBuildingDetector.Detection>, timestamp: Long) {
-                        val detectionsData = detections.map { d ->
-                            mapOf(
-                                "left" to d.left.toDouble(),
-                                "top" to d.top.toDouble(),
-                                "right" to d.right.toDouble(),
-                                "bottom" to d.bottom.toDouble(),
-                                "centerX" to d.centerX.toDouble(),
-                                "confidence" to d.confidence.toDouble()
-                            )
-                        }
-                        mainHandler.post {
-                            onObjectDetection(mapOf(
-                                "detections" to detectionsData,
-                                "timestamp" to timestamp
-                            ))
-                        }
-                    }
-                })
-                bitmap.recycle()
+            val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
+            val cameraId = findBackCamera(cameraManager) ?: run {
+                Log.e(TAG, "[openCamera] 후면 카메라 없음")
+                mainHandler.post { onError(mapOf("error" to "no_back_camera")) }
+                return
             }
+
+            // 센서 방향 + 지원 크기 조회
+            val characteristics = cameraManager.getCameraCharacteristics(cameraId)
+            sensorOrientation = characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 90
+
+            // ImageReader용 지원 크기 중 가장 작은 것 선택 (YOLO는 320x320으로 리사이즈하므로 작아도 됨)
+            val map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
+            if (map != null) {
+                val yuvSizes = map.getOutputSizes(ImageFormat.YUV_420_888)
+                if (yuvSizes != null && yuvSizes.isNotEmpty()) {
+                    // 640x480에 가장 가까운 크기 선택
+                    analysisSize = yuvSizes.minByOrNull {
+                        Math.abs(it.width * it.height - 640 * 480)
+                    } ?: analysisSize
+                    Log.d(TAG, "[openCamera] YUV 지원 크기: ${yuvSizes.take(5).joinToString()}, 선택: $analysisSize")
+                }
+            }
+
+            Log.d(TAG, "[openCamera] cameraId=$cameraId, sensorOrientation=$sensorOrientation, analysisSize=$analysisSize")
+            cameraManager.openCamera(cameraId, cameraStateCallback, cameraHandler)
         } catch (e: Exception) {
-            Log.w(TAG, "[processImage] 처리 실패: ${e.message}")
-        } finally {
-            imageProxy.close()
+            Log.e(TAG, "[openCamera] 실패: ${e.message}", e)
+            mainHandler.post { onError(mapOf("error" to "camera_open_failed: ${e.message}")) }
+        }
+    }
+
+    private fun findBackCamera(manager: CameraManager): String? {
+        for (id in manager.cameraIdList) {
+            val chars = manager.getCameraCharacteristics(id)
+            val facing = chars.get(CameraCharacteristics.LENS_FACING)
+            if (facing == CameraCharacteristics.LENS_FACING_BACK) return id
+        }
+        return null
+    }
+
+    private val cameraStateCallback = object : CameraDevice.StateCallback() {
+        override fun onOpened(camera: CameraDevice) {
+            Log.d(TAG, "[Camera] onOpened")
+            cameraDevice = camera
+            createCaptureSession()
+        }
+
+        override fun onDisconnected(camera: CameraDevice) {
+            Log.w(TAG, "[Camera] onDisconnected")
+            camera.close()
+            cameraDevice = null
+        }
+
+        override fun onError(camera: CameraDevice, error: Int) {
+            Log.e(TAG, "[Camera] onError: $error")
+            camera.close()
+            cameraDevice = null
+            mainHandler.post { onError(mapOf("error" to "camera_error_$error")) }
+        }
+    }
+
+    private fun createCaptureSession() {
+        val camera = cameraDevice ?: return
+        val surfaceTexture = textureView.surfaceTexture ?: return
+
+        try {
+            // 프리뷰 Surface
+            surfaceTexture.setDefaultBufferSize(textureView.width, textureView.height)
+            val previewSurface = Surface(surfaceTexture)
+
+            // YOLO 분석용 ImageReader (카메라 지원 크기)
+            Log.d(TAG, "[createCaptureSession] ImageReader 크기: ${analysisSize.width}x${analysisSize.height}")
+            imageReader = ImageReader.newInstance(analysisSize.width, analysisSize.height, ImageFormat.YUV_420_888, 2)
+            imageReader!!.setOnImageAvailableListener({ reader ->
+                val image = reader.acquireLatestImage()
+                if (image == null) {
+                    Log.w(TAG, "[ImageReader] acquireLatestImage null")
+                    return@setOnImageAvailableListener
+                }
+                processYuvImage(image)
+                image.close()
+            }, imageReaderHandler)
+
+            val surfaces = listOf(previewSurface, imageReader!!.surface)
+
+            camera.createCaptureSession(surfaces, object : CameraCaptureSession.StateCallback() {
+                override fun onConfigured(session: CameraCaptureSession) {
+                    Log.d(TAG, "[CaptureSession] onConfigured")
+                    captureSession = session
+
+                    try {
+                        val requestBuilder = camera.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
+                        requestBuilder.addTarget(previewSurface)
+                        requestBuilder.addTarget(imageReader!!.surface)
+                        requestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_VIDEO)
+
+                        session.setRepeatingRequest(requestBuilder.build(), null, cameraHandler)
+                        Log.d(TAG, "[CaptureSession] repeatingRequest 시작 — 카메라 프리뷰 활성화!")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "[CaptureSession] repeatingRequest 실패: ${e.message}", e)
+                    }
+                }
+
+                override fun onConfigureFailed(session: CameraCaptureSession) {
+                    Log.e(TAG, "[CaptureSession] onConfigureFailed")
+                    mainHandler.post { onError(mapOf("error" to "capture_session_failed")) }
+                }
+            }, cameraHandler)
+
+            Log.d(TAG, "[createCaptureSession] 세션 생성 요청 완료")
+        } catch (e: Exception) {
+            Log.e(TAG, "[createCaptureSession] 실패: ${e.message}", e)
+        }
+    }
+
+    private fun closeCamera() {
+        try {
+            captureSession?.close()
+            captureSession = null
+            cameraDevice?.close()
+            cameraDevice = null
+            imageReader?.close()
+            imageReader = null
+        } catch (e: Exception) {
+            Log.w(TAG, "[closeCamera] 정리 중 에러: ${e.message}")
+        }
+    }
+
+    // ===== YOLO 이미지 처리 =====
+    private var frameCount = 0L
+    private fun processYuvImage(image: android.media.Image) {
+        frameCount++
+        if (frameCount % 30 == 1L) {
+            Log.d(TAG, "[processYuvImage] frame=$frameCount, size=${image.width}x${image.height}, modelReady=${buildingDetector.isInitialized}")
+        }
+        if (!buildingDetector.isInitialized) return
+
+        try {
+            val bitmap = yuvImageToBitmap(image) ?: return
+
+            buildingDetector.processFrame(bitmap, object : YoloBuildingDetector.ResultCallback {
+                override fun onDetections(detections: List<YoloBuildingDetector.Detection>, timestamp: Long) {
+                    val detectionsData = detections.map { d ->
+                        mapOf(
+                            "left" to d.left.toDouble(),
+                            "top" to d.top.toDouble(),
+                            "right" to d.right.toDouble(),
+                            "bottom" to d.bottom.toDouble(),
+                            "centerX" to d.centerX.toDouble(),
+                            "confidence" to d.confidence.toDouble()
+                        )
+                    }
+                    mainHandler.post {
+                        onObjectDetection(mapOf(
+                            "detections" to detectionsData,
+                            "timestamp" to timestamp
+                        ))
+                    }
+                }
+            })
+            bitmap.recycle()
+        } catch (e: Exception) {
+            Log.w(TAG, "[processYuvImage] 처리 실패: ${e.message}")
         }
     }
 
     /**
-     * YUV_420_888 ImageProxy → Bitmap 변환
+     * Camera2 Image (YUV_420_888) → Bitmap 변환
      */
-    private fun imageProxyToBitmap(imageProxy: ImageProxy): Bitmap? {
+    private fun yuvImageToBitmap(image: android.media.Image): Bitmap? {
         return try {
-            val yBuffer = imageProxy.planes[0].buffer
-            val uBuffer = imageProxy.planes[1].buffer
-            val vBuffer = imageProxy.planes[2].buffer
+            val yBuffer = image.planes[0].buffer
+            val uBuffer = image.planes[1].buffer
+            val vBuffer = image.planes[2].buffer
 
             val ySize = yBuffer.remaining()
             val uSize = uBuffer.remaining()
@@ -208,17 +361,16 @@ class ScanPangARCoreView(context: Context, appContext: AppContext) : ExpoView(co
             vBuffer.get(nv21, ySize, vSize)
             uBuffer.get(nv21, ySize + vSize, uSize)
 
-            val yuvImage = YuvImage(nv21, ImageFormat.NV21, imageProxy.width, imageProxy.height, null)
+            val yuvImage = YuvImage(nv21, ImageFormat.NV21, image.width, image.height, null)
             val out = ByteArrayOutputStream()
-            yuvImage.compressToJpeg(Rect(0, 0, imageProxy.width, imageProxy.height), 80, out)
+            yuvImage.compressToJpeg(Rect(0, 0, image.width, image.height), 80, out)
             val jpegBytes = out.toByteArray()
 
             val bitmap = BitmapFactory.decodeByteArray(jpegBytes, 0, jpegBytes.size)
 
-            // 회전 보정
-            val rotation = imageProxy.imageInfo.rotationDegrees
-            if (rotation != 0 && bitmap != null) {
-                val matrix = Matrix().apply { postRotate(rotation.toFloat()) }
+            // 회전 보정 (센서 방향)
+            if (sensorOrientation != 0 && bitmap != null) {
+                val matrix = Matrix().apply { postRotate(sensorOrientation.toFloat()) }
                 val rotated = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
                 if (rotated != bitmap) bitmap.recycle()
                 rotated
@@ -226,7 +378,7 @@ class ScanPangARCoreView(context: Context, appContext: AppContext) : ExpoView(co
                 bitmap
             }
         } catch (e: Exception) {
-            Log.w(TAG, "[imageProxyToBitmap] 변환 실패: ${e.message}")
+            Log.w(TAG, "[yuvImageToBitmap] 변환 실패: ${e.message}")
             null
         }
     }

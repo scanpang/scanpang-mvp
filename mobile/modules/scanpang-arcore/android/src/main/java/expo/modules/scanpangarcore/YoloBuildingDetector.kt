@@ -4,7 +4,8 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.util.Log
 import org.tensorflow.lite.Interpreter
-import org.tensorflow.lite.gpu.GpuDelegate
+// GPU Delegate 제거 — GpuDelegateFactory$Options 클래스 누락으로 크래시 발생
+// import org.tensorflow.lite.gpu.GpuDelegate
 import java.io.FileInputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -41,7 +42,6 @@ class YoloBuildingDetector(private val context: Context) {
     }
 
     private var interpreter: Interpreter? = null
-    private var gpuDelegate: GpuDelegate? = null
     private val isProcessing = AtomicBoolean(false)
     private var lastProcessTime = 0L
     private val THROTTLE_MS = 300L
@@ -77,24 +77,12 @@ class YoloBuildingDetector(private val context: Context) {
         try {
             val modelBuffer = loadModelFile()
 
-            // GPU Delegate 시도
-            try {
-                gpuDelegate = GpuDelegate()
-                val options = Interpreter.Options().apply {
-                    addDelegate(gpuDelegate)
-                }
-                interpreter = Interpreter(modelBuffer, options)
-                Log.d(TAG, "[initialize] GPU Delegate 활성화")
-            } catch (e: Exception) {
-                Log.w(TAG, "[initialize] GPU Delegate 실패, CPU 폴백: ${e.message}")
-                gpuDelegate?.close()
-                gpuDelegate = null
-                val options = Interpreter.Options().apply {
-                    setNumThreads(4)
-                }
-                interpreter = Interpreter(modelBuffer, options)
-                Log.d(TAG, "[initialize] CPU 4스레드 모드")
+            // CPU 4스레드 모드 (GPU Delegate는 버전 호환 문제로 제거)
+            val options = Interpreter.Options().apply {
+                setNumThreads(4)
             }
+            interpreter = Interpreter(modelBuffer, options)
+            Log.d(TAG, "[initialize] CPU 4스레드 모드")
 
             // 입력 버퍼 할당
             inputBuffer = ByteBuffer.allocateDirect(1 * INPUT_SIZE * INPUT_SIZE * 3 * 4).apply {
@@ -247,8 +235,6 @@ class YoloBuildingDetector(private val context: Context) {
     fun destroy() {
         interpreter?.close()
         interpreter = null
-        gpuDelegate?.close()
-        gpuDelegate = null
         isInitialized = false
         Log.d(TAG, "[destroy] YoloBuildingDetector 해제")
     }
