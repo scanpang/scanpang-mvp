@@ -2,14 +2,11 @@ package expo.modules.scanpangarcore
 
 import android.app.Activity
 import android.content.Context
-import android.opengl.Matrix
 import android.os.Handler
 import android.os.Looper
 import com.google.ar.core.*
 import com.google.ar.core.exceptions.*
 import android.util.Log
-import java.util.concurrent.ConcurrentHashMap
-
 private const val TAG = "GeospatialManager"
 
 /**
@@ -40,9 +37,6 @@ class GeospatialManager(private val context: Context) {
     @Volatile
     var trackingStateChanged: Boolean = false
         private set
-
-    // 앵커 관리 (Phase 4) — GL/메인 스레드 양쪽에서 접근
-    private val anchors = ConcurrentHashMap<String, Anchor>()
 
     /**
      * ARCore 지원 여부 확인
@@ -264,103 +258,6 @@ class GeospatialManager(private val context: Context) {
     }
 
     /**
-     * Terrain Anchor 생성 (Phase 4)
-     */
-    fun createTerrainAnchor(
-        id: String, lat: Double, lng: Double, altAboveTerrain: Double,
-        callback: (Boolean) -> Unit
-    ) {
-        val earth = session?.earth
-        if (earth == null || earth.trackingState != TrackingState.TRACKING) {
-            callback(false)
-            return
-        }
-        try {
-            earth.resolveAnchorOnTerrainAsync(
-                lat, lng, altAboveTerrain,
-                0f, 0f, 0f, 1f, // 기본 회전 (identity quaternion)
-            ) { anchor, state ->
-                mainHandler.post {
-                    if (state == Anchor.TerrainAnchorState.SUCCESS && anchor != null) {
-                        anchors[id] = anchor
-                        callback(true)
-                    } else {
-                        callback(false)
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            callback(false)
-        }
-    }
-
-    /**
-     * 앵커 제거
-     */
-    fun removeAnchor(id: String) {
-        anchors[id]?.detach()
-        anchors.remove(id)
-    }
-
-    /**
-     * 모든 앵커 제거
-     */
-    fun removeAllAnchors() {
-        anchors.values.forEach { it.detach() }
-        anchors.clear()
-    }
-
-    /**
-     * 앵커들의 screen-space 좌표 투영 (GL 스레드에서 호출)
-     */
-    fun getAnchorScreenPositions(frame: Frame, viewWidth: Int, viewHeight: Int): List<Map<String, Any>> {
-        if (anchors.isEmpty()) return emptyList()
-
-        val viewMatrix = FloatArray(16)
-        val projMatrix = FloatArray(16)
-        frame.camera.getViewMatrix(viewMatrix, 0)
-        frame.camera.getProjectionMatrix(projMatrix, 0, 0.1f, 300f)
-
-        val results = mutableListOf<Map<String, Any>>()
-        for ((id, anchor) in anchors) {
-            if (anchor.trackingState != TrackingState.TRACKING) continue
-
-            val pose = anchor.pose
-            val worldPos = floatArrayOf(pose.tx(), pose.ty(), pose.tz(), 1f)
-
-            // View space
-            val viewPos = FloatArray(4)
-            Matrix.multiplyMV(viewPos, 0, viewMatrix, 0, worldPos, 0)
-
-            // Clip space
-            val clipPos = FloatArray(4)
-            Matrix.multiplyMV(clipPos, 0, projMatrix, 0, viewPos, 0)
-
-            if (clipPos[3] <= 0) continue // 카메라 뒤
-
-            // NDC → Screen
-            val ndcX = clipPos[0] / clipPos[3]
-            val ndcY = clipPos[1] / clipPos[3]
-            val screenX = ((ndcX + 1f) * 0.5f * viewWidth).toDouble()
-            val screenY = ((1f - ndcY) * 0.5f * viewHeight).toDouble()
-
-            // 카메라로부터 거리
-            val dist = Math.sqrt(
-                (viewPos[0] * viewPos[0] + viewPos[1] * viewPos[1] + viewPos[2] * viewPos[2]).toDouble()
-            )
-
-            results.add(mapOf(
-                "id" to id,
-                "screenX" to screenX,
-                "screenY" to screenY,
-                "distance" to dist,
-                "resolved" to true
-            ))
-        }
-        return results
-    }
-
-    /**
      * 카메라 텍스처 ID 설정 (GL 스레드)
      */
     fun setCameraTexture(textureId: Int) {
@@ -383,8 +280,6 @@ class GeospatialManager(private val context: Context) {
     }
 
     fun destroy() {
-        anchors.values.forEach { it.detach() }
-        anchors.clear()
         session?.close()
         session = null
         lastTrackingState = null

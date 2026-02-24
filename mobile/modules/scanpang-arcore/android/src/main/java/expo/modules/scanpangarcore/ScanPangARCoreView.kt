@@ -34,7 +34,6 @@ class ScanPangARCoreView(context: Context, appContext: AppContext) : ExpoView(co
     // View 이벤트 (JS로 전달)
     val onGeospatialPoseUpdate by EventDispatcher()
     val onTrackingStateChanged by EventDispatcher()
-    val onAnchorPositionsUpdate by EventDispatcher()
     val onReady by EventDispatcher()
     val onError by EventDispatcher()
 
@@ -270,7 +269,7 @@ class ScanPangARCoreView(context: Context, appContext: AppContext) : ExpoView(co
                 mainHandler.post { onTrackingStateChanged(mapOf("state" to state)) }
             }
 
-            // Geospatial pose + depth + 앵커 위치 업데이트 (150ms 쓰로틀)
+            // Geospatial pose + depth 업데이트 (150ms 쓰로틀)
             // resume 직후 500ms간은 pose 이벤트 무시 (이벤트 폭주 방지)
             val now = System.currentTimeMillis()
             if (resumeTimestamp > 0 && now - resumeTimestamp < RESUME_STABILIZE_MS) return
@@ -284,16 +283,6 @@ class ScanPangARCoreView(context: Context, appContext: AppContext) : ExpoView(co
                     if (depthMeters != null) poseWithDepth["depthMeters"] = depthMeters
                     poseWithDepth["depthSupported"] = geospatialManager.isDepthSupported
                     mainHandler.post { onGeospatialPoseUpdate(poseWithDepth) }
-                }
-
-                // 앵커 screen-space 좌표 업데이트
-                if (viewWidth > 0 && viewHeight > 0) {
-                    val anchorPositions = geospatialManager.getAnchorScreenPositions(
-                        frame, viewWidth, viewHeight
-                    )
-                    if (anchorPositions.isNotEmpty()) {
-                        mainHandler.post { onAnchorPositionsUpdate(mapOf("anchors" to anchorPositions)) }
-                    }
                 }
             }
         }

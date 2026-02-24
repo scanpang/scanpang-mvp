@@ -48,29 +48,3 @@ export async function checkVPSAvailability(lat: number, lng: number): Promise<bo
   return await ScanPangARCoreModule.checkVPSAvailability(lat, lng);
 }
 
-// 앵커 API (Phase 4)
-
-export interface AnchorPosition {
-  id: string;
-  screenX: number;
-  screenY: number;
-  distance: number;
-  resolved: boolean;
-}
-
-/** Terrain Anchor 생성 */
-export async function createTerrainAnchor(
-  id: string, lat: number, lng: number, altAboveTerrain: number
-): Promise<boolean> {
-  return await ScanPangARCoreModule.createTerrainAnchor(id, lat, lng, altAboveTerrain);
-}
-
-/** 앵커 제거 */
-export function removeAnchor(id: string): void {
-  ScanPangARCoreModule.removeAnchor(id);
-}
-
-/** 모든 앵커 제거 */
-export function removeAllAnchors(): void {
-  ScanPangARCoreModule.removeAllAnchors();
-}

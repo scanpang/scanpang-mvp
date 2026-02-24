@@ -1,7 +1,7 @@
 /**
- * ScanCameraScreen - AR 앵커 탭 기반 건물 스캔
+ * ScanCameraScreen - VPS + Bearing 투영 기반 건물 스캔
  * - Layer 0: 전체화면 AR 카메라 프리뷰
- * - Layer 1: AR 앵커 라벨 (건물 위치에 핀 스타일, 터치 가능)
+ * - Layer 1: 방향 지시자 라벨 (bearing 투영, 터치 가능)
  * - Layer 2: 상단 HUD
  * - Layer 3: 건물 프로필 바텀시트
  */
@@ -37,7 +37,9 @@ import BuildingProfileSheet from '../components/BuildingProfileSheet';
 import XRayOverlay from '../components/XRayOverlay';
 import { ARCameraView } from 'scanpang-arcore';
 import useGeospatialTracking from '../hooks/useGeospatialTracking';
-import useGeospatialAnchors from '../hooks/useGeospatialAnchors';
+import useBearingProjection from '../hooks/useBearingProjection';
+import BearingLabels from '../components/BearingLabels';
+
 
 const { width: SW, height: SH } = Dimensions.get('window');
 const RECENT_SCANS_KEY = '@scanpang_recent_scans';
@@ -148,23 +150,11 @@ const ScanCameraScreen = ({ route, navigation }) => {
     enabled: !sheetOpen,
   });
 
-  // AR 앵커 관리
-  const { anchors: arAnchors, handleAnchorPositionsUpdate } = useGeospatialAnchors({
+  // === bearing 스크린 투영 ===
+  const projectedBuildings = useBearingProjection({
+    geoPose,
     buildings: detectedBuildings,
-    isLocalized,
-    enabled: isARMode && isLocalized && !sheetOpen,
   });
-
-  // === 디버그: 앵커 렌더링 체인 점검 ===
-  useEffect(() => {
-    console.log(`[ANCHOR_DEBUG] isARMode=${isARMode} isLocalized=${isLocalized} sheetOpen=${sheetOpen}`);
-    console.log(`[ANCHOR_DEBUG] detectStatus=${detectStatus} buildings=${detectedBuildings.length} anchors=${arAnchors.length}`);
-    console.log(`[ANCHOR_DEBUG] geoPose hAcc=${geoPose?.horizontalAccuracy} arError=${arError}`);
-    if (detectedBuildings.length > 0) {
-      const b = detectedBuildings[0];
-      console.log(`[ANCHOR_DEBUG] 첫번째 건물: id=${b.id} lat=${b.lat} lng=${b.lng} distance=${b.distance}`);
-    }
-  }, [isARMode, isLocalized, sheetOpen, detectStatus, detectedBuildings.length, arAnchors.length, geoPose?.horizontalAccuracy, arError]);
 
   // 선택된 건물의 메타 정보
   const selectedBuildingMeta = useMemo(() => {
@@ -343,20 +333,20 @@ const ScanCameraScreen = ({ route, navigation }) => {
     } catch {}
   }, [userLocation, heading]);
 
-  // 앵커 라벨 탭 → 바텀시트 열기
-  const handleAnchorTap = useCallback((anchor) => {
-    if (!anchor) return;
+  // 라벨 탭 → 바텀시트 열기
+  const handleLabelSelect = useCallback((projected) => {
+    if (!projected) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
-    const building = detectedBuildings.find(b => String(b.id) === anchor.buildingId);
-    setSelectedBuildingId(anchor.buildingId);
+    const building = detectedBuildings.find(b => b.id === projected.id);
+    setSelectedBuildingId(projected.id);
     setProfileError(null);
 
     setTimeout(() => bottomSheetRef.current?.snapToIndex(1), 50);
 
     // 로깅
-    postScanLog({ sessionId: sessionIdRef.current, buildingId: anchor.buildingId, eventType: 'anchor_tap', userLat: userLocation?.lat, userLng: userLocation?.lng, deviceHeading: heading, metadata: {} }).catch(() => {});
-    behaviorTracker.trackEvent('anchor_tap', { buildingId: anchor.buildingId, buildingName: anchor.buildingName, metadata: { mode: accuracyInfo?.modeLabel, hAcc: accuracyInfo?.hAcc } });
+    postScanLog({ sessionId: sessionIdRef.current, buildingId: projected.id, eventType: 'label_tap', userLat: userLocation?.lat, userLng: userLocation?.lng, deviceHeading: heading, metadata: { bearing: projected.bearing, angleDiff: projected.angleDiff } }).catch(() => {});
+    behaviorTracker.trackEvent('label_tap', { buildingId: projected.id, buildingName: projected.name, metadata: { mode: accuracyInfo?.modeLabel, hAcc: accuracyInfo?.hAcc, distance: projected.distance } });
 
     if (building) {
       saveRecentScan(building);
@@ -399,7 +389,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
     if (!geoPose) return 'VPS 위치를 잡는 중...';
     if (detectLoading) return '건물 탐색 중...';
     if (detectedBuildings.length === 0) return '주변에 건물이 없습니다';
-    return null; // 앵커 라벨이 보이면 안내 불필요
+    return null; // 건물 감지 완료
   }, [geoPose, detectLoading, detectedBuildings.length, sheetOpen]);
 
   return (
@@ -431,7 +421,6 @@ const ScanCameraScreen = ({ route, navigation }) => {
               style={StyleSheet.absoluteFillObject}
               onGeospatialPoseUpdate={handlePoseUpdate}
               onTrackingStateChanged={handleTrackingStateChanged}
-              onAnchorPositionsUpdate={handleAnchorPositionsUpdate}
               onReady={handleReady}
               onError={handleError}
             />
@@ -439,34 +428,12 @@ const ScanCameraScreen = ({ route, navigation }) => {
             <CameraView ref={cameraRef} style={StyleSheet.absoluteFillObject} facing="back" />
           )}
 
-          {/* Layer 1: AR 앵커 라벨 (핀 스타일, 터치 가능) */}
-          {isARMode && isLocalized && !sheetOpen && arAnchors.length > 0 && (
-            <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
-              {arAnchors.map(anchor => (
-                <TouchableOpacity
-                  key={anchor.buildingId}
-                  style={[
-                    styles.arAnchor,
-                    { left: anchor.screenX - 55, top: anchor.screenY - 48 },
-                  ]}
-                  activeOpacity={0.7}
-                  onPress={() => handleAnchorTap(anchor)}
-                >
-                  {/* 카드 */}
-                  <View style={styles.arAnchorCard}>
-                    <Text style={styles.arAnchorName} numberOfLines={1}>
-                      {anchor.buildingName || '건물'}
-                    </Text>
-                    <Text style={styles.arAnchorDist}>
-                      {formatDistance(anchor.distance || 0)}
-                    </Text>
-                  </View>
-                  {/* 핀 꼬리 */}
-                  <View style={styles.arAnchorTail} />
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
+          {/* Layer 1: 방향 지시자 라벨 (bearing 투영) */}
+          <BearingLabels
+            projectedBuildings={projectedBuildings}
+            onSelect={handleLabelSelect}
+            visible={isLocalized && !sheetOpen && projectedBuildings.length > 0}
+          />
         </>
       )}
 
@@ -563,45 +530,6 @@ const styles = StyleSheet.create({
   gpsErrorBanner: { position: 'absolute', top: 100, left: SPACING.lg, right: SPACING.lg, backgroundColor: 'rgba(239,68,68,0.9)', borderRadius: 12, paddingHorizontal: SPACING.lg, paddingVertical: SPACING.sm, zIndex: 100 },
   gpsErrorText: { fontSize: 13, fontWeight: '600', color: '#FFF', textAlign: 'center' },
 
-  // AR 앵커 라벨 (핀 스타일)
-  arAnchor: {
-    position: 'absolute',
-    alignItems: 'center',
-  },
-  arAnchorCard: {
-    backgroundColor: 'rgba(0,0,0,0.75)',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    alignItems: 'center',
-    minWidth: 110,
-    minHeight: 44, // 터치 영역 최소 높이
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.15)',
-  },
-  arAnchorName: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#FFF',
-    maxWidth: 160,
-  },
-  arAnchorDist: {
-    fontSize: 11,
-    fontWeight: '500',
-    color: 'rgba(255,255,255,0.6)',
-    marginTop: 2,
-  },
-  arAnchorTail: {
-    width: 0,
-    height: 0,
-    borderLeftWidth: 6,
-    borderRightWidth: 6,
-    borderTopWidth: 8,
-    borderLeftColor: 'transparent',
-    borderRightColor: 'transparent',
-    borderTopColor: 'rgba(0,0,0,0.75)',
-    marginTop: -1,
-  },
 
   loadingView: { flex: 1, backgroundColor: '#0D1230', justifyContent: 'center', alignItems: 'center' },
   loadingText: { fontSize: 14, color: '#B0B0B0', marginTop: SPACING.md },

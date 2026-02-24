@@ -10,7 +10,6 @@ import expo.modules.kotlin.modules.ModuleDefinition
  * - Geospatial pose 조회
  * - VPS 가용성 체크
  * - ARCore 지원 확인
- * - Terrain Anchor 생성/제거
  * - ARCameraView 네이티브 뷰 등록
  */
 class ScanPangARCoreModule : Module() {
@@ -51,34 +50,11 @@ class ScanPangARCoreModule : Module() {
             }
         }
 
-        // Terrain Anchor 생성 (비동기)
-        AsyncFunction("createTerrainAnchor") { id: String, lat: Double, lng: Double, altAboveTerrain: Double, promise: Promise ->
-            val manager = activeView?.geospatialManager
-            if (manager == null) {
-                promise.resolve(false)
-                return@AsyncFunction
-            }
-            manager.createTerrainAnchor(id, lat, lng, altAboveTerrain) { success ->
-                promise.resolve(success)
-            }
-        }
-
-        // 앵커 제거 (동기)
-        Function("removeAnchor") { id: String ->
-            activeView?.geospatialManager?.removeAnchor(id)
-        }
-
-        // 모든 앵커 제거 (동기)
-        Function("removeAllAnchors") {
-            activeView?.geospatialManager?.removeAllAnchors()
-        }
-
         // ARCameraView 네이티브 뷰
         View(ScanPangARCoreView::class) {
             Events(
                 "onGeospatialPoseUpdate",
                 "onTrackingStateChanged",
-                "onAnchorPositionsUpdate",
                 "onReady",
                 "onError"
             )
