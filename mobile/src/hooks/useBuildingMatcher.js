@@ -39,15 +39,19 @@ const useBuildingMatcher = ({
     const buildingDetections = detections.filter(d => d.type === 'building');
     const cupDetections = detections.filter(d => d.type === 'cup');
 
-    // 컵 → 스크린 좌표 변환 (바운딩박스만)
+    // 화면 영역으로 클램핑하는 헬퍼
+    const clampBox = (d) => ({
+      left: Math.max(0, d.left * SW),
+      top: Math.max(0, d.top * SH),
+      right: Math.min(SW, d.right * SW),
+      bottom: Math.min(SH, d.bottom * SH),
+      confidence: d.confidence,
+    });
+
+    // 컵 → 스크린 좌표 변환 (클램핑 적용)
     const cups = cupDetections.map(d => ({
-      detection: {
-        left: d.left * SW,
-        top: d.top * SH,
-        right: d.right * SW,
-        bottom: d.bottom * SH,
-        confidence: d.confidence,
-      },
+      detection: clampBox(d),
+      label: 'Cup',
     }));
 
     // 건물 감지가 없거나 투영 건물이 없으면 매칭 불가
@@ -91,14 +95,8 @@ const useBuildingMatcher = ({
         }
       }
 
-      // 스크린 좌표 변환 (정규화 → 픽셀)
-      const screenBox = {
-        left: det.left * SW,
-        top: det.top * SH,
-        right: det.right * SW,
-        bottom: det.bottom * SH,
-        confidence: det.confidence,
-      };
+      // 스크린 좌표 변환 (정규화 → 픽셀, 화면 클램핑)
+      const screenBox = clampBox(det);
 
       if (bestBuilding) {
         usedBuildingIds.add(bestBuilding.id);

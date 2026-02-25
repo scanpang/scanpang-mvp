@@ -6,7 +6,11 @@
  * - 컵: 노란 테두리 (라벨 없음, 실내 테스트용)
  */
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Dimensions } from 'react-native';
+
+const { width: SW, height: SH } = Dimensions.get('window');
+const LABEL_H = 28; // 라벨 높이
+const PADDING = 4;  // 화면 가장자리 여백
 
 /**
  * @param {Object} props
@@ -36,6 +40,11 @@ const DetectedBuildingOverlay = ({
         const opacity = 0.5 + matchScore * 0.5;
         const borderColor = `rgba(0, 230, 118, ${opacity})`;
 
+        // 라벨 위치: 박스 위에 공간 있으면 위, 없으면 박스 안쪽 상단
+        const labelTop = top > LABEL_H + PADDING
+          ? -LABEL_H
+          : PADDING;
+
         return (
           <TouchableOpacity
             key={building.id}
@@ -46,7 +55,7 @@ const DetectedBuildingOverlay = ({
             activeOpacity={0.7}
             onPress={() => onSelect?.(building)}
           >
-            <View style={[styles.label, { backgroundColor: borderColor }]}>
+            <View style={[styles.label, { backgroundColor: borderColor, top: labelTop }]}>
               <Text style={styles.labelName} numberOfLines={1}>
                 {building.name}
               </Text>
@@ -82,11 +91,17 @@ const DetectedBuildingOverlay = ({
         );
       })}
 
-      {/* 컵: 노란 테두리 (라벨 없음, 실내 테스트용) */}
-      {cupRegions.map(({ detection }, idx) => {
+      {/* 컵: 노란 테두리 + 라벨 (실내 테스트용) */}
+      {cupRegions.map(({ detection, label }, idx) => {
         const { left, top, right, bottom } = detection;
         const width = right - left;
         const height = bottom - top;
+        const cupColor = 'rgba(255, 215, 0, 0.7)';
+
+        // 라벨 위치: 박스 위에 공간 있으면 위, 없으면 박스 안쪽 상단
+        const labelTop = top > LABEL_H + PADDING
+          ? -LABEL_H
+          : PADDING;
 
         return (
           <View
@@ -95,11 +110,17 @@ const DetectedBuildingOverlay = ({
               styles.boundingBox,
               {
                 left, top, width, height,
-                borderColor: 'rgba(255, 215, 0, 0.7)',
+                borderColor: cupColor,
               },
             ]}
             pointerEvents="none"
-          />
+          >
+            <View style={[styles.label, { backgroundColor: cupColor, top: labelTop }]}>
+              <Text style={styles.labelName} numberOfLines={1}>
+                {label || 'Cup'}
+              </Text>
+            </View>
+          </View>
         );
       })}
     </View>
