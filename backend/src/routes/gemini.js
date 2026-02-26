@@ -159,6 +159,81 @@ Only return valid JSON, no markdown or explanation.`;
 });
 
 /**
+ * POST /api/gemini/analyze-minimap
+ * 미니맵 캡쳐(base64) → heading 방향 건물명 추출
+ * Body: { imageBase64, lat, lng, heading }
+ */
+router.post('/analyze-minimap', async (req, res, next) => {
+  try {
+    if (!genAI) {
+      return res.status(503).json({
+        success: false,
+        error: 'Gemini API가 설정되지 않았습니다.',
+      });
+    }
+
+    const { imageBase64, lat, lng, heading } = req.body;
+
+    if (!imageBase64) {
+      return res.status(400).json({ success: false, error: 'imageBase64는 필수입니다.' });
+    }
+
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+
+    const prompt = `이 이미지는 구글맵 미니맵 캡쳐입니다.
+파란색 점이 유저 위치이고, 파란색 삼각형이 유저가 바라보는 방향(heading ${Math.round(heading || 0)}°)입니다.
+
+유저가 바라보는 방향 정면에 있는 건물의 이름을 지도에서 읽어주세요.
+
+규칙:
+- 지도에 표시된 건물명/장소명 텍스트를 정확히 읽어주세요
+- 파란 삼각형 방향의 가장 가까운 건물만 답변
+- 건물명이 여러 개 보이면 방향에 가장 가까운 1개만
+- 건물명이 안 보이면 "unknown"
+- 건물명만 답변 (설명 없이)
+
+답변 형식 (JSON만):
+{"buildingName": "건물명", "confidence": 0.0-1.0}`;
+
+    const analyzePromise = model.generateContent([
+      prompt,
+      {
+        inlineData: {
+          mimeType: 'image/jpeg',
+          data: imageBase64,
+        },
+      },
+    ]);
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Minimap analysis timeout (10s)')), 10000)
+    );
+
+    const result = await Promise.race([analyzePromise, timeoutPromise]);
+    const responseText = result.response.text();
+
+    let parsed;
+    try {
+      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+      parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : { buildingName: 'unknown', confidence: 0 };
+    } catch {
+      parsed = { buildingName: 'unknown', confidence: 0, raw: responseText };
+    }
+
+    console.log(`[Gemini/minimap] heading=${Math.round(heading || 0)}° → "${parsed.buildingName}" (conf=${parsed.confidence})`);
+
+    res.json({
+      success: true,
+      data: parsed,
+    });
+  } catch (err) {
+    if (err.message?.includes('timeout')) {
+      return res.status(408).json({ success: false, error: '미니맵 분석 타임아웃' });
+    }
+    next(err);
+  }
+});
+
+/**
  * POST /api/gemini/live/start
  * Gemini Live 대화 세션 시작
  */

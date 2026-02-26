@@ -209,6 +209,15 @@ export const analyzeFrame = async (imageBase64, options = {}) => {
   }, { timeout: TIMEOUTS.geminiVision });
 };
 
+export const analyzeMinimapFrame = async (imageBase64, options = {}) => {
+  return apiClient.post('/gemini/analyze-minimap', {
+    imageBase64,
+    lat: options.lat || null,
+    lng: options.lng || null,
+    heading: options.heading || null,
+  }, { timeout: 12000 });
+};
+
 export const startGeminiLive = async (options = {}) => {
   return apiClient.post('/gemini/live/start', {
     buildingId: options.buildingId || null,
@@ -258,6 +267,7 @@ export default {
   getUserFriendlyError,
   flushPendingLogs,
   analyzeFrame,
+  analyzeMinimapFrame,
   startGeminiLive,
   sendGeminiMessage,
   getGeminiStreamUrl,
