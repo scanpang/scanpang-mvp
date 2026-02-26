@@ -38,7 +38,13 @@ const DetectedBuildingOverlay = ({
         const width = right - left;
         const height = bottom - top;
         const opacity = 0.5 + matchScore * 0.5;
-        const borderColor = `rgba(0, 230, 118, ${opacity})`;
+
+        // nameSource에 따른 라벨 색상 분기
+        const borderColor = building.nameSource === 'kakao'
+          ? `rgba(255, 193, 7, ${opacity})`       // 노란색
+          : building.nameSource === 'public_data'
+            ? `rgba(33, 150, 243, ${opacity})`     // 파란색
+            : `rgba(0, 230, 118, ${opacity})`;     // 녹색 (vworld 또는 기본)
 
         // 라벨 위치: 박스 위에 공간 있으면 위, 없으면 박스 안쪽 상단
         const labelTop = top > LABEL_H + PADDING

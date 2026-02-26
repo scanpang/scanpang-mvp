@@ -248,9 +248,60 @@ function parseAddressCode(regionResult) {
   };
 }
 
+/**
+ * 건축물대장에서 건물명만 조회 (보강용 경량 함수)
+ * @param {string} sigunguCd - 시군구코드 (5자리)
+ * @param {string} bjdongCd - 법정동코드 (5자리)
+ * @param {string} bun - 번 (4자리)
+ * @param {string} ji - 지 (4자리)
+ * @returns {string|null} 건물명
+ */
+async function getBuildingName(sigunguCd, bjdongCd, bun, ji) {
+  if (!PUBLIC_DATA_API_KEY || !sigunguCd || !bjdongCd) return null;
+
+  const cacheKey = `bldnm_${sigunguCd}_${bjdongCd}_${bun}_${ji}`;
+  const cached = getCached(cacheKey);
+  if (cached !== undefined && cached !== null) return cached;
+
+  try {
+    const res = await axios.get(`${BASE_URL}/getBrTitleInfo`, {
+      params: {
+        serviceKey: PUBLIC_DATA_API_KEY,
+        sigunguCd,
+        bjdongCd,
+        bun: bun || '',
+        ji: ji || '',
+        numOfRows: 1,
+        pageNo: 1,
+        _type: 'json',
+      },
+      timeout: 5000,
+    });
+
+    const items = res.data?.response?.body?.items?.item;
+    if (!items || (typeof items === 'string' && items.trim() === '')) {
+      setCache(cacheKey, null);
+      return null;
+    }
+
+    const item = Array.isArray(items) ? items[0] : items;
+    if (!item || typeof item !== 'object') {
+      setCache(cacheKey, null);
+      return null;
+    }
+    const bldNm = (item.bldNm || '').trim() || null;
+    setCache(cacheKey, bldNm);
+    return bldNm;
+  } catch (err) {
+    console.warn('[공공데이터] 건물명 조회 실패:', err.message);
+    return null;
+  }
+}
+
 module.exports = {
   getBuildingSummary,
   getBuildingFloors,
   getTradePrice,
   parseAddressCode,
+  getBuildingName,
 };

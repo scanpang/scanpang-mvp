@@ -65,7 +65,7 @@ const useBuildingDetect = ({ geoPose = null, geoPoseRef = null, enabled = true }
           ...b,
           confidence: conf / 100,
           confidencePercent: Math.round(conf),
-          detectSource: 'osm_vps',
+          detectSource: 'vworld_vps',
         };
       });
 
