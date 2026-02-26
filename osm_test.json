@@ -1,0 +1,2717 @@
+{
+  "version": 0.6,
+  "generator": "Overpass API 0.7.62.10 2d4cfc48",
+  "osm3s": {
+    "timestamp_osm_base": "2026-02-26T17:03:55Z",
+    "copyright": "The data included in this document is from www.openstreetmap.org. The data is made available under ODbL."
+  },
+  "elements": [
+
+{
+  "type": "way",
+  "id": 194455123,
+  "center": {
+    "lat": 37.4972312,
+    "lon": 127.0273909
+  },
+  "tags": {
+    "building": "yes",
+    "building:levels": "18",
+    "height": "75",
+    "name": "대각빌딩",
+    "source": "Bing",
+    "start_date": "1995"
+  }
+},
+{
+  "type": "way",
+  "id": 194455125,
+  "center": {
+    "lat": 37.4978274,
+    "lon": 127.0285718
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes",
+    "building:levels": "22",
+    "height": "98",
+    "name": "미진프라자",
+    "source": "Bing",
+    "start_date": "1996"
+  }
+},
+{
+  "type": "way",
+  "id": 194455161,
+  "center": {
+    "lat": 37.4980205,
+    "lon": 127.0264468
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "서초구",
+    "addr:housenumber": "3",
+    "addr:postcode": "06615",
+    "addr:street": "서초대로77길",
+    "addr:subdistrict": "서초동",
+    "building": "office",
+    "building:levels": "14",
+    "height": "67",
+    "name": "아라타워",
+    "name:ko": "아라타워",
+    "source": "Bing",
+    "start_date": "2005"
+  }
+},
+{
+  "type": "way",
+  "id": 229258834,
+  "center": {
+    "lat": 37.4973544,
+    "lon": 127.0297043
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:housename": "미림타워",
+    "addr:housenumber": "14",
+    "addr:postcode": "06232",
+    "addr:street": "테헤란로4길",
+    "addr:subdistrict": "역삼동",
+    "building": "commercial",
+    "building:levels": "16",
+    "height": "64",
+    "name": "미림타워",
+    "office": "company",
+    "start_date": "2006"
+  }
+},
+{
+  "type": "way",
+  "id": 301605795,
+  "center": {
+    "lat": 37.4980633,
+    "lon": 127.0259443
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "서초구",
+    "addr:housenumber": "411",
+    "addr:postcode": "06615",
+    "addr:street": "서초대로",
+    "addr:subdistrict": "서초동",
+    "building": "yes",
+    "building:levels": "24",
+    "height": "130",
+    "name": "GT타워",
+    "name:en": "GT Tower",
+    "name:ja": "GTタワー",
+    "name:ko": "GT타워",
+    "office": "yes",
+    "source": "survey",
+    "start_date": "2011",
+    "wikidata": "Q17063396"
+  }
+},
+{
+  "type": "way",
+  "id": 305923846,
+  "center": {
+    "lat": 37.4979163,
+    "lon": 127.0277548
+  },
+  "tags": {
+    "amenity": "restaurant",
+    "building": "yes",
+    "layer": "-1",
+    "location": "underground",
+    "name": "강남역지하쇼핑센터",
+    "name:en": "Gangnam Station Underground Shopping Center",
+    "name:ko": "강남역지하쇼핑센터",
+    "tunnel": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 356427436,
+  "center": {
+    "lat": 37.4979576,
+    "lon": 127.0291331
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:street": "테헤란로",
+    "addr:subdistrict": "역삼동",
+    "building": "commercial",
+    "building:levels": "10",
+    "start_date": "1984"
+  }
+},
+{
+  "type": "way",
+  "id": 356427527,
+  "center": {
+    "lat": 37.4980437,
+    "lon": 127.0293931
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:street": "테헤란로",
+    "addr:subdistrict": "역삼동",
+    "building": "commercial",
+    "building:levels": "20",
+    "height": "84",
+    "name": "캠브리지빌딩",
+    "start_date": "2002"
+  }
+},
+{
+  "type": "way",
+  "id": 379232109,
+  "center": {
+    "lat": 37.4974221,
+    "lon": 127.0284268
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "office",
+    "building:levels": "18",
+    "height": "82",
+    "name": "강남센터빌딩",
+    "name:ja": "江南センタービルディング",
+    "start_date": "1998"
+  }
+},
+{
+  "type": "way",
+  "id": 379232111,
+  "center": {
+    "lat": 37.4966478,
+    "lon": 127.0251091
+  },
+  "tags": {
+    "building": "office",
+    "building:levels": "20",
+    "height": "81",
+    "name": "BNK디지털타워",
+    "start_date": "1997"
+  }
+},
+{
+  "type": "way",
+  "id": 379232113,
+  "center": {
+    "lat": 37.4966393,
+    "lon": 127.0276626
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "서초구",
+    "addr:housenumber": "381",
+    "addr:postcode": "06620",
+    "addr:street": "강남대로",
+    "addr:subdistrict": "서초동",
+    "building": "apartments",
+    "building:flats": "174",
+    "building:levels": "21",
+    "height": "84",
+    "name": "두산베어스텔오피스텔",
+    "name:ko": "두산베어스텔오피스텔",
+    "start_date": "1999"
+  }
+},
+{
+  "type": "way",
+  "id": 379232116,
+  "center": {
+    "lat": 37.4970797,
+    "lon": 127.0286351
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "commercial",
+    "building:levels": "29",
+    "height": "143",
+    "name": "메리츠타워",
+    "name:en": "Meritz Tower",
+    "name:ja": "メリッツタワー",
+    "start_date": "2005"
+  }
+},
+{
+  "type": "way",
+  "id": 379232119,
+  "center": {
+    "lat": 37.4968853,
+    "lon": 127.0275575
+  },
+  "tags": {
+    "building": "office",
+    "building:levels": "2",
+    "name": "모델하우스"
+  }
+},
+{
+  "type": "way",
+  "id": 379232121,
+  "center": {
+    "lat": 37.4970513,
+    "lon": 127.0274873
+  },
+  "tags": {
+    "building": "yes",
+    "building:levels": "16",
+    "start_date": "2025"
+  }
+},
+{
+  "type": "way",
+  "id": 379232123,
+  "center": {
+    "lat": 37.4965764,
+    "lon": 127.0247826
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "서초구",
+    "addr:housenumber": "396",
+    "addr:postcode": "06619",
+    "addr:street": "서초대로",
+    "addr:subdistrict": "서초동",
+    "building": "office",
+    "building:levels": "21",
+    "height": "83",
+    "name": "강남빌딩",
+    "smoking": "isolated",
+    "start_date": "1995"
+  }
+},
+{
+  "type": "way",
+  "id": 379232126,
+  "center": {
+    "lat": 37.4976147,
+    "lon": 127.0287228
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "office"
+  }
+},
+{
+  "type": "way",
+  "id": 491095925,
+  "center": {
+    "lat": 37.4992477,
+    "lon": 127.0254659
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "서초구",
+    "addr:housenumber": "10",
+    "addr:postcode": "06614",
+    "addr:street": "강남대로61길",
+    "addr:subdistrict": "서초동",
+    "building": "residential",
+    "building:levels": "10",
+    "name": "센터프라자오피스텔",
+    "name:ko": "센터프라자오피스텔",
+    "start_date": "1990"
+  }
+},
+{
+  "type": "way",
+  "id": 504190322,
+  "center": {
+    "lat": 37.4963223,
+    "lon": 127.0277619
+  },
+  "tags": {
+    "building": "yes",
+    "building:levels": "12"
+  }
+},
+{
+  "type": "way",
+  "id": 504194692,
+  "center": {
+    "lat": 37.4965990,
+    "lon": 127.0275293
+  },
+  "tags": {
+    "building": "yes",
+    "building:levels": "5"
+  }
+},
+{
+  "type": "way",
+  "id": 504194693,
+  "center": {
+    "lat": 37.4966790,
+    "lon": 127.0277923
+  },
+  "tags": {
+    "building": "yes",
+    "building:levels": "5"
+  }
+},
+{
+  "type": "way",
+  "id": 504227059,
+  "center": {
+    "lat": 37.4967453,
+    "lon": 127.0257553
+  },
+  "tags": {
+    "building": "yes",
+    "building:levels": "34",
+    "building:material": "glass",
+    "height": "150",
+    "start_date": "2007"
+  }
+},
+{
+  "type": "way",
+  "id": 504227064,
+  "center": {
+    "lat": 37.4970424,
+    "lon": 127.0257465
+  },
+  "tags": {
+    "building": "yes",
+    "building:material": "glass"
+  }
+},
+{
+  "type": "way",
+  "id": 504487387,
+  "center": {
+    "lat": 37.4960430,
+    "lon": 127.0281786
+  },
+  "tags": {
+    "building": "roof",
+    "building:levels": "20",
+    "layer": "1"
+  }
+},
+{
+  "type": "way",
+  "id": 504487389,
+  "center": {
+    "lat": 37.4959550,
+    "lon": 127.0279187
+  },
+  "tags": {
+    "building": "yes",
+    "building:levels": "3"
+  }
+},
+{
+  "type": "way",
+  "id": 504506976,
+  "center": {
+    "lat": 37.4982421,
+    "lon": 127.0268515
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "서초구",
+    "addr:housenumber": "399",
+    "addr:postcode": "06615",
+    "addr:street": "강남대로",
+    "addr:subdistrict": "서초동",
+    "building": "commercial",
+    "building:levels": "10",
+    "height": "35",
+    "start_date": "1984"
+  }
+},
+{
+  "type": "way",
+  "id": 504506979,
+  "center": {
+    "lat": 37.4982289,
+    "lon": 127.0269186
+  },
+  "tags": {
+    "building": "yes",
+    "building:levels": "12.5",
+    "name": "몬테소리빌딩"
+  }
+},
+{
+  "type": "way",
+  "id": 504506981,
+  "center": {
+    "lat": 37.4979308,
+    "lon": 127.0266241
+  },
+  "tags": {
+    "building": "yes",
+    "building:levels": "19"
+  }
+},
+{
+  "type": "way",
+  "id": 504507948,
+  "center": {
+    "lat": 37.4984487,
+    "lon": 127.0270010
+  },
+  "tags": {
+    "building": "yes",
+    "building:levels": "13"
+  }
+},
+{
+  "type": "way",
+  "id": 504508984,
+  "center": {
+    "lat": 37.4987437,
+    "lon": 127.0267000
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "서초구",
+    "addr:housenumber": "405",
+    "addr:postcode": "06615",
+    "addr:street": "강남대로",
+    "addr:subdistrict": "서초동",
+    "building": "office",
+    "building:levels": "15",
+    "name": "통영빌딩",
+    "name:ko": "통영빌딩",
+    "start_date": "1983"
+  }
+},
+{
+  "type": "way",
+  "id": 504509913,
+  "center": {
+    "lat": 37.4989638,
+    "lon": 127.0265921
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "서초구",
+    "addr:housenumber": "407",
+    "addr:postcode": "06615",
+    "addr:street": "강남대로",
+    "addr:subdistrict": "서초동",
+    "building": "commercial",
+    "building:levels": "15",
+    "height": "95",
+    "start_date": "2023"
+  }
+},
+{
+  "type": "way",
+  "id": 504516338,
+  "center": {
+    "lat": 37.4990334,
+    "lon": 127.0259775
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "서초구",
+    "addr:housenumber": "7",
+    "addr:postcode": "06615",
+    "addr:street": "강남대로61길",
+    "addr:subdistrict": "서초동",
+    "building": "commercial",
+    "building:levels": "3.5",
+    "name": "서울빌딩",
+    "name:ko": "서울빌딩"
+  }
+},
+{
+  "type": "way",
+  "id": 504516339,
+  "center": {
+    "lat": 37.4989284,
+    "lon": 127.0260902
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "서초구",
+    "addr:housenumber": "15",
+    "addr:postcode": "06615",
+    "addr:street": "서초대로77길",
+    "addr:subdistrict": "서초동",
+    "building": "commercial",
+    "building:levels": "7"
+  }
+},
+{
+  "type": "way",
+  "id": 504516340,
+  "center": {
+    "lat": 37.4988380,
+    "lon": 127.0261588
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "서초구",
+    "addr:housenumber": "13",
+    "addr:postcode": "06615",
+    "addr:street": "서초대로77길",
+    "addr:subdistrict": "서초동",
+    "building": "commercial",
+    "building:levels": "7.5",
+    "name": "강남빌딩",
+    "name:ko": "강남빌딩"
+  }
+},
+{
+  "type": "way",
+  "id": 504516341,
+  "center": {
+    "lat": 37.4987119,
+    "lon": 127.0261690
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "서초구",
+    "addr:housenumber": "11",
+    "addr:postcode": "06615",
+    "addr:street": "서초대로77길",
+    "addr:subdistrict": "서초동",
+    "building": "yes",
+    "building:levels": "6.5"
+  }
+},
+{
+  "type": "way",
+  "id": 504516345,
+  "center": {
+    "lat": 37.4986576,
+    "lon": 127.0260584
+  },
+  "tags": {
+    "building": "yes",
+    "building:levels": "5.5"
+  }
+},
+{
+  "type": "way",
+  "id": 504516346,
+  "center": {
+    "lat": 37.4987069,
+    "lon": 127.0260311
+  },
+  "tags": {
+    "building": "yes",
+    "building:levels": "2"
+  }
+},
+{
+  "type": "way",
+  "id": 504769929,
+  "center": {
+    "lat": 37.4985580,
+    "lon": 127.0261881
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "서초구",
+    "addr:housenumber": "9",
+    "addr:postcode": "06615",
+    "addr:street": "서초대로77길",
+    "addr:subdistrict": "서초동",
+    "building": "commercial",
+    "building:levels": "13",
+    "height": "42",
+    "start_date": "2005"
+  }
+},
+{
+  "type": "way",
+  "id": 504769935,
+  "center": {
+    "lat": 37.4985325,
+    "lon": 127.0261172
+  },
+  "tags": {
+    "building": "yes",
+    "building:levels": "9.5"
+  }
+},
+{
+  "type": "way",
+  "id": 504769939,
+  "center": {
+    "lat": 37.4985730,
+    "lon": 127.0262642
+  },
+  "tags": {
+    "building": "yes",
+    "building:levels": "9.5"
+  }
+},
+{
+  "type": "way",
+  "id": 504769943,
+  "center": {
+    "lat": 37.4984348,
+    "lon": 127.0263370
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "서초구",
+    "addr:housenumber": "7",
+    "addr:postcode": "06615",
+    "addr:street": "서초대로77길",
+    "addr:subdistrict": "서초동",
+    "building": "commercial",
+    "building:levels": "13",
+    "height": "45",
+    "start_date": "2013"
+  }
+},
+{
+  "type": "way",
+  "id": 504769949,
+  "center": {
+    "lat": 37.4983290,
+    "lon": 127.0264006
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "서초구",
+    "addr:housenumber": "5",
+    "addr:postcode": "06615",
+    "addr:street": "서초대로77길",
+    "addr:subdistrict": "서초동",
+    "building": "commercial",
+    "building:levels": "5"
+  }
+},
+{
+  "type": "way",
+  "id": 504769952,
+  "center": {
+    "lat": 37.4982821,
+    "lon": 127.0262421
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "서초구",
+    "addr:housenumber": "8",
+    "addr:postcode": "06615",
+    "addr:street": "서초대로75길",
+    "addr:subdistrict": "서초동",
+    "building": "commercial",
+    "building:levels": "3"
+  }
+},
+{
+  "type": "way",
+  "id": 504776989,
+  "center": {
+    "lat": 37.4985466,
+    "lon": 127.0257519
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:housenumber": "12",
+    "addr:postcode": "06615",
+    "addr:street": "서초대로73길",
+    "building": "commercial",
+    "building:levels": "9",
+    "height": "35",
+    "start_date": "1992"
+  }
+},
+{
+  "type": "way",
+  "id": 504778073,
+  "center": {
+    "lat": 37.4988814,
+    "lon": 127.0255563
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "서초구",
+    "addr:housenumber": "13",
+    "addr:postcode": "06615",
+    "addr:street": "강남대로61길",
+    "addr:subdistrict": "서초동",
+    "building": "commercial",
+    "building:levels": "3.5"
+  }
+},
+{
+  "type": "way",
+  "id": 504782426,
+  "center": {
+    "lat": 37.4975532,
+    "lon": 127.0255218
+  },
+  "tags": {
+    "building": "commercial"
+  }
+},
+{
+  "type": "way",
+  "id": 504782428,
+  "center": {
+    "lat": 37.4976957,
+    "lon": 127.0254417
+  },
+  "tags": {
+    "building": "commercial",
+    "building:levels": "2.5"
+  }
+},
+{
+  "type": "way",
+  "id": 504782429,
+  "center": {
+    "lat": 37.4976944,
+    "lon": 127.0251687
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "서초구",
+    "addr:housenumber": "405",
+    "addr:postcode": "06616",
+    "addr:street": "서초대로",
+    "addr:subdistrict": "서초동",
+    "building": "commercial",
+    "building:levels": "1.5"
+  }
+},
+{
+  "type": "way",
+  "id": 509535463,
+  "center": {
+    "lat": 37.4981012,
+    "lon": 127.0249348
+  },
+  "tags": {
+    "building": "yes",
+    "building:levels": "3.75"
+  }
+},
+{
+  "type": "way",
+  "id": 509535466,
+  "center": {
+    "lat": 37.4981792,
+    "lon": 127.0250183
+  },
+  "tags": {
+    "building": "yes",
+    "building:levels": "2.5"
+  }
+},
+{
+  "type": "way",
+  "id": 539224759,
+  "center": {
+    "lat": 37.4994138,
+    "lon": 127.0263106
+  },
+  "tags": {
+    "building": "yes",
+    "building:levels": "7",
+    "building:part": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 539224760,
+  "center": {
+    "lat": 37.4997666,
+    "lon": 127.0261521
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "서초구",
+    "addr:housenumber": "419",
+    "addr:postcode": "06614",
+    "addr:street": "강남대로",
+    "addr:subdistrict": "서초동",
+    "building": "office",
+    "building:levels": "21",
+    "height": "80",
+    "start_date": "1996"
+  }
+},
+{
+  "type": "way",
+  "id": 539224762,
+  "center": {
+    "lat": 37.4996408,
+    "lon": 127.0255204
+  },
+  "tags": {
+    "building": "commercial",
+    "building:levels": "1",
+    "building:part": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 539229585,
+  "center": {
+    "lat": 37.4999553,
+    "lon": 127.0261249
+  },
+  "tags": {
+    "building": "commercial",
+    "building:levels": "9.5",
+    "building:part": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 539763073,
+  "center": {
+    "lat": 37.4995580,
+    "lon": 127.0251736
+  },
+  "tags": {
+    "building": "commercial",
+    "building:levels": "3.5",
+    "building:part": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 539763074,
+  "center": {
+    "lat": 37.4995239,
+    "lon": 127.0253022
+  },
+  "tags": {
+    "building": "commercial",
+    "building:levels": "2.5",
+    "building:part": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 539765452,
+  "center": {
+    "lat": 37.4997570,
+    "lon": 127.0250070
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "서초구",
+    "addr:housenumber": "26",
+    "addr:postcode": "06614",
+    "addr:street": "서초대로73길",
+    "addr:subdistrict": "서초동",
+    "building": "parking",
+    "building:levels": "3"
+  }
+},
+{
+  "type": "way",
+  "id": 539765453,
+  "center": {
+    "lat": 37.4999046,
+    "lon": 127.0255427
+  },
+  "tags": {
+    "building": "commercial",
+    "building:levels": "9",
+    "building:part": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 539765456,
+  "center": {
+    "lat": 37.4997635,
+    "lon": 127.0252962
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "서초구",
+    "addr:housenumber": "23",
+    "addr:postcode": "06614",
+    "addr:street": "서초대로75길",
+    "addr:subdistrict": "서초동",
+    "building": "commercial"
+  }
+},
+{
+  "type": "way",
+  "id": 539765457,
+  "center": {
+    "lat": 37.4998731,
+    "lon": 127.0251972
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "서초구",
+    "addr:housenumber": "25",
+    "addr:postcode": "06614",
+    "addr:street": "서초대로75길",
+    "addr:subdistrict": "서초동",
+    "building": "commercial"
+  }
+},
+{
+  "type": "way",
+  "id": 539765458,
+  "center": {
+    "lat": 37.4999761,
+    "lon": 127.0251468
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:housenumber": "27",
+    "addr:street": "서초대로75길",
+    "building": "commercial"
+  }
+},
+{
+  "type": "way",
+  "id": 539765461,
+  "center": {
+    "lat": 37.5000875,
+    "lon": 127.0248387
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:housenumber": "30",
+    "addr:postcode": "06614",
+    "addr:street": "서초대로73길",
+    "building": "yes",
+    "building:levels": "5.5"
+  }
+},
+{
+  "type": "way",
+  "id": 555228273,
+  "center": {
+    "lat": 37.4989431,
+    "lon": 127.0276489
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes",
+    "building:levels": "18",
+    "height": "82",
+    "start_date": "1989"
+  }
+},
+{
+  "type": "way",
+  "id": 555228275,
+  "center": {
+    "lat": 37.4987709,
+    "lon": 127.0278000
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes",
+    "building:levels": "10",
+    "height": "41",
+    "start_date": "1991"
+  }
+},
+{
+  "type": "way",
+  "id": 555228277,
+  "center": {
+    "lat": 37.4986253,
+    "lon": 127.0280417
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes",
+    "building:levels": "15",
+    "height": "58",
+    "name": "이즈타워",
+    "ref:building:serial": "1168010100108210001000001",
+    "start_date": "2005"
+  }
+},
+{
+  "type": "way",
+  "id": 557469205,
+  "center": {
+    "lat": 37.4984186,
+    "lon": 127.0250936
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 557469206,
+  "center": {
+    "lat": 37.4986378,
+    "lon": 127.0250221
+  },
+  "tags": {
+    "building": "apartments",
+    "building:flats": "125",
+    "building:levels": "22",
+    "height": "87",
+    "start_date": "2001"
+  }
+},
+{
+  "type": "way",
+  "id": 557469267,
+  "center": {
+    "lat": 37.4999619,
+    "lon": 127.0281217
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 557469270,
+  "center": {
+    "lat": 37.4999227,
+    "lon": 127.0279115
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 557469271,
+  "center": {
+    "lat": 37.5000529,
+    "lon": 127.0278552
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 557469273,
+  "center": {
+    "lat": 37.5000369,
+    "lon": 127.0276889
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 557469275,
+  "center": {
+    "lat": 37.4998717,
+    "lon": 127.0277569
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 557469281,
+  "center": {
+    "lat": 37.4999632,
+    "lon": 127.0288007
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 557469282,
+  "center": {
+    "lat": 37.4999159,
+    "lon": 127.0286557
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 557469283,
+  "center": {
+    "lat": 37.4998725,
+    "lon": 127.0284852
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 557469284,
+  "center": {
+    "lat": 37.4998344,
+    "lon": 127.0283029
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 557469287,
+  "center": {
+    "lat": 37.4999765,
+    "lon": 127.0290658
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 557469288,
+  "center": {
+    "lat": 37.4997446,
+    "lon": 127.0280892
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 557469289,
+  "center": {
+    "lat": 37.4996730,
+    "lon": 127.0278234
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 557469290,
+  "center": {
+    "lat": 37.5000385,
+    "lon": 127.0292409
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 557469291,
+  "center": {
+    "lat": 37.5000708,
+    "lon": 127.0294496
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 557469292,
+  "center": {
+    "lat": 37.4997598,
+    "lon": 127.0292059
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 557469293,
+  "center": {
+    "lat": 37.4997406,
+    "lon": 127.0289817
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 557469294,
+  "center": {
+    "lat": 37.4996884,
+    "lon": 127.0287577
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 557469295,
+  "center": {
+    "lat": 37.4996581,
+    "lon": 127.0285881
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 557469296,
+  "center": {
+    "lat": 37.4996118,
+    "lon": 127.0284292
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 557469297,
+  "center": {
+    "lat": 37.4995584,
+    "lon": 127.0282689
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 557469298,
+  "center": {
+    "lat": 37.4994972,
+    "lon": 127.0281000
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 557469299,
+  "center": {
+    "lat": 37.4994358,
+    "lon": 127.0279384
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 557469301,
+  "center": {
+    "lat": 37.4998577,
+    "lon": 127.0295095
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 557469321,
+  "center": {
+    "lat": 37.4997432,
+    "lon": 127.0300291
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 557469322,
+  "center": {
+    "lat": 37.4996695,
+    "lon": 127.0298222
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 557469323,
+  "center": {
+    "lat": 37.4996363,
+    "lon": 127.0296147
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 557469324,
+  "center": {
+    "lat": 37.4994603,
+    "lon": 127.0299179
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 557469325,
+  "center": {
+    "lat": 37.4994108,
+    "lon": 127.0297193
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 557469327,
+  "center": {
+    "lat": 37.4991497,
+    "lon": 127.0302649
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:housenumber": "117",
+    "addr:postcode": "06134",
+    "addr:street": "테헤란로",
+    "addr:subdistrict": "역삼동",
+    "building": "office",
+    "building:levels": "19",
+    "height": "89",
+    "name": "KB손해보험 본사",
+    "name:ja": "KB損害保険 本社",
+    "office": "insurance",
+    "source": "도로명주소",
+    "start_date": "2006"
+  }
+},
+{
+  "type": "way",
+  "id": 557469329,
+  "center": {
+    "lat": 37.4990618,
+    "lon": 127.0299064
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes",
+    "building:levels": "15",
+    "height": "66",
+    "start_date": "1994"
+  }
+},
+{
+  "type": "way",
+  "id": 557469330,
+  "center": {
+    "lat": 37.4995033,
+    "lon": 127.0292801
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 557469331,
+  "center": {
+    "lat": 37.4993621,
+    "lon": 127.0288477
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 557469332,
+  "center": {
+    "lat": 37.4993012,
+    "lon": 127.0285788
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 557469333,
+  "center": {
+    "lat": 37.4991931,
+    "lon": 127.0289166
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes",
+    "building:levels": "11",
+    "height": "33",
+    "start_date": "2019"
+  }
+},
+{
+  "type": "way",
+  "id": 557469334,
+  "center": {
+    "lat": 37.4994381,
+    "lon": 127.0290449
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes",
+    "building:levels": "10",
+    "height": "30",
+    "start_date": "2021"
+  }
+},
+{
+  "type": "way",
+  "id": 557469335,
+  "center": {
+    "lat": 37.4992898,
+    "lon": 127.0292466
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:housenumber": "7",
+    "addr:postcode": "06134",
+    "addr:street": "테헤란로5길",
+    "addr:subdistrict": "역삼동",
+    "addr:unit": "119",
+    "building": "yes",
+    "building:levels": "13",
+    "height": "48",
+    "name": "후추(whochooz)",
+    "start_date": "2014",
+    "website": "https://www.instagram.com/whochooz/"
+  }
+},
+{
+  "type": "way",
+  "id": 557469336,
+  "center": {
+    "lat": 37.4991296,
+    "lon": 127.0287993
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes",
+    "building:levels": "9",
+    "height": "25",
+    "start_date": "2002"
+  }
+},
+{
+  "type": "way",
+  "id": 557469337,
+  "center": {
+    "lat": 37.4990997,
+    "lon": 127.0286611
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 557469338,
+  "center": {
+    "lat": 37.4990505,
+    "lon": 127.0285037
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:housenumber": "13",
+    "addr:street": "강남대로92길",
+    "addr:subdistrict": "역삼동",
+    "building": "yes",
+    "building:levels": "10",
+    "height": "29",
+    "start_date": "2014"
+  }
+},
+{
+  "type": "way",
+  "id": 557469339,
+  "center": {
+    "lat": 37.4989628,
+    "lon": 127.0282276
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 557469340,
+  "center": {
+    "lat": 37.4989892,
+    "lon": 127.0295426
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "apartments",
+    "building:flats": "194",
+    "building:levels": "15",
+    "height": "84",
+    "start_date": "2004"
+  }
+},
+{
+  "type": "way",
+  "id": 557469341,
+  "center": {
+    "lat": 37.4989036,
+    "lon": 127.0292950
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes",
+    "building:levels": "8",
+    "height": "33",
+    "start_date": "1985"
+  }
+},
+{
+  "type": "way",
+  "id": 557469342,
+  "center": {
+    "lat": 37.4988370,
+    "lon": 127.0290143
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes",
+    "building:levels": "10",
+    "height": "40",
+    "start_date": "1984"
+  }
+},
+{
+  "type": "way",
+  "id": 557469343,
+  "center": {
+    "lat": 37.4986873,
+    "lon": 127.0287646
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes",
+    "building:levels": "15",
+    "height": "62",
+    "start_date": "1992"
+  }
+},
+{
+  "type": "way",
+  "id": 557469344,
+  "center": {
+    "lat": 37.4986572,
+    "lon": 127.0285482
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes",
+    "building:levels": "15",
+    "height": "63",
+    "start_date": "2008"
+  }
+},
+{
+  "type": "way",
+  "id": 557469345,
+  "center": {
+    "lat": 37.4986196,
+    "lon": 127.0283673
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes",
+    "building:levels": "15",
+    "height": "70",
+    "start_date": "2023"
+  }
+},
+{
+  "type": "way",
+  "id": 557469352,
+  "center": {
+    "lat": 37.4999768,
+    "lon": 127.0274227
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 557469353,
+  "center": {
+    "lat": 37.4998200,
+    "lon": 127.0274748
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 557469355,
+  "center": {
+    "lat": 37.5001321,
+    "lon": 127.0270830
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 557469356,
+  "center": {
+    "lat": 37.4997964,
+    "lon": 127.0271766
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 557469357,
+  "center": {
+    "lat": 37.4995165,
+    "lon": 127.0272874
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 557469358,
+  "center": {
+    "lat": 37.4996180,
+    "lon": 127.0275596
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 557469359,
+  "center": {
+    "lat": 37.4994518,
+    "lon": 127.0276371
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 557469360,
+  "center": {
+    "lat": 37.4993636,
+    "lon": 127.0273796
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 557469361,
+  "center": {
+    "lat": 37.4992268,
+    "lon": 127.0275562
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes",
+    "building:levels": "13",
+    "height": "57",
+    "start_date": "1977"
+  }
+},
+{
+  "type": "way",
+  "id": 561457378,
+  "center": {
+    "lat": 37.4962717,
+    "lon": 127.0301488
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "apartments",
+    "building:flats": "69",
+    "building:levels": "15",
+    "height": "46",
+    "name": "역삼우정에쉐르1주상복합",
+    "start_date": "2004"
+  }
+},
+{
+  "type": "way",
+  "id": 561457387,
+  "center": {
+    "lat": 37.4960138,
+    "lon": 127.0299916
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "apartments",
+    "building:flats": "67",
+    "building:levels": "9",
+    "height": "32",
+    "start_date": "2023"
+  }
+},
+{
+  "type": "way",
+  "id": 561457388,
+  "center": {
+    "lat": 37.4961844,
+    "lon": 127.0297967
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes",
+    "building:levels": "9",
+    "height": "29",
+    "start_date": "2024"
+  }
+},
+{
+  "type": "way",
+  "id": 561457389,
+  "center": {
+    "lat": 37.4965071,
+    "lon": 127.0300739
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes",
+    "building:levels": "14",
+    "height": "50",
+    "name": "송민빌딩",
+    "start_date": "2009"
+  }
+},
+{
+  "type": "way",
+  "id": 561457391,
+  "center": {
+    "lat": 37.4960160,
+    "lon": 127.0294370
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 561457392,
+  "center": {
+    "lat": 37.4960070,
+    "lon": 127.0290454
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes",
+    "building:levels": "17",
+    "height": "68",
+    "name": "화인타워",
+    "start_date": "1991"
+  }
+},
+{
+  "type": "way",
+  "id": 561457395,
+  "center": {
+    "lat": 37.4977272,
+    "lon": 127.0300627
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 561457396,
+  "center": {
+    "lat": 37.4978871,
+    "lon": 127.0299102
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes",
+    "building:levels": "13",
+    "height": "55",
+    "start_date": "2020"
+  }
+},
+{
+  "type": "way",
+  "id": 561457397,
+  "center": {
+    "lat": 37.4966606,
+    "lon": 127.0300181
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes",
+    "building:levels": "14",
+    "height": "50",
+    "name": "제이스타워",
+    "start_date": "2008"
+  }
+},
+{
+  "type": "way",
+  "id": 561457400,
+  "center": {
+    "lat": 37.4982816,
+    "lon": 127.0301170
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes",
+    "building:levels": "20",
+    "height": "81",
+    "start_date": "1996"
+  }
+},
+{
+  "type": "way",
+  "id": 561457401,
+  "center": {
+    "lat": 37.4969898,
+    "lon": 127.0298389
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "apartments",
+    "building:flats": "358",
+    "building:levels": "15",
+    "height": "57",
+    "name": "강남역효성해링턴타워더퍼스트 오피스텔",
+    "start_date": "2014"
+  }
+},
+{
+  "type": "way",
+  "id": 561457402,
+  "center": {
+    "lat": 37.4964637,
+    "lon": 127.0296903
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes",
+    "building:levels": "15",
+    "height": "50",
+    "name": "비젼타워",
+    "start_date": "2009"
+  }
+},
+{
+  "type": "way",
+  "id": 561457403,
+  "center": {
+    "lat": 37.4962082,
+    "lon": 127.0293120
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 561457404,
+  "center": {
+    "lat": 37.4967427,
+    "lon": 127.0294306
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes",
+    "building:levels": "14",
+    "height": "47",
+    "name": "천궁빌딩",
+    "start_date": "2021"
+  }
+},
+{
+  "type": "way",
+  "id": 561457405,
+  "center": {
+    "lat": 37.4973560,
+    "lon": 127.0293536
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 561457406,
+  "center": {
+    "lat": 37.4972925,
+    "lon": 127.0292114
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes",
+    "building:levels": "14",
+    "height": "44",
+    "start_date": "2016"
+  }
+},
+{
+  "type": "way",
+  "id": 561457407,
+  "center": {
+    "lat": 37.4972162,
+    "lon": 127.0293867
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 561457408,
+  "center": {
+    "lat": 37.4964536,
+    "lon": 127.0293155
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes",
+    "building:levels": "13",
+    "height": "40",
+    "name": "우인빌딩",
+    "start_date": "2005"
+  }
+},
+{
+  "type": "way",
+  "id": 561457409,
+  "center": {
+    "lat": 37.4963917,
+    "lon": 127.0291802
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes",
+    "name": "역삼빌딩"
+  }
+},
+{
+  "type": "way",
+  "id": 561457410,
+  "center": {
+    "lat": 37.4962068,
+    "lon": 127.0288795
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes",
+    "building:levels": "20",
+    "height": "99",
+    "name": "형제빌딩",
+    "start_date": "2022"
+  }
+},
+{
+  "type": "way",
+  "id": 561457411,
+  "center": {
+    "lat": 37.4965535,
+    "lon": 127.0287488
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes",
+    "building:levels": "15",
+    "height": "72",
+    "name": "8258빌딩",
+    "start_date": "2012"
+  }
+},
+{
+  "type": "way",
+  "id": 561457412,
+  "center": {
+    "lat": 37.4972059,
+    "lon": 127.0262400
+  },
+  "tags": {
+    "building": "yes",
+    "height": "30"
+  }
+},
+{
+  "type": "way",
+  "id": 561457413,
+  "center": {
+    "lat": 37.4966986,
+    "lon": 127.0290679
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 561457414,
+  "center": {
+    "lat": 37.4966249,
+    "lon": 127.0286203
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "yes",
+    "building:levels": "14",
+    "height": "52",
+    "name": "준빌딩",
+    "start_date": "2005"
+  }
+},
+{
+  "type": "way",
+  "id": 561457415,
+  "center": {
+    "lat": 37.4976387,
+    "lon": 127.0292922
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "apartments",
+    "building:flats": "728",
+    "building:levels": "19",
+    "height": "70",
+    "start_date": "2015"
+  }
+},
+{
+  "type": "way",
+  "id": 660379131,
+  "center": {
+    "lat": 37.4975513,
+    "lon": 127.0254535
+  },
+  "tags": {
+    "building": "commercial"
+  }
+},
+{
+  "type": "way",
+  "id": 1080486980,
+  "center": {
+    "lat": 37.4971079,
+    "lon": 127.0295037
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "강남구",
+    "addr:subdistrict": "역삼동",
+    "building": "commercial"
+  }
+},
+{
+  "type": "way",
+  "id": 1432286087,
+  "center": {
+    "lat": 37.4959582,
+    "lon": 127.0251940
+  },
+  "tags": {
+    "building": "apartments",
+    "building:flats": "64",
+    "building:levels": "19",
+    "height": "63",
+    "start_date": "1996"
+  }
+},
+{
+  "type": "way",
+  "id": 1432286088,
+  "center": {
+    "lat": 37.4961261,
+    "lon": 127.0249393
+  },
+  "tags": {
+    "building": "yes",
+    "building:levels": "9",
+    "height": "35",
+    "start_date": "1996"
+  }
+},
+{
+  "type": "way",
+  "id": 1432287934,
+  "center": {
+    "lat": 37.4985267,
+    "lon": 127.0268299
+  },
+  "tags": {
+    "building": "yes",
+    "building:levels": "19",
+    "height": "100",
+    "start_date": "2023"
+  }
+},
+{
+  "type": "way",
+  "id": 1432287935,
+  "center": {
+    "lat": 37.4991414,
+    "lon": 127.0265071
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "서초구",
+    "addr:housenumber": "407",
+    "addr:postcode": "06615",
+    "addr:street": "강남대로",
+    "addr:subdistrict": "서초동",
+    "building": "commercial",
+    "building:levels": "16",
+    "height": "94",
+    "start_date": "2023"
+  }
+},
+{
+  "type": "way",
+  "id": 1432299311,
+  "center": {
+    "lat": 37.4982543,
+    "lon": 127.0251521
+  },
+  "tags": {
+    "building": "yes",
+    "building:levels": "13",
+    "height": "44",
+    "start_date": "2004"
+  }
+},
+{
+  "type": "way",
+  "id": 1432576160,
+  "center": {
+    "lat": 37.4994503,
+    "lon": 127.0257555
+  },
+  "tags": {
+    "building": "yes",
+    "building:levels": "15",
+    "height": "78",
+    "start_date": "2020"
+  }
+},
+{
+  "type": "way",
+  "id": 1435215492,
+  "center": {
+    "lat": 37.4992135,
+    "lon": 127.0282308
+  },
+  "tags": {
+    "building": "yes",
+    "building:levels": "13",
+    "height": "45",
+    "start_date": "2019"
+  }
+},
+{
+  "type": "way",
+  "id": 1436209761,
+  "center": {
+    "lat": 37.4968674,
+    "lon": 127.0295667
+  },
+  "tags": {
+    "building": "yes",
+    "building:levels": "15",
+    "height": "50",
+    "start_date": "2018"
+  }
+},
+{
+  "type": "relation",
+  "id": 7718144,
+  "center": {
+    "lat": 37.4995151,
+    "lon": 127.0262613
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "서초구",
+    "addr:housenumber": "415",
+    "addr:postcode": "06614",
+    "addr:street": "강남대로",
+    "building": "office",
+    "building:levels": "14",
+    "building:part": "no",
+    "height": "57",
+    "start_date": "1989",
+    "type": "multipolygon"
+  }
+},
+{
+  "type": "relation",
+  "id": 7718145,
+  "center": {
+    "lat": 37.4997276,
+    "lon": 127.0256485
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "서초구",
+    "addr:housenumber": "23",
+    "addr:postcode": "06614",
+    "addr:street": "서초대로77길",
+    "building": "commercial",
+    "building:part": "no",
+    "type": "multipolygon"
+  }
+},
+{
+  "type": "relation",
+  "id": 7718463,
+  "center": {
+    "lat": 37.5000062,
+    "lon": 127.0259889
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "서초구",
+    "addr:housenumber": "421",
+    "addr:postcode": "06614",
+    "addr:street": "강남대로",
+    "building": "commercial",
+    "building:levels": "13",
+    "height": "40",
+    "start_date": "2010",
+    "type": "multipolygon"
+  }
+},
+{
+  "type": "relation",
+  "id": 7724793,
+  "center": {
+    "lat": 37.4995282,
+    "lon": 127.0252797
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "서초구",
+    "addr:housenumber": "24",
+    "addr:postcode": "06614",
+    "addr:street": "서초대로73길",
+    "building": "commercial",
+    "building:part": "no",
+    "type": "multipolygon"
+  }
+},
+{
+  "type": "relation",
+  "id": 7724814,
+  "center": {
+    "lat": 37.4999048,
+    "lon": 127.0255435
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "서초구",
+    "addr:housenumber": "25",
+    "addr:postcode": "06614",
+    "addr:street": "서초대로77길",
+    "building": "commercial",
+    "building:part": "no",
+    "type": "multipolygon"
+  }
+},
+{
+  "type": "relation",
+  "id": 7724815,
+  "center": {
+    "lat": 37.5000742,
+    "lon": 127.0254849
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "서초구",
+    "addr:housenumber": "27",
+    "addr:postcode": "06614",
+    "addr:street": "서초대로77길",
+    "building": "commercial",
+    "type": "multipolygon"
+  }
+},
+{
+  "type": "relation",
+  "id": 8311183,
+  "center": {
+    "lat": 37.4967650,
+    "lon": 127.0257958
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "서초구",
+    "addr:housenumber": "4",
+    "addr:postcode": "06620",
+    "addr:street": "서초대로74길",
+    "building": "commercial",
+    "building:levels": "31;5;34;20",
+    "building:material": "glass",
+    "height": "136",
+    "name": "삼성생명 서초타워",
+    "name:en": "Samsung Life Insurance Seocho Tower",
+    "name:ja": "三星生命 瑞草タワー",
+    "name:ko": "삼성생명 서초타워",
+    "office": "insurance",
+    "type": "multipolygon"
+  }
+},
+{
+  "type": "relation",
+  "id": 8311184,
+  "center": {
+    "lat": 37.4959140,
+    "lon": 127.0261620
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "서초구",
+    "addr:housenumber": "14",
+    "addr:postcode": "06620",
+    "addr:street": "서초대로74길",
+    "building": "yes",
+    "building:levels": "32",
+    "building:material": "glass",
+    "height": "150",
+    "name": "삼성물산 서초사옥",
+    "name:en": "Samsung C&T Seocho Office",
+    "name:ja": "サムスン物産 瑞草社屋",
+    "name:ko": "삼성물산 서초사옥",
+    "office": "company",
+    "start_date": "2007",
+    "type": "multipolygon"
+  }
+},
+{
+  "type": "relation",
+  "id": 8311185,
+  "center": {
+    "lat": 37.4965721,
+    "lon": 127.0269036
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "서초구",
+    "addr:housenumber": "11",
+    "addr:postcode": "06620",
+    "addr:street": "서초대로74길",
+    "building": "commercial",
+    "building:levels": "44",
+    "building:material": "glass",
+    "height": "203",
+    "name": "삼성전자 서초사옥",
+    "name:en": "Samsung Electronics Seocho Office",
+    "name:ja": "三星電子 瑞草社屋",
+    "name:ko": "삼성전자 서초사옥",
+    "office": "company",
+    "start_date": "2008",
+    "type": "multipolygon"
+  }
+},
+{
+  "type": "relation",
+  "id": 9182397,
+  "center": {
+    "lat": 37.4974785,
+    "lon": 127.0252696
+  },
+  "tags": {
+    "building": "commercial",
+    "building:levels": "6",
+    "height": "17",
+    "type": "multipolygon"
+  }
+},
+{
+  "type": "relation",
+  "id": 19639970,
+  "center": {
+    "lat": 37.4960109,
+    "lon": 127.0280733
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "서초구",
+    "addr:housenumber": "373",
+    "addr:postcode": "06621",
+    "addr:street": "강남대로",
+    "addr:subdistrict": "서초동",
+    "building": "office",
+    "building:levels": "19",
+    "height": "83",
+    "name": "홍우빌딩",
+    "name:ko": "홍우빌딩",
+    "start_date": "2008",
+    "type": "multipolygon"
+  }
+},
+{
+  "type": "relation",
+  "id": 19640542,
+  "center": {
+    "lat": 37.4963835,
+    "lon": 127.0278785
+  },
+  "tags": {
+    "addr:city": "서울특별시",
+    "addr:district": "서초구",
+    "addr:housenumber": "375",
+    "addr:postcode": "06620",
+    "addr:street": "강남대로",
+    "addr:subdistrict": "서초동",
+    "building": "yes;apartments",
+    "building:flats": "38",
+    "building:levels": "30",
+    "height": "98",
+    "name": "서초현대타워주상복합",
+    "name:ko": "서초현대타워주상복합",
+    "start_date": "1997",
+    "type": "multipolygon"
+  }
+}
+
+  ]
+}

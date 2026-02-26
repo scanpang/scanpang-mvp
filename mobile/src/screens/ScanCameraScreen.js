@@ -510,13 +510,13 @@ const ScanCameraScreen = ({ route, navigation }) => {
         </View>
       )}
 
-      {/* Layer 1.5: 좌상단 미니맵 */}
+      {/* Layer 1.5: 좌상단 미니맵 (GPS 잡히면 항상 표시) */}
       <MinimapOverlay
         ref={minimapRef}
         latitude={geoPose?.latitude}
         longitude={geoPose?.longitude}
         heading={heading}
-        visible={gpsStatus === 'active' && !sheetOpen}
+        visible={!!geoPose?.latitude}
       />
 
       {/* Layer 2: 상단 HUD */}

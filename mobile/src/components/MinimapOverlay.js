@@ -6,7 +6,7 @@
  */
 import React, { useRef, useEffect, useImperativeHandle, forwardRef, useCallback } from 'react';
 import { View, StyleSheet, Platform } from 'react-native';
-import MapView, { Marker, Polygon, PROVIDER_GOOGLE } from 'react-native-maps';
+import MapView, { Marker, Polygon } from 'react-native-maps';
 
 const MAP_SIZE = 120;
 const ZOOM_DELTA = 0.002; // 약 200m 범위
@@ -85,7 +85,6 @@ const MinimapOverlay = forwardRef(({
     <View style={styles.container}>
       <MapView
         ref={mapRef}
-        provider={PROVIDER_GOOGLE}
         style={styles.map}
         initialRegion={{
           latitude,
