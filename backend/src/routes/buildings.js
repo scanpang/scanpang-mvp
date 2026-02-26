@@ -349,7 +349,7 @@ router.post('/detect', async (req, res, next) => {
     const top10 = results.slice(0, 10);
 
     // 2단계: 이름 없는 건물 상위 5개 → 카카오 + 건축물대장 병렬 보강
-    const enrichTargets = top10.filter(b => b.needsEnrich || !b.name || b.name === '건물').slice(0, 5);
+    const enrichTargets = top10.filter(b => b.needsEnrich || !b.name || b.name === '건물').slice(0, 10);
     if (enrichTargets.length > 0) {
       // 각 건물에 대해 카카오 coordToAddress 호출 (주소코드 + 건물명 확보)
       const kakaoResults = await Promise.allSettled(
