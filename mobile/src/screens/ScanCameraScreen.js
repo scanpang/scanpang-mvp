@@ -433,13 +433,30 @@ const ScanCameraScreen = ({ route, navigation }) => {
     return null;
   }, [geoPose, detectLoading, sheetOpen]);
 
+  // YOLO가 건물을 감지했는지 (20%+)
+  const yoloHasBuilding = useMemo(() => {
+    return objectDetections.some(d => d.type === 'building');
+  }, [objectDetections]);
+
+  // YOLO 감지 중 + 바운딩박스 없음 → 가장 가까운 건물 라벨 포커스 중앙에 표시
+  const fallbackBuilding = useMemo(() => {
+    if (sheetOpen) return null;
+    if (!yoloHasBuilding) return null;
+    if (hasDetection) return null; // 바운딩박스 매칭 성공 → 폴백 불필요
+    // detect API에서 가장 가까운 건물 선택
+    if (!detectedBuildings || detectedBuildings.length === 0) return null;
+    const closest = detectedBuildings[0]; // 이미 거리순 정렬됨
+    return closest;
+  }, [sheetOpen, yoloHasBuilding, hasDetection, detectedBuildings]);
+
   // 포커스 영역 내 안내 메시지
   const focusMessage = useMemo(() => {
     if (sheetOpen) return null;
     if (!geoPose) return null;
-    if (hasDetection) return null; // 감지 성공 → 메시지 사라짐
+    if (hasDetection) return null; // 바운딩박스 매칭 성공
+    if (fallbackBuilding) return null; // 폴백 라벨 표시 중
     return '포커스 영역에 건물을 맞춰주세요';
-  }, [geoPose, hasDetection, sheetOpen]);
+  }, [geoPose, hasDetection, fallbackBuilding, sheetOpen]);
 
   return (
     <GestureHandlerRootView style={styles.container}>
@@ -475,6 +492,26 @@ const ScanCameraScreen = ({ route, navigation }) => {
 
           {/* Layer 0.5: 포커스 영역 오버레이 */}
           <FocusOverlay visible={!sheetOpen} message={focusMessage} />
+
+          {/* Layer 0.7: 폴백 건물명 라벨 (YOLO 감지 중 + 바운딩박스 없음) */}
+          {fallbackBuilding && !sheetOpen && (
+            <View style={styles.fallbackLabelWrap} pointerEvents="box-none">
+              <TouchableOpacity
+                style={styles.fallbackLabel}
+                activeOpacity={0.7}
+                onPress={() => handleLabelSelect(fallbackBuilding)}
+              >
+                <Text style={styles.fallbackLabelName} numberOfLines={1}>
+                  {fallbackBuilding.name || fallbackBuilding.roadAddress || fallbackBuilding.jibun || `${fallbackBuilding.lat?.toFixed(5)}, ${fallbackBuilding.lng?.toFixed(5)}`}
+                </Text>
+                {fallbackBuilding.distance != null && (
+                  <Text style={styles.fallbackLabelDist}>
+                    {fallbackBuilding.distance < 1000 ? `${Math.round(fallbackBuilding.distance)}m` : `${(fallbackBuilding.distance / 1000).toFixed(1)}km`}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          )}
 
           {/* Layer 1: 건물 바운딩박스 + 라벨 + 컵 바운딩박스 */}
           <DetectedBuildingOverlay
@@ -605,6 +642,36 @@ const styles = StyleSheet.create({
   // 안내 텍스트
   guideTextWrap: { position: 'absolute', bottom: SH * 0.14, left: 0, right: 0, alignItems: 'center', zIndex: 5 },
   guideText: { fontSize: 14, fontWeight: '500', color: 'rgba(255,255,255,0.9)', backgroundColor: 'rgba(0,0,0,0.5)', paddingHorizontal: SPACING.xl, paddingVertical: SPACING.sm, borderRadius: 20, overflow: 'hidden' },
+
+  // ===== 폴백 건물명 라벨 (포커스 중앙) =====
+  fallbackLabelWrap: {
+    position: 'absolute',
+    top: FOCUS_TOP + FOCUS_H / 2 - 20,
+    left: FOCUS_LEFT,
+    width: FOCUS_W,
+    alignItems: 'center',
+    zIndex: 15,
+  },
+  fallbackLabel: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 230, 118, 0.85)',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+    gap: 8,
+  },
+  fallbackLabelName: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#000',
+    maxWidth: 200,
+  },
+  fallbackLabelDist: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: 'rgba(0, 0, 0, 0.6)',
+  },
 
   // ===== 바텀시트 =====
   bsBackground: { backgroundColor: '#141428', borderTopLeftRadius: 20, borderTopRightRadius: 20 },

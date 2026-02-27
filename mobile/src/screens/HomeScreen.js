@@ -180,7 +180,7 @@ const HomeScreen = ({ navigation }) => {
         <View style={styles.navBar}>
           <View style={styles.logoWrap}>
             <Text style={styles.logo}>ScanPang</Text>
-            <Text style={styles.versionText}>v1.028</Text>
+            <Text style={styles.versionText}>v1.029</Text>
           </View>
           <TouchableOpacity style={styles.pointsPill}>
             <Text style={styles.pointsIcon}>P</Text>

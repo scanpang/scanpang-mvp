@@ -46,10 +46,11 @@ const DetectedBuildingOverlay = ({
             ? `rgba(158, 158, 158, ${opacity})`    // 회색 (지번만)
             : `rgba(0, 230, 118, ${opacity})`;     // 녹색 (naver 건물명 또는 기본)
 
-        // 라벨 위치: 박스 위에 공간 있으면 위, 없으면 박스 안쪽 상단
-        const labelTop = top > LABEL_H + PADDING
-          ? -LABEL_H
-          : PADDING;
+        const labelBg = building.nameSource === 'road'
+          ? 'rgba(255, 193, 7, 0.85)'
+          : building.nameSource === 'jibun'
+            ? 'rgba(158, 158, 158, 0.85)'
+            : 'rgba(0, 230, 118, 0.85)';
 
         return (
           <TouchableOpacity
@@ -61,15 +62,18 @@ const DetectedBuildingOverlay = ({
             activeOpacity={0.7}
             onPress={() => onSelect?.(building)}
           >
-            <View style={[styles.label, { backgroundColor: borderColor, top: labelTop }]}>
+            {/* 바운딩박스 중앙 라벨 */}
+            <View style={styles.centerLabelWrap}>
+            <View style={[styles.centerLabel, { backgroundColor: labelBg }]}>
               <Text style={styles.labelName} numberOfLines={1}>
-                {building.name}
+                {building.name || building.roadAddress || building.jibun || '건물'}
               </Text>
               {building.distance != null && (
                 <Text style={styles.labelDist}>
                   {formatDist(building.distance)}
                 </Text>
               )}
+            </View>
             </View>
           </TouchableOpacity>
         );
@@ -146,17 +150,18 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     zIndex: 10,
   },
-  label: {
-    position: 'absolute',
-    top: -28,
-    left: -2,
+  centerLabelWrap: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  centerLabel: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
     gap: 6,
-    minHeight: 24,
   },
   labelName: {
     fontSize: 12,
