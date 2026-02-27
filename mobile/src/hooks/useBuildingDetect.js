@@ -1,8 +1,9 @@
 /**
- * useBuildingDetect - 건물 감지 훅 (GPS 기반)
- * - GPS(geoPose)로 위치 확보 후 건물 API 호출
+ * useBuildingDetect - 건물 감지 훅 (GPS + heading 기반)
+ * - GPS(geoPose)로 위치+heading 확보 후 건물 API 호출
+ * - heading 없으면 감지 안 함
  * - GPS 정확도 30m 초과 시 감지 비활성화
- * - 디바운싱: 위치 5m 변화 또는 8초 경과 시 재요청
+ * - 디바운싱: 위치 5m / heading 15도 변화 또는 8초 경과 시 재요청
  * - 출력: { buildings, loading, status }
  *   status: 'inactive' | 'detecting' | 'ready'
  */
@@ -12,6 +13,7 @@ import { detectBuildings } from '../services/api';
 
 // 디바운싱 임계값
 const POSITION_THRESHOLD = 5;    // 5m 이동 시 재요청
+const HEADING_THRESHOLD = 15;    // 15도 회전 시 재요청
 const TIME_THRESHOLD = 8000;     // 8초 경과 시 재요청
 
 // 위치 변화 계산 (미터)
@@ -21,12 +23,18 @@ function distanceBetween(lat1, lng1, lat2, lng2) {
   return Math.sqrt(dlat * dlat + dlng * dlng);
 }
 
+// heading 차이 계산 (0~180)
+function headingDifference(h1, h2) {
+  const diff = Math.abs(h1 - h2) % 360;
+  return diff > 180 ? 360 - diff : diff;
+}
+
 // GPS 정확도 임계값 (30m 초과 시 감지 비활성화)
 const GPS_ACCURACY_THRESHOLD = 30;
 
 /**
  * @param {Object} params
- * @param {Object|null} params.geoPose - GPS pose { latitude, longitude, horizontalAccuracy, ... }
+ * @param {Object|null} params.geoPose - GPS pose { latitude, longitude, heading, horizontalAccuracy, ... }
  * @param {Object} params.geoPoseRef - geoPose stale closure 방지용 ref
  * @param {boolean} params.enabled - 훅 활성화 여부
  * @returns {{ buildings: Array, loading: boolean, status: string }}
@@ -38,10 +46,10 @@ const useBuildingDetect = ({ geoPose = null, geoPoseRef = null, enabled = true }
 
   const isMounted = useRef(true);
   const requestId = useRef(0);
-  const lastRequest = useRef(null);    // { lat, lng, time }
+  const lastRequest = useRef(null);    // { lat, lng, heading, time }
   const timerRef = useRef(null);
 
-  const fetchDetect = useCallback(async (lat, lng, horizontalAccuracy) => {
+  const fetchDetect = useCallback(async (lat, lng, heading, horizontalAccuracy) => {
     if (!isMounted.current) return;
 
     const myId = ++requestId.current;
@@ -50,7 +58,7 @@ const useBuildingDetect = ({ geoPose = null, geoPoseRef = null, enabled = true }
 
     try {
       const response = await detectBuildings({
-        lat, lng,
+        lat, lng, heading,
         horizontalAccuracy,
       });
 
@@ -65,13 +73,13 @@ const useBuildingDetect = ({ geoPose = null, geoPoseRef = null, enabled = true }
           ...b,
           confidence: conf / 100,
           confidencePercent: Math.round(conf),
-          detectSource: 'vworld_vps',
+          detectSource: 'naver_forward',
         };
       });
 
       setBuildings(withConfidence);
       setStatus('ready');
-      lastRequest.current = { lat, lng, time: Date.now() };
+      lastRequest.current = { lat, lng, heading, time: Date.now() };
     } catch (err) {
       if (!isMounted.current || myId !== requestId.current) return;
       console.warn('[useBuildingDetect] API 실패:', err.message);
@@ -84,9 +92,10 @@ const useBuildingDetect = ({ geoPose = null, geoPoseRef = null, enabled = true }
     }
   }, []);
 
-  // GPS geoPose 좌표 사용
+  // GPS geoPose 좌표 + heading 사용
   const effectiveLat = geoPose?.latitude ?? null;
   const effectiveLng = geoPose?.longitude ?? null;
+  const effectiveHeading = geoPose?.heading ?? null;
   const effectiveHAcc = geoPose?.horizontalAccuracy ?? 50;
 
   useEffect(() => {
@@ -96,8 +105,8 @@ const useBuildingDetect = ({ geoPose = null, geoPoseRef = null, enabled = true }
       return;
     }
 
-    // 위치 없거나 GPS 정확도 30m 초과 시 inactive
-    if (effectiveLat == null || effectiveLng == null || effectiveHAcc > GPS_ACCURACY_THRESHOLD) {
+    // 위치/heading 없거나 GPS 정확도 30m 초과 시 inactive
+    if (effectiveLat == null || effectiveLng == null || effectiveHeading == null || effectiveHAcc > GPS_ACCURACY_THRESHOLD) {
       setStatus('inactive');
       if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
       return;
@@ -110,15 +119,16 @@ const useBuildingDetect = ({ geoPose = null, geoPoseRef = null, enabled = true }
       shouldFetch = true;
     } else {
       const pDiff = distanceBetween(effectiveLat, effectiveLng, last.lat, last.lng);
+      const hDiff = headingDifference(effectiveHeading, last.heading);
       const tDiff = Date.now() - last.time;
 
-      if (pDiff >= POSITION_THRESHOLD || tDiff >= TIME_THRESHOLD) {
+      if (pDiff >= POSITION_THRESHOLD || hDiff >= HEADING_THRESHOLD || tDiff >= TIME_THRESHOLD) {
         shouldFetch = true;
       }
     }
 
     if (shouldFetch) {
-      fetchDetect(effectiveLat, effectiveLng, effectiveHAcc);
+      fetchDetect(effectiveLat, effectiveLng, effectiveHeading, effectiveHAcc);
     }
 
     // 8초 주기 타이머 (변화 없어도 갱신)
@@ -128,15 +138,15 @@ const useBuildingDetect = ({ geoPose = null, geoPoseRef = null, enabled = true }
         if (!isMounted.current || !enabled) return;
         // stale closure 방지: ref에서 최신 값 참조
         const gp = geoPoseRef?.current;
-        if (!gp) return;
-        fetchDetect(gp.latitude, gp.longitude, gp.horizontalAccuracy);
+        if (!gp || gp.heading == null) return;
+        fetchDetect(gp.latitude, gp.longitude, gp.heading, gp.horizontalAccuracy);
       }, TIME_THRESHOLD);
     }
 
     return () => {
       if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
     };
-  }, [enabled, effectiveLat, effectiveLng, effectiveHAcc, geoPoseRef, fetchDetect]);
+  }, [enabled, effectiveLat, effectiveLng, effectiveHeading, effectiveHAcc, geoPoseRef, fetchDetect]);
 
   useEffect(() => {
     isMounted.current = true;

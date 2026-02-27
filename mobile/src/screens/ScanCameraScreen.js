@@ -1,13 +1,9 @@
 /**
- * ScanCameraScreen - GPS + YOLO TFLite + 미니맵 Gemini 건물 식별
+ * ScanCameraScreen - GPS + YOLO TFLite 기반 건물 스캔
  * - Layer 0: 전체화면 CameraX 프리뷰 (네이티브 ARCameraView)
- * - Layer 1: 건물 바운딩박스 + Gemini 건물명 라벨
- * - Layer 1.5: 좌상단 구글 미니맵 (파란점 + heading 방향)
+ * - Layer 1: 건물 바운딩박스 + 방향 라벨
  * - Layer 2: 상단 HUD
  * - Layer 3: 건물 프로필 바텀시트
- *
- * 건물 식별 흐름:
- * YOLO 건물 감지 → 미니맵 캡쳐 → Gemini가 지도에서 건물명 읽기 → 바운딩박스에 표시
  */
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
@@ -29,33 +25,34 @@ import BottomSheet, { BottomSheetView } from '@gorhom/bottom-sheet';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { Colors, SPACING, TOUCH } from '../constants/theme';
-import { postScanLog, getServerTimeContext, analyzeFrame, analyzeMinimapFrame } from '../services/api';
+import { postScanLog, postScanComplete, getServerTimeContext, analyzeFrame } from '../services/api';
+import useBuildingDetect from '../hooks/useBuildingDetect';
 import useBuildingDetail from '../hooks/useBuildingDetail';
 import useSensorData from '../hooks/useSensorData';
+import { formatDistance } from '../utils/coordinate';
 import { behaviorTracker } from '../services/behaviorTracker';
 import BuildingProfileSheet from '../components/BuildingProfileSheet';
 import XRayOverlay from '../components/XRayOverlay';
 import { ARCameraView } from 'scanpang-arcore';
 import useLocationTracking from '../hooks/useLocationTracking';
+import useBearingProjection from '../hooks/useBearingProjection';
+import useBuildingMatcher from '../hooks/useBuildingMatcher';
 import DetectedBuildingOverlay from '../components/DetectedBuildingOverlay';
-import MinimapOverlay from '../components/MinimapOverlay';
 
 
 const { width: SW, height: SH } = Dimensions.get('window');
 const RECENT_SCANS_KEY = '@scanpang_recent_scans';
 const SNAP_POINTS = ['1%', '50%', '90%'];
 
-// 미니맵 Gemini 호출 쿨다운 (중복 호출 방지)
-const MINIMAP_COOLDOWN = 3000; // 3초
-
 // ===== 상단 HUD =====
-const CameraHUD = ({ gpsStatus, onBack, debugInfo, detectStatus }) => {
+const CameraHUD = ({ gpsStatus, onBack, accuracyInfo, debugInfo, detectStatus }) => {
   const gpsColor = gpsStatus === 'active' ? Colors.successGreen : gpsStatus === 'error' ? Colors.liveRed : Colors.accentAmber;
   const hAcc = debugInfo?.hAcc != null ? `${debugInfo.hAcc.toFixed(0)}m` : '-';
   const hdAcc = debugInfo?.hdAcc != null ? `${debugInfo.hdAcc.toFixed(0)}°` : '-';
 
-  const badgeColor = detectStatus === 'idle' ? '#888' : detectStatus === 'analyzing' ? '#FF9800' : '#00C853';
-  const badgeLabel = detectStatus === 'idle' ? 'IDLE' : detectStatus === 'analyzing' ? 'AI' : 'GPS';
+  // 모드 배지 색상: GPS=초록, OFF=회색
+  const badgeColor = detectStatus === 'inactive' ? '#888' : '#00C853';
+  const badgeLabel = detectStatus === 'inactive' ? 'OFF' : 'GPS';
 
   return (
     <View style={styles.hud}>
@@ -71,11 +68,13 @@ const CameraHUD = ({ gpsStatus, onBack, debugInfo, detectStatus }) => {
         <Text style={styles.hudModeText}>{badgeLabel}</Text>
       </View>
 
-      {/* 정확도 */}
+      {/* 정확도 + 건물수 */}
       <View style={styles.hudInfoPill}>
         <Text style={styles.hudInfoText}>{hAcc}</Text>
         <Text style={styles.hudInfoSep}>·</Text>
         <Text style={styles.hudInfoText}>{hdAcc}</Text>
+        <Text style={styles.hudInfoSep}>·</Text>
+        <Text style={styles.hudInfoText}>건물{debugInfo?.buildingCount || 0}</Text>
       </View>
 
       {/* GPS 상태 점 */}
@@ -111,13 +110,6 @@ const ScanCameraScreen = ({ route, navigation }) => {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [objectDetections, setObjectDetections] = useState([]);
 
-  // 미니맵 Gemini 건물명 상태
-  const [minimapBuildingName, setMinimapBuildingName] = useState(null);
-  const [minimapAnalyzing, setMinimapAnalyzing] = useState(false);
-  const minimapRef = useRef(null);
-  const minimapCooldownRef = useRef(0);
-  const minimapAnalyzingRef = useRef(false);
-
   const bottomSheetRef = useRef(null);
   const cameraRef = useRef(null);
   const isMountedRef = useRef(true);
@@ -136,139 +128,33 @@ const ScanCameraScreen = ({ route, navigation }) => {
   // stale closure 방지용 ref
   const geoPoseRef = useRef(null);
   useEffect(() => { geoPoseRef.current = geoPose; }, [geoPose]);
-  const headingRef = useRef(0);
-  useEffect(() => { headingRef.current = heading; }, [heading]);
 
-  // ===== 미니맵 Gemini 건물명 추출 =====
-  const analyzeMinimapBuilding = useCallback(async () => {
-    // 쿨다운 체크
-    if (Date.now() - minimapCooldownRef.current < MINIMAP_COOLDOWN) return;
-    if (minimapAnalyzingRef.current) return;
-    if (!minimapRef.current) return;
+  // === 메인 감지: GPS + heading 기반 ===
+  const { buildings: detectedBuildings, loading: detectLoading, status: detectStatus } = useBuildingDetect({
+    geoPose,
+    geoPoseRef,
+    enabled: !sheetOpen,
+  });
 
-    const gp = geoPoseRef.current;
-    if (!gp) return;
+  // === bearing 스크린 투영 ===
+  const projectedBuildings = useBearingProjection({
+    geoPose,
+    buildings: detectedBuildings,
+  });
 
-    minimapAnalyzingRef.current = true;
-    minimapCooldownRef.current = Date.now();
-    setMinimapAnalyzing(true);
-
-    try {
-      // 미니맵 캡쳐
-      const base64 = await minimapRef.current.capture();
-      if (!base64 || !isMountedRef.current) return;
-
-      console.log(`[Minimap→Gemini] 캡쳐 완료, heading=${Math.round(headingRef.current)}°, 분석 요청...`);
-
-      // Gemini에 미니맵 분석 요청
-      const res = await analyzeMinimapFrame(base64, {
-        lat: gp.latitude,
-        lng: gp.longitude,
-        heading: headingRef.current,
-      });
-
-      if (!isMountedRef.current) return;
-
-      const data = res?.data;
-      if (data?.buildingName && data.buildingName !== 'unknown') {
-        console.log(`[Minimap→Gemini] 건물명 추출: "${data.buildingName}" (conf=${data.confidence})`);
-        setMinimapBuildingName(data.buildingName);
-      } else {
-        console.log('[Minimap→Gemini] 건물명 추출 실패');
-        setMinimapBuildingName(null);
-      }
-    } catch (err) {
-      console.warn('[Minimap→Gemini] 분석 실패:', err.message);
-    } finally {
-      minimapAnalyzingRef.current = false;
-      if (isMountedRef.current) setMinimapAnalyzing(false);
-    }
-  }, []);
-
-  // ===== YOLO 건물 감지 시 미니맵 분석 트리거 =====
-  const buildingDetectedRef = useRef(false);
-
-  // YOLO 감지 → 건물이 감지되면 미니맵 Gemini 호출
-  useEffect(() => {
-    const hasBuildingDetection = objectDetections.some(d => d.type === 'building');
-
-    if (hasBuildingDetection && !buildingDetectedRef.current) {
-      // 건물 처음 감지됨 → 미니맵 분석
-      buildingDetectedRef.current = true;
-      analyzeMinimapBuilding();
-    } else if (!hasBuildingDetection) {
-      buildingDetectedRef.current = false;
-      // 건물 감지 해제 시 건물명 초기화
-      setMinimapBuildingName(null);
-    }
-  }, [objectDetections, analyzeMinimapBuilding]);
-
-  // ===== 바운딩박스에 표시할 매칭 결과 생성 =====
-  const displayResults = useMemo(() => {
-    const buildingDetections = objectDetections.filter(d => d.type === 'building');
-    const cupDetections = objectDetections.filter(d => d.type === 'cup');
-
-    if (buildingDetections.length === 0 && cupDetections.length === 0) {
-      return { matched: [], unmatched: [], cups: [] };
-    }
-
-    // 화면 영역으로 클램핑
-    const clampBox = (d) => ({
-      left: Math.max(0, d.left * SW),
-      top: Math.max(0, d.top * SH),
-      right: Math.min(SW, d.right * SW),
-      bottom: Math.min(SH, d.bottom * SH),
-      confidence: d.confidence,
-    });
-
-    // 컵
-    const cups = cupDetections.map(d => ({
-      detection: clampBox(d),
-      label: 'Cup',
-    }));
-
-    // 건물: Gemini 건물명이 있으면 가장 큰 바운딩박스에 매칭
-    const matched = [];
-    const unmatched = [];
-
-    if (buildingDetections.length > 0) {
-      // 면적 기준 정렬 (큰 건물 = 정면 건물)
-      const sorted = [...buildingDetections]
-        .map(d => {
-          const area = (d.right - d.left) * (d.bottom - d.top);
-          return { ...d, area };
-        })
-        .sort((a, b) => b.area - a.area);
-
-      sorted.forEach((det, idx) => {
-        const screenBox = clampBox(det);
-
-        // 첫 번째(가장 큰) 건물에 Gemini 건물명 매칭
-        if (idx === 0 && minimapBuildingName) {
-          matched.push({
-            building: {
-              id: `minimap_${Date.now()}`,
-              name: minimapBuildingName,
-              nameSource: 'gemini_minimap',
-            },
-            detection: screenBox,
-            matchScore: 0.8,
-          });
-        } else {
-          unmatched.push({ detection: screenBox });
-        }
-      });
-    }
-
-    return { matched, unmatched, cups };
-  }, [objectDetections, minimapBuildingName]);
+  // === YOLO 건물 감지 + bearing 매칭 ===
+  const { matchedBuildings, unmatchedRegions, cupRegions, hasDetection } = useBuildingMatcher({
+    detections: objectDetections,
+    projectedBuildings,
+  });
 
   // YOLO 감지 이벤트 핸들러
   const handleObjectDetection = useCallback((event) => {
     const { detections } = event.nativeEvent || event;
     if (detections) {
+      // 디버그: 감지 결과 확인
       if (detections.length > 0) {
-        console.log(`[ScanCamera] YOLO: ${detections.length}개 감지, types: ${detections.map(d => d.type).join(',')}`);
+        console.log(`[ScanCamera] YOLO: ${detections.length}개 감지, types: ${detections.map(d => d.type).join(',')}, first: ${JSON.stringify(detections[0])}`);
       }
       setObjectDetections(detections);
     }
@@ -284,18 +170,20 @@ const ScanCameraScreen = ({ route, navigation }) => {
     console.warn('[ScanCamera] 네이티브 에러:', data?.error);
   }, []);
 
-  // 선택된 건물의 메타 정보 (Gemini 건물명 기반)
+  // 선택된 건물의 메타 정보
   const selectedBuildingMeta = useMemo(() => {
     if (!selectedBuildingId) return null;
+    const found = detectedBuildings.find(b => b.id === selectedBuildingId);
+    if (!found) return null;
     return {
-      lat: geoPose?.latitude,
-      lng: geoPose?.longitude,
-      name: minimapBuildingName || '건물',
-      address: '',
-      category: '',
-      categoryDetail: '',
+      lat: found.lat,
+      lng: found.lng,
+      name: found.name,
+      address: found.address || found.roadAddress || '',
+      category: found.category || '',
+      categoryDetail: found.categoryDetail || '',
     };
-  }, [selectedBuildingId, geoPose, minimapBuildingName]);
+  }, [selectedBuildingId, detectedBuildings]);
 
   const { building: buildingDetail, loading: detailLoading, enriching, fetchLazyTab } = useBuildingDetail(
     selectedBuildingId,
@@ -303,7 +191,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
   );
 
   const selectedBuilding = selectedBuildingId
-    ? { id: selectedBuildingId, name: minimapBuildingName || '건물', ...(buildingDetail || {}) }
+    ? { ...(detectedBuildings.find(b => b.id === selectedBuildingId) || {}), ...(buildingDetail || {}) }
     : null;
 
   // geoPose → userLocation/heading 브릿지
@@ -355,6 +243,31 @@ const ScanCameraScreen = ({ route, navigation }) => {
     behaviorTracker.updateSensorData({ heading, ...getSnapshot() });
   }, [heading, gyroscope, accelerometer]);
 
+  // Gemini Vision: 주기적
+  useEffect(() => {
+    if (!isStable || !selectedBuildingId || !cameraRef.current || sheetOpen) return;
+    const run = async () => {
+      if (geminiAnalyzingRef.current) return;
+      geminiAnalyzingRef.current = true;
+      try {
+        const photo = await cameraRef.current.takePictureAsync({ base64: true, quality: 0.3, skipProcessing: true });
+        if (!photo?.base64 || !isMountedRef.current) return;
+        const b = detectedBuildings.find(x => x.id === selectedBuildingId);
+        const res = await analyzeFrame(photo.base64, {
+          buildingId: selectedBuildingId, buildingName: b?.name,
+          lat: userLocation?.lat, lng: userLocation?.lng, heading,
+          sessionId: sessionIdRef.current,
+        });
+        if (res?.data?.analysis && isMountedRef.current) {
+          setGeminiResults(prev => { const n = new Map(prev); n.set(selectedBuildingId, res.data.analysis); return n; });
+        }
+      } catch {} finally { geminiAnalyzingRef.current = false; }
+    };
+    geminiTimerRef.current = setInterval(run, 15000);
+    const init = setTimeout(run, 3000);
+    return () => { clearInterval(geminiTimerRef.current); clearTimeout(init); };
+  }, [isStable, selectedBuildingId, detectedBuildings, userLocation, heading, sheetOpen]);
+
   // 카메라 권한
   useEffect(() => {
     (async () => {
@@ -380,15 +293,15 @@ const ScanCameraScreen = ({ route, navigation }) => {
   useEffect(() => () => { isMountedRef.current = false; }, []);
 
   // ===== 헬퍼 함수 =====
-  const saveRecentScan = useCallback(async (buildingName) => {
+  const saveRecentScan = useCallback(async (building) => {
     try {
       const raw = await AsyncStorage.getItem(RECENT_SCANS_KEY);
       const scans = raw ? JSON.parse(raw) : [];
       scans.unshift({
-        id: `minimap_${Date.now()}`,
-        buildingName: buildingName || '건물',
-        name: buildingName || null,
-        address: null,
+        id: `${building.id}_${Date.now()}`,
+        buildingName: building.name || building.address || '건물',
+        name: building.name || null,
+        address: building.address || null,
         points: 50, timeAgo: '방금 전', timestamp: Date.now(),
       });
       if (scans.length > 20) scans.length = 20;
@@ -396,34 +309,42 @@ const ScanCameraScreen = ({ route, navigation }) => {
     } catch {}
   }, []);
 
+  const triggerGeminiAnalysis = useCallback(async (building) => {
+    if (!cameraRef.current) return;
+    try {
+      const photo = await cameraRef.current.takePictureAsync({ base64: true, quality: 0.3, skipProcessing: true });
+      if (!photo?.base64 || !isMountedRef.current) return;
+      const res = await analyzeFrame(photo.base64, {
+        buildingId: building.id, buildingName: building.name,
+        lat: userLocation?.lat, lng: userLocation?.lng, heading,
+        sessionId: sessionIdRef.current,
+      });
+      if (res?.data?.analysis && isMountedRef.current) {
+        setGeminiResults(prev => { const n = new Map(prev); n.set(building.id, res.data.analysis); return n; });
+      }
+    } catch {}
+  }, [userLocation, heading]);
+
   // 라벨 탭 → 바텀시트 열기
-  const handleLabelSelect = useCallback((building) => {
-    if (!building) return;
+  const handleLabelSelect = useCallback((projected) => {
+    if (!projected) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
-    setSelectedBuildingId(building.id);
+    const building = detectedBuildings.find(b => b.id === projected.id);
+    setSelectedBuildingId(projected.id);
     setProfileError(null);
 
     setTimeout(() => bottomSheetRef.current?.snapToIndex(1), 50);
 
     // 로깅
-    postScanLog({
-      sessionId: sessionIdRef.current,
-      buildingId: building.id,
-      eventType: 'label_tap',
-      userLat: userLocation?.lat,
-      userLng: userLocation?.lng,
-      deviceHeading: heading,
-      metadata: { buildingName: building.name, source: 'gemini_minimap' },
-    }).catch(() => {});
-    behaviorTracker.trackEvent('label_tap', {
-      buildingId: building.id,
-      buildingName: building.name,
-      metadata: { source: 'gemini_minimap' },
-    });
+    postScanLog({ sessionId: sessionIdRef.current, buildingId: projected.id, eventType: 'label_tap', userLat: userLocation?.lat, userLng: userLocation?.lng, deviceHeading: heading, metadata: { bearing: projected.bearing, angleDiff: projected.angleDiff } }).catch(() => {});
+    behaviorTracker.trackEvent('label_tap', { buildingId: projected.id, buildingName: projected.name, metadata: { mode: accuracyInfo?.modeLabel, hAcc: accuracyInfo?.hAcc, distance: projected.distance } });
 
-    if (building.name) saveRecentScan(building.name);
-  }, [userLocation, heading, saveRecentScan]);
+    if (building) {
+      saveRecentScan(building);
+      triggerGeminiAnalysis(building);
+    }
+  }, [detectedBuildings, userLocation, heading, accuracyInfo, saveRecentScan, triggerGeminiAnalysis]);
 
   // 상태 초기화
   const resetScanState = useCallback(() => {
@@ -449,16 +370,19 @@ const ScanCameraScreen = ({ route, navigation }) => {
     });
   }, []);
 
-  // 감지 상태 텍스트
-  const detectStatusText = minimapAnalyzing ? 'analyzing' : gpsStatus === 'active' ? 'ready' : 'idle';
+  const handleOpenReport = useCallback(() => {
+    if (!selectedBuilding) return;
+    navigation.navigate('BehaviorReport', { buildingId: selectedBuilding.id, buildingName: selectedBuilding.name });
+  }, [selectedBuilding, navigation]);
 
   // 안내 텍스트
   const guideMessage = useMemo(() => {
     if (sheetOpen) return null;
     if (!geoPose) return 'GPS 위치를 잡는 중...';
-    if (minimapAnalyzing) return '건물 식별 중...';
+    if (detectLoading) return '건물 탐색 중...';
+    if (detectedBuildings.length === 0) return '주변에 건물이 없습니다';
     return null;
-  }, [geoPose, minimapAnalyzing, sheetOpen]);
+  }, [geoPose, detectLoading, detectedBuildings.length, sheetOpen]);
 
   return (
     <GestureHandlerRootView style={styles.container}>
@@ -484,7 +408,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
         </View>
       ) : (
         <>
-          {/* CameraX 네이티브 프리뷰 + YOLO 감지 */}
+          {/* CameraX 네이티브 프리뷰 + YOLO 감지 (항상 렌더) */}
           <ARCameraView
             style={StyleSheet.absoluteFillObject}
             onObjectDetection={handleObjectDetection}
@@ -492,11 +416,11 @@ const ScanCameraScreen = ({ route, navigation }) => {
             onError={handleError}
           />
 
-          {/* Layer 1: 건물 바운딩박스 + Gemini 건물명 라벨 */}
+          {/* Layer 1: 건물 바운딩박스 + 라벨 + 컵 바운딩박스 */}
           <DetectedBuildingOverlay
-            matchedBuildings={displayResults.matched}
-            unmatchedRegions={displayResults.unmatched}
-            cupRegions={displayResults.cups}
+            matchedBuildings={matchedBuildings}
+            unmatchedRegions={unmatchedRegions}
+            cupRegions={cupRegions}
             onSelect={handleLabelSelect}
             visible={!sheetOpen}
           />
@@ -510,23 +434,16 @@ const ScanCameraScreen = ({ route, navigation }) => {
         </View>
       )}
 
-      {/* Layer 1.5: 좌상단 미니맵 (GPS 잡히면 항상 표시) */}
-      <MinimapOverlay
-        ref={minimapRef}
-        latitude={geoPose?.latitude}
-        longitude={geoPose?.longitude}
-        heading={heading}
-        visible={!!geoPose?.latitude}
-      />
-
       {/* Layer 2: 상단 HUD */}
       <CameraHUD
         gpsStatus={gpsStatus}
         onBack={() => navigation.goBack()}
-        detectStatus={detectStatusText}
+        accuracyInfo={accuracyInfo}
+        detectStatus={detectStatus}
         debugInfo={{
           hAcc: geoPose?.horizontalAccuracy ?? null,
           hdAcc: geoPose?.headingAccuracy ?? null,
+          buildingCount: detectedBuildings.length,
         }}
       />
 
@@ -575,7 +492,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
             />
           ) : (
             <View style={styles.bsEmpty}>
-              <Text style={styles.bsEmptyText}>건물을 비추면 자동으로 식별합니다</Text>
+              <Text style={styles.bsEmptyText}>건물 라벨을 터치해 정보를 확인하세요</Text>
             </View>
           )}
         </BottomSheetView>
@@ -601,6 +518,7 @@ const styles = StyleSheet.create({
   // GPS 에러
   gpsErrorBanner: { position: 'absolute', top: 100, left: SPACING.lg, right: SPACING.lg, backgroundColor: 'rgba(239,68,68,0.9)', borderRadius: 12, paddingHorizontal: SPACING.lg, paddingVertical: SPACING.sm, zIndex: 100 },
   gpsErrorText: { fontSize: 13, fontWeight: '600', color: '#FFF', textAlign: 'center' },
+
 
   loadingView: { flex: 1, backgroundColor: '#0D1230', justifyContent: 'center', alignItems: 'center' },
   loadingText: { fontSize: 14, color: '#B0B0B0', marginTop: SPACING.md },

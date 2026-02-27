@@ -40,13 +40,11 @@ const DetectedBuildingOverlay = ({
         const opacity = 0.5 + matchScore * 0.5;
 
         // nameSource에 따른 라벨 색상 분기
-        const borderColor = building.nameSource === 'gemini_minimap'
-          ? `rgba(156, 39, 176, ${opacity})`       // 보라색 (Gemini 미니맵)
-          : building.nameSource === 'kakao'
-            ? `rgba(255, 193, 7, ${opacity})`      // 노란색
-            : building.nameSource === 'public_data'
-              ? `rgba(33, 150, 243, ${opacity})`   // 파란색
-              : `rgba(0, 230, 118, ${opacity})`;   // 녹색 (기본)
+        const borderColor = building.nameSource === 'road'
+          ? `rgba(255, 193, 7, ${opacity})`       // 노란색 (도로명만)
+          : building.nameSource === 'jibun'
+            ? `rgba(158, 158, 158, ${opacity})`    // 회색 (지번만)
+            : `rgba(0, 230, 118, ${opacity})`;     // 녹색 (naver 건물명 또는 기본)
 
         // 라벨 위치: 박스 위에 공간 있으면 위, 없으면 박스 안쪽 상단
         const labelTop = top > LABEL_H + PADDING

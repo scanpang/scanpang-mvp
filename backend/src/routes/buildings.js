@@ -18,6 +18,7 @@ const vworldBuildings = require('../services/vworldBuildings');
 const kakaoLocal = require('../services/kakaoLocal');
 const publicData = require('../services/publicData');
 const naverSearch = require('../services/naverSearch');
+const naverGeocode = require('../services/naverGeocode');
 const googlePlaces = require('../services/googlePlaces');
 
 /**
@@ -291,134 +292,42 @@ router.post('/identify', async (req, res, next) => {
 
 /**
  * POST /api/buildings/detect
- * VPS + VWORLD 건물 감지: 반경 내 전체 건물 반환 (FOV 필터는 클라이언트에서 실시간 수행)
- * 보강 순서: VWORLD → 카카오 + 건축물대장 병렬 (건축물대장 우선)
- * Body: { lat, lng, horizontalAccuracy }
+ * 네이버 역지오코딩 전방 스캔: heading 방향 부채꼴 12포인트 탐색
+ * Body: { lat, lng, heading, horizontalAccuracy }
  */
 router.post('/detect', async (req, res, next) => {
   try {
-    const { lat, lng, horizontalAccuracy } = req.body;
+    const { lat, lng, heading, horizontalAccuracy } = req.body;
 
-    if (lat == null || lng == null) {
+    if (lat == null || lng == null || heading == null) {
       return res.status(400).json({
         success: false,
-        error: 'lat, lng 파라미터가 필요합니다.',
+        error: 'lat, lng, heading 파라미터가 필요합니다.',
       });
     }
 
     const parsedLat = parseFloat(lat);
     const parsedLng = parseFloat(lng);
+    const parsedHeading = parseFloat(heading);
     const parsedHAcc = parseFloat(horizontalAccuracy) || 999;
 
-    if (isNaN(parsedLat) || isNaN(parsedLng)) {
+    if (isNaN(parsedLat) || isNaN(parsedLng) || isNaN(parsedHeading)) {
       return res.status(400).json({
         success: false,
         error: '유효하지 않은 값입니다.',
       });
     }
 
-    const radius = 200;
-    let results = [];
-    let detectSource = 'vworld_vps';
-
-    // 1단계: VWORLD 건물 조회
-    console.log(`[detect] VWORLD 조회 시작: lat=${parsedLat} lng=${parsedLng} radius=${radius}`);
-    try {
-      results = await vworldBuildings.fetchNearbyFromVworld(parsedLat, parsedLng, radius);
-      console.log(`[detect] VWORLD 조회 완료: ${results.length}개 건물`);
-    } catch (err) {
-      console.warn(`[detect] VWORLD 조회 실패: ${err.code || ''} ${err.message}`);
-      results = [];
-    }
-
-    // VWORLD 실패 시 OSM 폴백
-    if (results.length === 0) {
-      console.log('[detect] VWORLD 결과 없음, OSM 폴백');
-      detectSource = 'osm_vps';
-      try {
-        results = await osmBuildings.fetchNearbyFromOSM(parsedLat, parsedLng, radius, { includeUnnamed: true });
-        console.log(`[detect] OSM 폴백 완료: ${results.length}개 건물`);
-      } catch (err) {
-        console.warn(`[detect] OSM 폴백 실패: ${err.code || ''} ${err.message}`);
-        results = [];
-      }
-    }
-
-    // 거리순 정렬, 상위 10개
-    results.sort((a, b) => (a.distanceMeters || a.distance || 999) - (b.distanceMeters || b.distance || 999));
-    const top10 = results.slice(0, 10);
-
-    // 2단계: 이름 없는 건물 상위 5개 → 카카오 + 건축물대장 병렬 보강
-    const enrichTargets = top10.filter(b => b.needsEnrich || !b.name || b.name === '건물').slice(0, 10);
-    if (enrichTargets.length > 0) {
-      // 각 건물에 대해 카카오 coordToAddress 호출 (주소코드 + 건물명 확보)
-      const kakaoResults = await Promise.allSettled(
-        enrichTargets.map(b => kakaoLocal.coordToAddress(b.lat, b.lng))
-      );
-
-      // 카카오 결과 먼저 적용 + 건축물대장 호출 준비
-      const publicDataPromises = [];
-      kakaoResults.forEach((result, i) => {
-        const target = enrichTargets[i];
-        if (result.status === 'fulfilled' && result.value) {
-          const addr = result.value;
-          // 주소 정보 항상 적용
-          if (addr.address) target.address = target.address || addr.address;
-          if (addr.roadAddress) target.roadAddress = addr.roadAddress;
-          if (addr.zoneNo) target.zoneNo = addr.zoneNo;
-          if (addr.sigunguCd) target.sigunguCd = addr.sigunguCd;
-          if (addr.bjdongCd) target.bjdongCd = addr.bjdongCd;
-
-          // 카카오 건물명 있으면 일단 적용
-          if (addr.buildingName) {
-            target.name = addr.buildingName;
-            target.nameSource = 'kakao';
-            target.needsEnrich = false;
-          } else if (addr.roadAddress) {
-            target.name = addr.roadAddress;
-            target.nameSource = 'kakao';
-            target.needsEnrich = false;
-          }
-
-          // 건축물대장 건물명 조회 준비 (주소코드 있을 때만)
-          if (addr.sigunguCd && addr.bjdongCd) {
-            const addrCode = publicData.parseAddressCode(addr);
-            publicDataPromises.push({
-              index: i,
-              promise: publicData.getBuildingName(addr.sigunguCd, addr.bjdongCd, addrCode.bun, addrCode.ji),
-            });
-          } else {
-            publicDataPromises.push({ index: i, promise: Promise.resolve(null) });
-          }
-        } else {
-          publicDataPromises.push({ index: i, promise: Promise.resolve(null) });
-        }
-      });
-
-      // 건축물대장 건물명 병렬 호출
-      if (publicDataPromises.length > 0) {
-        const pdResults = await Promise.allSettled(publicDataPromises.map(p => p.promise));
-        pdResults.forEach((result, j) => {
-          if (result.status === 'fulfilled' && result.value) {
-            const target = enrichTargets[publicDataPromises[j].index];
-            // 건축물대장 건물명이 있으면 카카오보다 우선 (공식 데이터)
-            target.name = result.value;
-            target.nameSource = 'public_data';
-            target.needsEnrich = false;
-          }
-        });
-      }
-    }
+    const buildings = await naverGeocode.scanForward(parsedLat, parsedLng, parsedHeading);
 
     res.json({
       success: true,
-      data: top10,
+      data: buildings,
       meta: {
-        count: top10.length,
-        totalFound: results.length,
-        radius,
+        count: buildings.length,
+        heading: parsedHeading,
         horizontalAccuracy: parsedHAcc,
-        source: detectSource,
+        source: 'naver_forward',
       },
     });
   } catch (err) {
@@ -478,6 +387,50 @@ router.get('/:id/profile', async (req, res, next) => {
       };
 
       const profile = buildingProfile.buildProfile_Phase1(geoData, null, inBuildingPlaces);
+
+      if (regionCode) {
+        profile.meta.regionCode = regionCode;
+      }
+
+      return res.json({ success: true, data: profile });
+    }
+
+    // 네이버 역지오코딩 건물 처리
+    if (rawId.startsWith('naver_')) {
+      const lat = parseFloat(req.query.lat);
+      const lng = parseFloat(req.query.lng);
+      const name = req.query.name || '건물';
+
+      // 카카오 역지오코딩으로 regionCode 확보 (enrich에서 필요)
+      let regionCode = null;
+      if (!isNaN(lat) && !isNaN(lng)) {
+        regionCode = await kakaoLocal.coordToAddress(lat, lng);
+      }
+
+      // 건물 내 업소 검색
+      let inBuildingPlaces = [];
+      if (!isNaN(lat) && !isNaN(lng) && name) {
+        try {
+          inBuildingPlaces = await kakaoLocal.searchByKeyword(name, lat, lng, 100);
+          if (regionCode?.roadAddress) {
+            inBuildingPlaces = kakaoLocal.filterByAddress(inBuildingPlaces, regionCode.roadAddress);
+          }
+        } catch (e) {
+          // 무시
+        }
+      }
+
+      const naverData = {
+        id: rawId,
+        name,
+        address: req.query.address || regionCode?.address || '',
+        roadAddress: req.query.roadAddress || regionCode?.roadAddress || '',
+        lat, lng,
+        category: '',
+        categoryDetail: '',
+      };
+
+      const profile = buildingProfile.buildProfile_Phase1(naverData, null, inBuildingPlaces);
 
       if (regionCode) {
         profile.meta.regionCode = regionCode;
@@ -957,7 +910,7 @@ router.get('/:id/floors', async (req, res, next) => {
     const rawId = req.params.id;
 
     // VWORLD/OSM/카카오/geo 건물 처리
-    if (rawId.startsWith('vworld_') || rawId.startsWith('osm_') || rawId.startsWith('kakao_') || rawId.startsWith('geo_')) {
+    if (rawId.startsWith('naver_') || rawId.startsWith('vworld_') || rawId.startsWith('osm_') || rawId.startsWith('kakao_') || rawId.startsWith('geo_')) {
       // 층별 정보 없음 → 빈 배열
       return res.json({
         success: true,
@@ -1000,7 +953,7 @@ router.post('/:id/scan-complete', async (req, res, next) => {
     const { confidence, sensorData, cameraFrame } = req.body;
 
     // 카카오/VWORLD/OSM/geo 건물은 프로필만 반환
-    if (rawId.startsWith('kakao_') || rawId.startsWith('vworld_') || rawId.startsWith('osm_') || rawId.startsWith('geo_')) {
+    if (rawId.startsWith('naver_') || rawId.startsWith('kakao_') || rawId.startsWith('vworld_') || rawId.startsWith('osm_') || rawId.startsWith('geo_')) {
       // scan-complete에서도 프로필 반환
       if (rawId.startsWith('vworld_')) {
         const vwData = vworldBuildings.getVworldBuildingData(rawId);
