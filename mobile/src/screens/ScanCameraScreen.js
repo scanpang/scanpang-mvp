@@ -44,11 +44,18 @@ const { width: SW, height: SH } = Dimensions.get('window');
 const RECENT_SCANS_KEY = '@scanpang_recent_scans';
 const SNAP_POINTS = ['1%', '50%', '90%'];
 
+// ===== 포커스 영역 (16:9 세로:가로, 화면 중앙) =====
+const FOCUS_W = SW * 0.75;
+const FOCUS_H = FOCUS_W * (16 / 9);
+const FOCUS_LEFT = (SW - FOCUS_W) / 2;
+const FOCUS_TOP = (SH - FOCUS_H) / 2;
+
 // ===== 상단 HUD =====
 const CameraHUD = ({ gpsStatus, onBack, accuracyInfo, debugInfo, detectStatus }) => {
   const gpsColor = gpsStatus === 'active' ? Colors.successGreen : gpsStatus === 'error' ? Colors.liveRed : Colors.accentAmber;
   const hAcc = debugInfo?.hAcc != null ? `${debugInfo.hAcc.toFixed(0)}m` : '-';
   const hdAcc = debugInfo?.hdAcc != null ? `${debugInfo.hdAcc.toFixed(0)}°` : '-';
+  const yoloConf = debugInfo?.yoloConf != null ? `${Math.round(debugInfo.yoloConf * 100)}%` : '-';
 
   // 모드 배지 색상: GPS=초록, OFF=회색
   const badgeColor = detectStatus === 'inactive' ? '#888' : '#00C853';
@@ -68,13 +75,15 @@ const CameraHUD = ({ gpsStatus, onBack, accuracyInfo, debugInfo, detectStatus })
         <Text style={styles.hudModeText}>{badgeLabel}</Text>
       </View>
 
-      {/* 정확도 + 건물수 */}
+      {/* 정확도 + 건물수 + YOLO confidence */}
       <View style={styles.hudInfoPill}>
         <Text style={styles.hudInfoText}>{hAcc}</Text>
         <Text style={styles.hudInfoSep}>·</Text>
         <Text style={styles.hudInfoText}>{hdAcc}</Text>
         <Text style={styles.hudInfoSep}>·</Text>
         <Text style={styles.hudInfoText}>건물{debugInfo?.buildingCount || 0}</Text>
+        <Text style={styles.hudInfoSep}>·</Text>
+        <Text style={styles.hudInfoText}>YOLO {yoloConf}</Text>
       </View>
 
       {/* GPS 상태 점 */}
@@ -91,6 +100,44 @@ const GuideText = ({ text }) => (
     <Text style={styles.guideText}>{text}</Text>
   </View>
 );
+
+// ===== 포커스 영역 오버레이 =====
+const CORNER_LEN = 20;
+const CORNER_W = 3;
+const FocusOverlay = ({ visible, message }) => {
+  if (!visible) return null;
+  const cornerColor = 'rgba(255,255,255,0.8)';
+
+  return (
+    <View style={StyleSheet.absoluteFill} pointerEvents="none">
+      {/* 어두운 영역 4개 (포커스 바깥) */}
+      <View style={{ position: 'absolute', top: 0, left: 0, right: 0, height: FOCUS_TOP, backgroundColor: 'rgba(0,0,0,0.45)' }} />
+      <View style={{ position: 'absolute', top: FOCUS_TOP, left: 0, width: FOCUS_LEFT, height: FOCUS_H, backgroundColor: 'rgba(0,0,0,0.45)' }} />
+      <View style={{ position: 'absolute', top: FOCUS_TOP, right: 0, width: FOCUS_LEFT, height: FOCUS_H, backgroundColor: 'rgba(0,0,0,0.45)' }} />
+      <View style={{ position: 'absolute', top: FOCUS_TOP + FOCUS_H, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.45)' }} />
+
+      {/* 코너 브래킷 (좌상) */}
+      <View style={{ position: 'absolute', top: FOCUS_TOP, left: FOCUS_LEFT, width: CORNER_LEN, height: CORNER_W, backgroundColor: cornerColor }} />
+      <View style={{ position: 'absolute', top: FOCUS_TOP, left: FOCUS_LEFT, width: CORNER_W, height: CORNER_LEN, backgroundColor: cornerColor }} />
+      {/* 우상 */}
+      <View style={{ position: 'absolute', top: FOCUS_TOP, right: FOCUS_LEFT, width: CORNER_LEN, height: CORNER_W, backgroundColor: cornerColor }} />
+      <View style={{ position: 'absolute', top: FOCUS_TOP, right: FOCUS_LEFT, width: CORNER_W, height: CORNER_LEN, backgroundColor: cornerColor }} />
+      {/* 좌하 */}
+      <View style={{ position: 'absolute', bottom: SH - FOCUS_TOP - FOCUS_H, left: FOCUS_LEFT, width: CORNER_LEN, height: CORNER_W, backgroundColor: cornerColor }} />
+      <View style={{ position: 'absolute', bottom: SH - FOCUS_TOP - FOCUS_H, left: FOCUS_LEFT, width: CORNER_W, height: CORNER_LEN, backgroundColor: cornerColor }} />
+      {/* 우하 */}
+      <View style={{ position: 'absolute', bottom: SH - FOCUS_TOP - FOCUS_H, right: FOCUS_LEFT, width: CORNER_LEN, height: CORNER_W, backgroundColor: cornerColor }} />
+      <View style={{ position: 'absolute', bottom: SH - FOCUS_TOP - FOCUS_H, right: FOCUS_LEFT, width: CORNER_W, height: CORNER_LEN, backgroundColor: cornerColor }} />
+
+      {/* 포커스 영역 내 안내 메시지 */}
+      {message && (
+        <View style={{ position: 'absolute', top: FOCUS_TOP + FOCUS_H / 2 - 12, left: FOCUS_LEFT, width: FOCUS_W, alignItems: 'center' }}>
+          <Text style={{ fontSize: 13, fontWeight: '500', color: 'rgba(255,255,255,0.7)', textAlign: 'center' }}>{message}</Text>
+        </View>
+      )}
+    </View>
+  );
+};
 
 // ===== 메인 화면 =====
 const ScanCameraScreen = ({ route, navigation }) => {
@@ -142,9 +189,12 @@ const ScanCameraScreen = ({ route, navigation }) => {
     buildings: detectedBuildings,
   });
 
+  // === 모든 감지 그대로 전달 (매칭은 bearing screenX가 담당) ===
+  const focusedDetections = objectDetections;
+
   // === YOLO 건물 감지 + bearing 매칭 ===
   const { matchedBuildings, unmatchedRegions, cupRegions, hasDetection } = useBuildingMatcher({
-    detections: objectDetections,
+    detections: focusedDetections,
     projectedBuildings,
   });
 
@@ -375,14 +425,21 @@ const ScanCameraScreen = ({ route, navigation }) => {
     navigation.navigate('BehaviorReport', { buildingId: selectedBuilding.id, buildingName: selectedBuilding.name });
   }, [selectedBuilding, navigation]);
 
-  // 안내 텍스트
+  // 안내 텍스트 (하단)
   const guideMessage = useMemo(() => {
     if (sheetOpen) return null;
     if (!geoPose) return 'GPS 위치를 잡는 중...';
     if (detectLoading) return '건물 탐색 중...';
-    if (detectedBuildings.length === 0) return '주변에 건물이 없습니다';
     return null;
-  }, [geoPose, detectLoading, detectedBuildings.length, sheetOpen]);
+  }, [geoPose, detectLoading, sheetOpen]);
+
+  // 포커스 영역 내 안내 메시지
+  const focusMessage = useMemo(() => {
+    if (sheetOpen) return null;
+    if (!geoPose) return null;
+    if (hasDetection) return null; // 감지 성공 → 메시지 사라짐
+    return '포커스 영역에 건물을 맞춰주세요';
+  }, [geoPose, hasDetection, sheetOpen]);
 
   return (
     <GestureHandlerRootView style={styles.container}>
@@ -416,6 +473,9 @@ const ScanCameraScreen = ({ route, navigation }) => {
             onError={handleError}
           />
 
+          {/* Layer 0.5: 포커스 영역 오버레이 */}
+          <FocusOverlay visible={!sheetOpen} message={focusMessage} />
+
           {/* Layer 1: 건물 바운딩박스 + 라벨 + 컵 바운딩박스 */}
           <DetectedBuildingOverlay
             matchedBuildings={matchedBuildings}
@@ -444,6 +504,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
           hAcc: geoPose?.horizontalAccuracy ?? null,
           hdAcc: geoPose?.headingAccuracy ?? null,
           buildingCount: detectedBuildings.length,
+          yoloConf: objectDetections.filter(d => d.type === 'building').reduce((max, d) => Math.max(max, d.confidence || 0), 0) || null,
         }}
       />
 

@@ -62,7 +62,7 @@ class YoloBuildingDetector(private val context: Context) {
     // Coffee cup=121, Mug=345
 
     // 임계값
-    private val BUILDING_CONFIDENCE = 0.25f
+    private val BUILDING_CONFIDENCE = 0.20f
     private val CUP_CONFIDENCE = 0.30f
     private val NMS_IOU_THRESHOLD = 0.45f
 

@@ -178,7 +178,10 @@ const HomeScreen = ({ navigation }) => {
       >
         {/* 상단 네비게이션 바 */}
         <View style={styles.navBar}>
-          <Text style={styles.logo}>ScanPang</Text>
+          <View style={styles.logoWrap}>
+            <Text style={styles.logo}>ScanPang</Text>
+            <Text style={styles.versionText}>v1.028</Text>
+          </View>
           <TouchableOpacity style={styles.pointsPill}>
             <Text style={styles.pointsIcon}>P</Text>
             <Text style={styles.pointsText}>{todayStats.totalPoints.toLocaleString()} P</Text>
@@ -241,10 +244,20 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: Colors.borderLight,
   },
+  logoWrap: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 6,
+  },
   logo: {
     fontSize: 18,
     fontWeight: '800',
     color: Colors.primaryBlue,
+  },
+  versionText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#9CA3AF',
   },
   pointsPill: {
     flexDirection: 'row',
