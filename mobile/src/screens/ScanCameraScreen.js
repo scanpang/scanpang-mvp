@@ -33,11 +33,13 @@ import { formatDistance } from '../utils/coordinate';
 import { behaviorTracker } from '../services/behaviorTracker';
 import BuildingProfileSheet from '../components/BuildingProfileSheet';
 import XRayOverlay from '../components/XRayOverlay';
+import PersonaSelectModal from '../components/PersonaSelectModal';
 import { ARCameraView } from 'scanpang-arcore';
 import useLocationTracking from '../hooks/useLocationTracking';
 import useBearingProjection from '../hooks/useBearingProjection';
 import useBuildingMatcher from '../hooks/useBuildingMatcher';
 import DetectedBuildingOverlay from '../components/DetectedBuildingOverlay';
+import { PersonaType, PERSONA_CONFIGS, loadPersona } from '../data/persona';
 
 
 const { width: SW, height: SH } = Dimensions.get('window');
@@ -51,7 +53,7 @@ const FOCUS_LEFT = (SW - FOCUS_W) / 2;
 const FOCUS_TOP = (SH - FOCUS_H) / 2;
 
 // ===== 상단 HUD =====
-const CameraHUD = ({ gpsStatus, onBack, accuracyInfo, debugInfo, detectStatus }) => {
+const CameraHUD = ({ gpsStatus, onBack, accuracyInfo, debugInfo, detectStatus, persona, onPersonaTap }) => {
   const gpsColor = gpsStatus === 'active' ? Colors.successGreen : gpsStatus === 'error' ? Colors.liveRed : Colors.accentAmber;
   const hAcc = debugInfo?.hAcc != null ? `${debugInfo.hAcc.toFixed(0)}m` : '-';
   const hdAcc = debugInfo?.hdAcc != null ? `${debugInfo.hdAcc.toFixed(0)}°` : '-';
@@ -85,6 +87,15 @@ const CameraHUD = ({ gpsStatus, onBack, accuracyInfo, debugInfo, detectStatus })
         <Text style={styles.hudInfoSep}>·</Text>
         <Text style={styles.hudInfoText}>YOLO {yoloConf}</Text>
       </View>
+
+      {/* 페르소나 칩 */}
+      {persona && PERSONA_CONFIGS[persona] && (
+        <TouchableOpacity style={styles.hudPersonaChip} onPress={onPersonaTap} activeOpacity={0.7}>
+          <Text style={styles.hudPersonaEmoji}>{PERSONA_CONFIGS[persona].emoji}</Text>
+          <Text style={styles.hudPersonaName}>{PERSONA_CONFIGS[persona].nameKo}</Text>
+          <Text style={styles.hudPersonaArrow}>▾</Text>
+        </TouchableOpacity>
+      )}
 
       {/* GPS 상태 점 */}
       <View style={styles.hudGps}>
@@ -156,6 +167,8 @@ const ScanCameraScreen = ({ route, navigation }) => {
   const [xrayActive, setXrayActive] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [objectDetections, setObjectDetections] = useState([]);
+  const [persona, setPersona] = useState(PersonaType.EXPLORER);
+  const [showPersonaModal, setShowPersonaModal] = useState(false);
 
   const bottomSheetRef = useRef(null);
   const cameraRef = useRef(null);
@@ -274,6 +287,14 @@ const ScanCameraScreen = ({ route, navigation }) => {
       if (isMountedRef.current) setCameraReady(true);
     });
     return () => handle.cancel();
+  }, []);
+
+  // 페르소나 로드 (온보딩은 HomeScreen에서 처리)
+  useEffect(() => {
+    (async () => {
+      const saved = await loadPersona();
+      if (saved) setPersona(saved);
+    })();
   }, []);
 
   // BehaviorTracker 세션 + 서버 시각
@@ -395,6 +416,17 @@ const ScanCameraScreen = ({ route, navigation }) => {
       triggerGeminiAnalysis(building);
     }
   }, [detectedBuildings, userLocation, heading, accuracyInfo, saveRecentScan, triggerGeminiAnalysis]);
+
+  // 페르소나 선택 완료 (HUD에서 변경)
+  const handlePersonaSelect = useCallback((type) => {
+    setPersona(type);
+    setShowPersonaModal(false);
+  }, []);
+
+  // HUD 페르소나 칩 탭 → 변경 모달
+  const handlePersonaTap = useCallback(() => {
+    setShowPersonaModal(true);
+  }, []);
 
   // 상태 초기화
   const resetScanState = useCallback(() => {
@@ -537,6 +569,8 @@ const ScanCameraScreen = ({ route, navigation }) => {
         onBack={() => navigation.goBack()}
         accuracyInfo={accuracyInfo}
         detectStatus={detectStatus}
+        persona={persona}
+        onPersonaTap={handlePersonaTap}
         debugInfo={{
           hAcc: geoPose?.horizontalAccuracy ?? null,
           hdAcc: geoPose?.headingAccuracy ?? null,
@@ -584,6 +618,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
               onXrayToggle={handleXrayToggle}
               xrayActive={xrayActive}
               onLazyLoad={fetchLazyTab}
+              persona={persona}
               onRetry={() => {
                 setProfileError(null);
               }}
@@ -595,6 +630,13 @@ const ScanCameraScreen = ({ route, navigation }) => {
           )}
         </BottomSheetView>
       </BottomSheet>
+
+      {/* 페르소나 선택 모달 */}
+      <PersonaSelectModal
+        visible={showPersonaModal}
+        onSelect={handlePersonaSelect}
+        onClose={() => setShowPersonaModal(false)}
+      />
     </GestureHandlerRootView>
   );
 };
@@ -636,6 +678,16 @@ const styles = StyleSheet.create({
   hudInfoPill: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.4)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14, gap: 2 },
   hudInfoText: { fontSize: 11, fontWeight: '600', color: 'rgba(255,255,255,0.8)' },
   hudInfoSep: { fontSize: 11, color: 'rgba(255,255,255,0.3)' },
+  hudPersonaChip: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: 'rgba(139,92,246,0.2)',
+    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14,
+    borderWidth: 1, borderColor: 'rgba(139,92,246,0.35)',
+    gap: 4,
+  },
+  hudPersonaEmoji: { fontSize: 12 },
+  hudPersonaName: { fontSize: 11, fontWeight: '700', color: '#F1F5F9' },
+  hudPersonaArrow: { fontSize: 8, color: 'rgba(255,255,255,0.4)' },
   hudGps: { marginLeft: 'auto' },
   hudGpsDot: { width: 8, height: 8, borderRadius: 4 },
 

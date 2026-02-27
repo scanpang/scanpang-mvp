@@ -20,6 +20,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { Colors, SPACING } from '../constants/theme';
 import useNearbyBuildings from '../hooks/useNearbyBuildings';
+import { PersonaType, PERSONA_CONFIGS, loadPersona, hasPersonaSelected } from '../data/persona';
+import PersonaSelectModal from '../components/PersonaSelectModal';
 
 import StatusCard from '../components/home/StatusCard';
 import ScanStartCard from '../components/home/ScanStartCard';
@@ -68,6 +70,26 @@ const HomeScreen = ({ navigation }) => {
   const [todayStats, setTodayStats] = useState({
     scanCount: 0, todayEarned: 0, dailyLimit: DAILY_LIMIT, remaining: DAILY_LIMIT, totalPoints: 0,
   });
+  const [persona, setPersona] = useState(null);
+  const [showPersonaModal, setShowPersonaModal] = useState(false);
+
+  // 페르소나 로드 + 최초 실행 온보딩
+  useEffect(() => {
+    (async () => {
+      const selected = await hasPersonaSelected();
+      if (selected) {
+        const saved = await loadPersona();
+        if (saved) setPersona(saved);
+      } else {
+        setShowPersonaModal(true);
+      }
+    })();
+  }, []);
+
+  const handlePersonaSelect = (type) => {
+    setPersona(type);
+    setShowPersonaModal(false);
+  };
 
   // GPS 캐시 → 즉시 위치 확보 (콜드스타트 대응)
   useEffect(() => {
@@ -180,12 +202,20 @@ const HomeScreen = ({ navigation }) => {
         <View style={styles.navBar}>
           <View style={styles.logoWrap}>
             <Text style={styles.logo}>ScanPang</Text>
-            <Text style={styles.versionText}>v1.029</Text>
+            <Text style={styles.versionText}>v1.033</Text>
           </View>
-          <TouchableOpacity style={styles.pointsPill}>
-            <Text style={styles.pointsIcon}>P</Text>
-            <Text style={styles.pointsText}>{todayStats.totalPoints.toLocaleString()} P</Text>
-          </TouchableOpacity>
+          <View style={styles.navRight}>
+            <TouchableOpacity style={styles.pointsPill}>
+              <Text style={styles.pointsIcon}>P</Text>
+              <Text style={styles.pointsText}>{todayStats.totalPoints.toLocaleString()} P</Text>
+            </TouchableOpacity>
+            {persona && PERSONA_CONFIGS[persona] && (
+              <TouchableOpacity style={styles.personaChip} onPress={() => setShowPersonaModal(true)} activeOpacity={0.7}>
+                <Text style={styles.personaEmoji}>{PERSONA_CONFIGS[persona].emoji}</Text>
+                <Text style={styles.personaName}>{PERSONA_CONFIGS[persona].nameKo}</Text>
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
 
         {/* 인사 + 현황 카드 */}
@@ -221,6 +251,14 @@ const HomeScreen = ({ navigation }) => {
           <Text style={styles.flywheelArrow}>{'›'}</Text>
         </TouchableOpacity>
       </ScrollView>
+
+      {/* 페르소나 선택 모달 (온보딩 / 변경) */}
+      <PersonaSelectModal
+        visible={showPersonaModal}
+        onSelect={handlePersonaSelect}
+        onClose={() => setShowPersonaModal(false)}
+        isOnboarding={!persona}
+      />
     </View>
   );
 };
@@ -259,6 +297,11 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#9CA3AF',
   },
+  navRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+  },
   pointsPill: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -280,6 +323,21 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: Colors.primaryBlue,
   },
+  // 페르소나 칩
+  personaChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EDE9FE',
+    paddingHorizontal: 10,
+    paddingVertical: SPACING.xs + 2,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: '#8B5CF6',
+    gap: 4,
+  },
+  personaEmoji: { fontSize: 12 },
+  personaName: { fontSize: 12, fontWeight: '700', color: '#7C3AED' },
+
   // Flywheel 카드
   flywheelCard: {
     flexDirection: 'row',

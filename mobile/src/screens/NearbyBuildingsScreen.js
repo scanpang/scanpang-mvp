@@ -21,12 +21,14 @@ import { Colors, SPACING, CardShadow } from '../constants/theme';
 import { formatDistance } from '../utils/coordinate';
 import useBuildingDetail from '../hooks/useBuildingDetail';
 import BuildingProfileSheet from '../components/BuildingProfileSheet';
+import { PersonaType, loadPersona } from '../data/persona';
 
 const NearbyBuildingsScreen = ({ route, navigation }) => {
   const insets = useSafeAreaInsets();
   const { buildings = [], selectedBuildingId: initialId = null } = route?.params || {};
 
   const [selectedId, setSelectedId] = useState(initialId);
+  const [persona, setPersona] = useState(PersonaType.EXPLORER);
   const bottomSheetRef = React.useRef(null);
   const snapPoints = useMemo(() => ['1%', '55%', '90%'], []);
 
@@ -58,6 +60,14 @@ const NearbyBuildingsScreen = ({ route, navigation }) => {
   const handleCloseSheet = useCallback(() => {
     setSelectedId(null);
     bottomSheetRef.current?.close();
+  }, []);
+
+  // 페르소나 로드
+  React.useEffect(() => {
+    (async () => {
+      const saved = await loadPersona();
+      if (saved) setPersona(saved);
+    })();
   }, []);
 
   // 초기 선택 건물이 있으면 바텀시트 열기
@@ -155,6 +165,7 @@ const NearbyBuildingsScreen = ({ route, navigation }) => {
               enriching={enriching}
               onClose={handleCloseSheet}
               onLazyLoad={fetchLazyTab}
+              persona={persona}
             />
           ) : (
             <View style={styles.bsEmpty}>
