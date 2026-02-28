@@ -72,11 +72,11 @@ const CameraHUD = ({ gpsStatus, onBack, debugInfo, persona, onPersonaTap }) => {
 
       {/* 정확도 · YOLO · 역지오코딩 횟수 */}
       <View style={styles.hudInfoPill}>
-        <Text style={styles.hudInfoText}>{hAcc}</Text>
+        <Text style={[styles.hudInfoText, { minWidth: 26, textAlign: 'right' }]}>{hAcc}</Text>
         <Text style={styles.hudInfoSep}>·</Text>
-        <Text style={styles.hudInfoText}>{yoloConf}</Text>
+        <Text style={[styles.hudInfoText, { minWidth: 28, textAlign: 'right' }]}>{yoloConf}</Text>
         <Text style={styles.hudInfoSep}>·</Text>
-        <Text style={styles.hudInfoText}>{hitDist}</Text>
+        <Text style={[styles.hudInfoText, { minWidth: 22, textAlign: 'right' }]}>{hitDist}</Text>
       </View>
 
       {/* 페르소나 칩 */}
@@ -196,7 +196,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
   // 화면 중앙에 가장 가까운 YOLO 건물 바운딩박스 인덱스
   const primaryIndex = useMemo(() => {
     if (!identifiedBuilding) return null;
-    const centerX = SW / 2;
+    const centerX = 0.5; // 0~1 정규화 좌표 기준 중앙
     let bestIdx = null;
     let bestDist = Infinity;
     objectDetections.forEach((d, idx) => {

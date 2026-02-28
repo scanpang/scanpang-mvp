@@ -48,9 +48,11 @@ const DetectedBuildingOverlay = ({
     <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
       {/* 건물 바운딩박스 */}
       {buildings.map(({ detection, idx }) => {
-        const { left, top, right, bottom } = detection;
-        const width = right - left;
-        const height = bottom - top;
+        // 0~1 정규화 좌표 → 화면 픽셀 좌표 변환
+        const left = detection.left * SW;
+        const top = detection.top * SH;
+        const width = (detection.right - detection.left) * SW;
+        const height = (detection.bottom - detection.top) * SH;
         const isPrimary = idx === primaryIndex;
 
         if (isPrimary && identifiedBuilding) {
@@ -109,11 +111,13 @@ const DetectedBuildingOverlay = ({
 
       {/* 컵: 노란 테두리 + 라벨 */}
       {cups.map(({ detection, idx }) => {
-        const { left, top, right, bottom, label } = detection;
-        const width = right - left;
-        const height = bottom - top;
+        // 0~1 정규화 좌표 → 화면 픽셀 좌표 변환
+        const left = detection.left * SW;
+        const top = detection.top * SH;
+        const width = (detection.right - detection.left) * SW;
+        const height = (detection.bottom - detection.top) * SH;
         const cupColor = 'rgba(255, 215, 0, 0.7)';
-        const labelTop = top > LABEL_H + PADDING ? -LABEL_H : PADDING;
+        const labelTopPos = top > LABEL_H + PADDING ? -LABEL_H : PADDING;
 
         return (
           <View
@@ -121,9 +125,9 @@ const DetectedBuildingOverlay = ({
             style={[styles.boundingBox, { left, top, width, height, borderColor: cupColor }]}
             pointerEvents="none"
           >
-            <View style={[styles.label, { backgroundColor: cupColor, top: labelTop }]}>
+            <View style={[styles.label, { backgroundColor: cupColor, top: labelTopPos }]}>
               <Text style={styles.labelName} numberOfLines={1}>
-                {label || 'Cup'}
+                {detection.label || 'Cup'}
               </Text>
             </View>
           </View>
