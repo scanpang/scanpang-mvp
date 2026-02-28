@@ -160,8 +160,8 @@ async function scanForward(lat, lng, heading) {
 
   const startTime = Date.now();
 
-  // 부채꼴 12포인트: -15° / 0° / +15° × 5m / 20m / 35m / 50m
-  const angles = [-10, 0, 10];
+  // 정면 4포인트: 0° × 4거리 (정면 건물 특정)
+  const angles = [0];
   const distances = [5, 20, 35, 50];
 
   const points = [];
