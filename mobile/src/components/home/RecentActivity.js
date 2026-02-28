@@ -1,8 +1,9 @@
 /**
  * RecentActivity - 최근 활동 섹션
  * - 리스트 최대 3건
- * - 건물 아이콘 + 건물명 + 획득 포인트 + 시간
+ * - 건물 아이콘 + 건물명 + 시간
  * - 빈 상태: "아직 스캔 기록이 없어요"
+ * - "전체 기록" → ScanHistory 화면 이동
  */
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
@@ -24,7 +25,6 @@ const getTimeAgo = (timestamp) => {
 };
 
 const ActivityItem = ({ item }) => {
-  // 건물명 우선순위: name > buildingName > address
   const displayName = item.name || item.buildingName || item.address || '건물';
   const timeDisplay = item.timeAgo || getTimeAgo(item.timestamp);
   return (
@@ -36,16 +36,19 @@ const ActivityItem = ({ item }) => {
         <Text style={styles.buildingName} numberOfLines={2} ellipsizeMode="tail">{displayName}</Text>
         <Text style={styles.timeAgo}>{timeDisplay}</Text>
       </View>
-      <Text style={styles.points}>+{item.points || 50}P</Text>
     </View>
   );
 };
 
-const RecentActivity = ({ activities = [], onScanPress }) => (
+const RecentActivity = ({ activities = [], onScanPress, onSeeAll }) => (
   <View style={styles.container}>
     <View style={styles.header}>
       <Text style={styles.sectionTitle}>최근 활동</Text>
-      <TouchableOpacity><Text style={styles.seeAll}>전체 기록 ›</Text></TouchableOpacity>
+      {activities.length > 0 && (
+        <TouchableOpacity onPress={onSeeAll}>
+          <Text style={styles.seeAll}>전체 기록 ›</Text>
+        </TouchableOpacity>
+      )}
     </View>
 
     {activities.length === 0 ? (
@@ -89,7 +92,6 @@ const styles = StyleSheet.create({
   itemContent: { flex: 1 },
   buildingName: { fontSize: 15, fontWeight: '600', color: Colors.textPrimary },
   timeAgo: { fontSize: 13, color: Colors.textTertiary, marginTop: 2 },
-  points: { fontSize: 15, fontWeight: '700', color: Colors.successGreen },
   // empty
   emptyContainer: { alignItems: 'center', paddingVertical: SPACING.xxl },
   emptyText: { fontSize: 15, color: Colors.textTertiary, marginBottom: SPACING.md },

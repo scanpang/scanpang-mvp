@@ -55,7 +55,6 @@ const CameraHUD = ({ gpsStatus, onBack, debugInfo, persona, onPersonaTap }) => {
   const gpsColor = gpsStatus === 'active' ? Colors.successGreen : gpsStatus === 'error' ? Colors.liveRed : Colors.accentAmber;
   const hAcc = debugInfo?.hAcc != null ? `${debugInfo.hAcc.toFixed(0)}m` : '-';
   const yoloConf = debugInfo?.yoloConf != null ? `${Math.round(debugInfo.yoloConf * 100)}%` : '-';
-  const hitDist = debugInfo?.hitDistance != null ? `${debugInfo.hitDistance}m` : '-';
 
   return (
     <View style={styles.hud}>
@@ -75,8 +74,6 @@ const CameraHUD = ({ gpsStatus, onBack, debugInfo, persona, onPersonaTap }) => {
         <Text style={[styles.hudInfoText, { minWidth: 26, textAlign: 'right' }]}>{hAcc}</Text>
         <Text style={styles.hudInfoSep}>·</Text>
         <Text style={[styles.hudInfoText, { minWidth: 28, textAlign: 'right' }]}>{yoloConf}</Text>
-        <Text style={styles.hudInfoSep}>·</Text>
-        <Text style={[styles.hudInfoText, { minWidth: 22, textAlign: 'right' }]}>{hitDist}</Text>
       </View>
 
       {/* 페르소나 칩 */}
@@ -180,23 +177,13 @@ const ScanCameraScreen = ({ route, navigation }) => {
     return objectDetections.some(d => d.type === 'building');
   }, [objectDetections]);
 
-  // === 메인 감지: YOLO 트리거 역지오코딩 ===
-  const { buildings: detectedBuildings, loading: detectLoading } = useBuildingDetect({
-    geoPoseRef,
-    hasYoloBuilding: yoloHasBuilding,
-    enabled: !sheetOpen,
-  });
-
-  // detect 상태 계산
-  const detectStatus = !yoloHasBuilding ? 'inactive' : detectLoading ? 'detecting' : 'ok';
-
-  // 역지오코딩 결과 중 첫 번째 (가장 가까운) 건물
-  const identifiedBuilding = detectedBuildings.length > 0 ? detectedBuildings[0] : null;
+  // === 수동 건물 식별 (탭 시 호출) ===
+  const { buildings: detectedBuildings, loading: detectLoading, fetchDetect } = useBuildingDetect();
 
   // 화면 중앙에 가장 가까운 YOLO 건물 바운딩박스 인덱스
   const primaryIndex = useMemo(() => {
-    if (!identifiedBuilding) return null;
-    const centerX = 0.5; // 0~1 정규화 좌표 기준 중앙
+    if (!yoloHasBuilding) return null;
+    const centerX = 0.5;
     let bestIdx = null;
     let bestDist = Infinity;
     objectDetections.forEach((d, idx) => {
@@ -209,7 +196,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
       }
     });
     return bestIdx;
-  }, [objectDetections, identifiedBuilding]);
+  }, [objectDetections, yoloHasBuilding]);
 
   // YOLO 감지 이벤트 핸들러
   const handleObjectDetection = useCallback((event) => {
@@ -373,7 +360,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
         buildingName: building.name || building.address || '건물',
         name: building.name || null,
         address: building.address || null,
-        points: 50, timeAgo: '방금 전', timestamp: Date.now(),
+        timestamp: Date.now(),
       });
       if (scans.length > 20) scans.length = 20;
       await AsyncStorage.setItem(RECENT_SCANS_KEY, JSON.stringify(scans));
@@ -396,26 +383,35 @@ const ScanCameraScreen = ({ route, navigation }) => {
     } catch {}
   }, [userLocation, heading]);
 
-  // 라벨 탭 → 바텀시트 열기
-  const handleLabelSelect = useCallback((projected) => {
-    if (!projected) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  // "건물상세보기" 탭 → API 호출 → 바텀시트 열기
+  const handleDetailTap = useCallback(async () => {
+    const gp = geoPoseRef.current;
+    if (!gp || gp.latitude == null) return;
 
-    const building = detectedBuildings.find(b => b.id === projected.id);
-    setSelectedBuildingId(projected.id);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setProfileError(null);
 
+    // API 호출
+    const results = await fetchDetect({
+      lat: gp.latitude,
+      lng: gp.longitude,
+      heading: gp.heading ?? 0,
+      horizontalAccuracy: gp.horizontalAccuracy,
+    });
+
+    if (!results || results.length === 0) return;
+
+    const building = results[0];
+    setSelectedBuildingId(building.id);
     setTimeout(() => bottomSheetRef.current?.snapToIndex(1), 50);
 
     // 로깅
-    postScanLog({ sessionId: sessionIdRef.current, buildingId: projected.id, eventType: 'label_tap', userLat: userLocation?.lat, userLng: userLocation?.lng, deviceHeading: heading, metadata: { bearing: projected.bearing, angleDiff: projected.angleDiff } }).catch(() => {});
-    behaviorTracker.trackEvent('label_tap', { buildingId: projected.id, buildingName: projected.name, metadata: { mode: accuracyInfo?.modeLabel, hAcc: accuracyInfo?.hAcc, distance: projected.distance } });
+    postScanLog({ sessionId: sessionIdRef.current, buildingId: building.id, eventType: 'detail_tap', userLat: gp.latitude, userLng: gp.longitude, deviceHeading: gp.heading, metadata: {} }).catch(() => {});
+    behaviorTracker.trackEvent('detail_tap', { buildingId: building.id, buildingName: building.name, metadata: { hAcc: gp.horizontalAccuracy } });
 
-    if (building) {
-      saveRecentScan(building);
-      triggerGeminiAnalysis(building);
-    }
-  }, [detectedBuildings, userLocation, heading, accuracyInfo, saveRecentScan, triggerGeminiAnalysis]);
+    saveRecentScan(building);
+    triggerGeminiAnalysis(building);
+  }, [fetchDetect, saveRecentScan, triggerGeminiAnalysis]);
 
   // 페르소나 선택 완료 (HUD에서 변경)
   const handlePersonaSelect = useCallback((type) => {
@@ -461,7 +457,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
   const guideMessage = useMemo(() => {
     if (sheetOpen) return null;
     if (!geoPose) return 'GPS 위치를 잡는 중...';
-    if (detectLoading) return '건물 탐색 중...';
+    if (detectLoading) return '건물 조회 중...';
     return null;
   }, [geoPose, detectLoading, sheetOpen]);
 
@@ -511,9 +507,8 @@ const ScanCameraScreen = ({ route, navigation }) => {
           {/* Layer 1: YOLO 바운딩박스 + 건물명 라벨 */}
           <DetectedBuildingOverlay
             detections={objectDetections}
-            identifiedBuilding={identifiedBuilding}
             primaryIndex={primaryIndex}
-            onSelect={handleLabelSelect}
+            onSelect={handleDetailTap}
             visible={!sheetOpen}
           />
         </>
@@ -535,7 +530,6 @@ const ScanCameraScreen = ({ route, navigation }) => {
         debugInfo={{
           hAcc: geoPose?.horizontalAccuracy ?? null,
           yoloConf: objectDetections.filter(d => d.type === 'building').reduce((max, d) => Math.max(max, d.confidence || 0), 0) || null,
-          hitDistance: identifiedBuilding?.hitDistance ?? null,
         }}
       />
 

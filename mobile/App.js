@@ -19,6 +19,7 @@ import ScanCameraScreen from './src/screens/ScanCameraScreen';
 import BehaviorReportScreen from './src/screens/BehaviorReportScreen';
 import FlywheelDashboardScreen from './src/screens/FlywheelDashboardScreen';
 import NearbyBuildingsScreen from './src/screens/NearbyBuildingsScreen';
+import ScanHistoryScreen from './src/screens/ScanHistoryScreen';
 
 import { Colors } from './src/constants/theme';
 
@@ -116,6 +117,14 @@ export default function App() {
             component={NearbyBuildingsScreen}
             options={{
               title: '주변 건물',
+              gestureEnabled: true,
+            }}
+          />
+          <Stack.Screen
+            name="ScanHistory"
+            component={ScanHistoryScreen}
+            options={{
+              title: '전체 기록',
               gestureEnabled: true,
             }}
           />

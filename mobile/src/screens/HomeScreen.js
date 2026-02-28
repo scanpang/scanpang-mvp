@@ -30,37 +30,27 @@ import RecentActivity from '../components/home/RecentActivity';
 
 const RECENT_SCANS_KEY_HOME = '@scanpang_recent_scans';
 const GPS_CACHE_KEY = '@scanpang_last_gps';
-const AD_POINTS_KEY = '@scanpang_ad_points';
-const POINTS_PER_SCAN = 50;
 const DAILY_LIMIT = 500;
 
-// AsyncStorage에서 오늘 스캔 통계 계산
+// 오늘 스캔 통계 계산 (남은한도 = 숫자 표시용, 기능 구현 없음)
 const getTodayStats = (scans) => {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const todayTs = today.getTime();
 
-  // 오늘 스캔한 항목만 필터
   const todayScans = scans.filter(s => (s.timestamp || 0) >= todayTs);
 
   // 중복 건물 제거 (같은 날 같은 건물 = 1회)
   const uniqueBuildings = new Set();
   todayScans.forEach(s => {
-    const baseId = s.id?.split('_').slice(0, -1).join('_') || s.id; // 타임스탬프 suffix 제거
+    const baseId = s.id?.split('_').slice(0, -1).join('_') || s.id;
     uniqueBuildings.add(baseId);
   });
 
   const scanCount = uniqueBuildings.size;
-  const todayEarned = scanCount * POINTS_PER_SCAN;
   const remaining = Math.max(0, DAILY_LIMIT - scanCount);
 
-  return {
-    scanCount,
-    todayEarned,
-    dailyLimit: DAILY_LIMIT,
-    remaining,
-    totalPoints: scans.length * POINTS_PER_SCAN, // 전체 누적 (간이 계산)
-  };
+  return { scanCount, remaining };
 };
 
 const HomeScreen = ({ navigation }) => {
@@ -68,9 +58,7 @@ const HomeScreen = ({ navigation }) => {
   const [userLocation, setUserLocation] = useState(null);
   const [locationName, setLocationName] = useState(null);
   const [recentActivities, setRecentActivities] = useState([]);
-  const [todayStats, setTodayStats] = useState({
-    scanCount: 0, todayEarned: 0, dailyLimit: DAILY_LIMIT, remaining: DAILY_LIMIT, totalPoints: 0,
-  });
+  const [todayStats, setTodayStats] = useState({ scanCount: 0, remaining: DAILY_LIMIT });
   const [persona, setPersona] = useState(null);
   const [showPersonaModal, setShowPersonaModal] = useState(false);
 
@@ -135,20 +123,14 @@ const HomeScreen = ({ navigation }) => {
     })();
   }, []);
 
-  // 최근 스캔 기록 로드 + 오늘 통계 계산 + 광고 포인트 합산
+  // 최근 스캔 기록 로드 + 오늘 통계 계산
   const loadScanData = async () => {
     try {
       const raw = await AsyncStorage.getItem(RECENT_SCANS_KEY_HOME);
-      const adRaw = await AsyncStorage.getItem(AD_POINTS_KEY);
-      const adPoints = adRaw ? parseInt(adRaw, 10) : 0;
       if (raw) {
         const scans = JSON.parse(raw);
         setRecentActivities(scans.slice(0, 3));
-        const stats = getTodayStats(scans);
-        stats.totalPoints += adPoints;
-        setTodayStats(stats);
-      } else {
-        setTodayStats(prev => ({ ...prev, totalPoints: adPoints }));
+        setTodayStats(getTodayStats(scans));
       }
     } catch {}
   };
@@ -212,9 +194,6 @@ const HomeScreen = ({ navigation }) => {
             <Text style={styles.versionText}>v1.039</Text>
           </View>
           <View style={styles.navRight}>
-            <TouchableOpacity style={styles.pointsPill}>
-              <Text style={styles.pointsText}>{todayStats.totalPoints.toLocaleString()} P</Text>
-            </TouchableOpacity>
             {persona && PERSONA_CONFIGS[persona] && (
               <TouchableOpacity style={styles.personaChip} onPress={() => setShowPersonaModal(true)} activeOpacity={0.7}>
                 <Text style={styles.personaEmoji}>{PERSONA_CONFIGS[persona].emoji}</Text>
@@ -246,7 +225,11 @@ const HomeScreen = ({ navigation }) => {
         />
 
         {/* 최근 활동 */}
-        <RecentActivity activities={recentActivities.length > 0 ? recentActivities : []} onScanPress={handleStartScan} />
+        <RecentActivity
+          activities={recentActivities.length > 0 ? recentActivities : []}
+          onScanPress={handleStartScan}
+          onSeeAll={() => navigation.navigate('ScanHistory')}
+        />
 
         {/* Flywheel 대시보드 */}
         <TouchableOpacity style={styles.flywheelCard} onPress={handleFlywheelDashboard} activeOpacity={0.7}>
@@ -307,22 +290,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: SPACING.sm,
-  },
-  pointsPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.bgWhite,
-    borderWidth: 1.5,
-    borderColor: Colors.primaryBlue,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.xs + 2,
-    borderRadius: 20,
-    gap: SPACING.xs,
-  },
-  pointsText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: Colors.primaryBlue,
   },
   // 페르소나 칩
   personaChip: {

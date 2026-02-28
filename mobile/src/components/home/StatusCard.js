@@ -3,7 +3,7 @@
  * - GPS 기반 위치명
  * - 시간대별 인사
  * - 주변 건물 수
- * - 3칸 스탯 (오늘 스캔, 획득 포인트, 남은 한도)
+ * - 2칸 스탯 (오늘 스캔, 남은 한도)
  */
 import React, { useRef, useEffect } from 'react';
 import { View, Text, StyleSheet, Animated } from 'react-native';
@@ -21,8 +21,6 @@ const StatusCard = ({ nearbyCount = 0, stats, locationName }) => {
     ]).start();
   }, []);
 
-  const usedRatio = stats ? stats.scanCount / (stats.dailyLimit || 500) : 0;
-
   return (
     <Animated.View style={[styles.card, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
       <View style={styles.gradient}>
@@ -32,7 +30,7 @@ const StatusCard = ({ nearbyCount = 0, stats, locationName }) => {
           주변에 스캔 가능한 건물 {nearbyCount}개
         </Text>
 
-        {/* 3칸 스탯 */}
+        {/* 2칸 스탯 */}
         {stats && (
           <View style={styles.statsRow}>
             <View style={styles.statBox}>
@@ -40,15 +38,8 @@ const StatusCard = ({ nearbyCount = 0, stats, locationName }) => {
               <Text style={styles.statLabel}>오늘 스캔</Text>
             </View>
             <View style={styles.statBox}>
-              <Text style={styles.statValue}>{stats.todayEarned}P</Text>
-              <Text style={styles.statLabel}>획득 포인트</Text>
-            </View>
-            <View style={styles.statBox}>
-              <Text style={styles.statValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>{stats.remaining ?? stats.dailyLimit}/{stats.dailyLimit}</Text>
+              <Text style={styles.statValue}>{stats.remaining}</Text>
               <Text style={styles.statLabel}>남은 한도</Text>
-              <View style={styles.progressBg}>
-                <View style={[styles.progressFill, { width: `${Math.min(usedRatio * 100, 100)}%` }]} />
-              </View>
             </View>
           </View>
         )}
@@ -77,15 +68,6 @@ const styles = StyleSheet.create({
   },
   statValue: { fontSize: 18, fontWeight: '700', color: Colors.textWhite, marginBottom: 2 },
   statLabel: { fontSize: 11, color: 'rgba(255,255,255,0.7)' },
-  progressBg: {
-    width: '100%', height: 3, borderRadius: 2,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    marginTop: SPACING.xs,
-  },
-  progressFill: {
-    height: 3, borderRadius: 2,
-    backgroundColor: Colors.textWhite,
-  },
 });
 
 export default StatusCard;
