@@ -241,6 +241,7 @@ async function scanForward(lat, lng, heading) {
       dong: r.dong,
       bun: r.bun,
       ji: r.ji,
+      hitDistance: r.pointDistance,
     });
   }
 

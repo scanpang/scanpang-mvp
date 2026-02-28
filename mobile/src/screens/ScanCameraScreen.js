@@ -36,8 +36,6 @@ import XRayOverlay from '../components/XRayOverlay';
 import PersonaSelectModal from '../components/PersonaSelectModal';
 import { ARCameraView } from 'scanpang-arcore';
 import useLocationTracking from '../hooks/useLocationTracking';
-import useBearingProjection from '../hooks/useBearingProjection';
-import useBuildingMatcher from '../hooks/useBuildingMatcher';
 import DetectedBuildingOverlay from '../components/DetectedBuildingOverlay';
 import { PersonaType, PERSONA_CONFIGS, loadPersona } from '../data/persona';
 
@@ -53,39 +51,32 @@ const FOCUS_LEFT = (SW - FOCUS_W) / 2;
 const FOCUS_TOP = (SH - FOCUS_H) / 2;
 
 // ===== 상단 HUD =====
-const CameraHUD = ({ gpsStatus, onBack, accuracyInfo, debugInfo, detectStatus, persona, onPersonaTap }) => {
+const CameraHUD = ({ gpsStatus, onBack, debugInfo, persona, onPersonaTap }) => {
   const gpsColor = gpsStatus === 'active' ? Colors.successGreen : gpsStatus === 'error' ? Colors.liveRed : Colors.accentAmber;
   const hAcc = debugInfo?.hAcc != null ? `${debugInfo.hAcc.toFixed(0)}m` : '-';
-  const hdAcc = debugInfo?.hdAcc != null ? `${debugInfo.hdAcc.toFixed(0)}°` : '-';
   const yoloConf = debugInfo?.yoloConf != null ? `${Math.round(debugInfo.yoloConf * 100)}%` : '-';
-
-  // 모드 배지 색상: GPS=초록, OFF=회색
-  const badgeColor = detectStatus === 'inactive' ? '#888' : '#00C853';
-  const badgeLabel = detectStatus === 'inactive' ? 'OFF' : 'GPS';
+  const hitDist = debugInfo?.hitDistance != null ? `${debugInfo.hitDistance}m` : '-';
 
   return (
     <View style={styles.hud}>
+      {/* 뒤로가기 */}
       <TouchableOpacity style={styles.hudBackBtn} onPress={onBack} hitSlop={TOUCH.hitSlop}>
         <Text style={styles.hudBackText}>{'\u2039'}</Text>
       </TouchableOpacity>
 
-      {/* 모드 배지 */}
-      <View
-        style={[styles.hudModeBadge, { backgroundColor: badgeColor }]}
-        pointerEvents="none"
-      >
-        <Text style={styles.hudModeText}>{badgeLabel}</Text>
+      {/* GPS + 상태 점 */}
+      <View style={styles.hudGpsBadge}>
+        <Text style={styles.hudGpsLabel}>GPS</Text>
+        <View style={[styles.hudGpsDot, { backgroundColor: gpsColor }]} />
       </View>
 
-      {/* 정확도 + 건물수 + YOLO confidence */}
+      {/* 정확도 · YOLO · 역지오코딩 횟수 */}
       <View style={styles.hudInfoPill}>
         <Text style={styles.hudInfoText}>{hAcc}</Text>
         <Text style={styles.hudInfoSep}>·</Text>
-        <Text style={styles.hudInfoText}>{hdAcc}</Text>
+        <Text style={styles.hudInfoText}>{yoloConf}</Text>
         <Text style={styles.hudInfoSep}>·</Text>
-        <Text style={styles.hudInfoText}>건물{debugInfo?.buildingCount || 0}</Text>
-        <Text style={styles.hudInfoSep}>·</Text>
-        <Text style={styles.hudInfoText}>YOLO {yoloConf}</Text>
+        <Text style={styles.hudInfoText}>{hitDist}</Text>
       </View>
 
       {/* 페르소나 칩 */}
@@ -96,11 +87,6 @@ const CameraHUD = ({ gpsStatus, onBack, accuracyInfo, debugInfo, detectStatus, p
           <Text style={styles.hudPersonaArrow}>▾</Text>
         </TouchableOpacity>
       )}
-
-      {/* GPS 상태 점 */}
-      <View style={styles.hudGps}>
-        <View style={[styles.hudGpsDot, { backgroundColor: gpsColor }]} />
-      </View>
     </View>
   );
 };
@@ -189,27 +175,41 @@ const ScanCameraScreen = ({ route, navigation }) => {
   const geoPoseRef = useRef(null);
   useEffect(() => { geoPoseRef.current = geoPose; }, [geoPose]);
 
-  // === 메인 감지: GPS + heading 기반 ===
-  const { buildings: detectedBuildings, loading: detectLoading, status: detectStatus } = useBuildingDetect({
-    geoPose,
+  // YOLO가 건물을 감지했는지
+  const yoloHasBuilding = useMemo(() => {
+    return objectDetections.some(d => d.type === 'building');
+  }, [objectDetections]);
+
+  // === 메인 감지: YOLO 트리거 역지오코딩 ===
+  const { buildings: detectedBuildings, loading: detectLoading } = useBuildingDetect({
     geoPoseRef,
+    hasYoloBuilding: yoloHasBuilding,
     enabled: !sheetOpen,
   });
 
-  // === bearing 스크린 투영 ===
-  const projectedBuildings = useBearingProjection({
-    geoPose,
-    buildings: detectedBuildings,
-  });
+  // detect 상태 계산
+  const detectStatus = !yoloHasBuilding ? 'inactive' : detectLoading ? 'detecting' : 'ok';
 
-  // === 모든 감지 그대로 전달 (매칭은 bearing screenX가 담당) ===
-  const focusedDetections = objectDetections;
+  // 역지오코딩 결과 중 첫 번째 (가장 가까운) 건물
+  const identifiedBuilding = detectedBuildings.length > 0 ? detectedBuildings[0] : null;
 
-  // === YOLO 건물 감지 + bearing 매칭 ===
-  const { matchedBuildings, unmatchedRegions, cupRegions, hasDetection } = useBuildingMatcher({
-    detections: focusedDetections,
-    projectedBuildings,
-  });
+  // 화면 중앙에 가장 가까운 YOLO 건물 바운딩박스 인덱스
+  const primaryIndex = useMemo(() => {
+    if (!identifiedBuilding) return null;
+    const centerX = SW / 2;
+    let bestIdx = null;
+    let bestDist = Infinity;
+    objectDetections.forEach((d, idx) => {
+      if (d.type !== 'building') return;
+      const boxCenterX = (d.left + d.right) / 2;
+      const dist = Math.abs(boxCenterX - centerX);
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestIdx = idx;
+      }
+    });
+    return bestIdx;
+  }, [objectDetections, identifiedBuilding]);
 
   // YOLO 감지 이벤트 핸들러
   const handleObjectDetection = useCallback((event) => {
@@ -465,30 +465,13 @@ const ScanCameraScreen = ({ route, navigation }) => {
     return null;
   }, [geoPose, detectLoading, sheetOpen]);
 
-  // YOLO가 건물을 감지했는지 (20%+)
-  const yoloHasBuilding = useMemo(() => {
-    return objectDetections.some(d => d.type === 'building');
-  }, [objectDetections]);
-
-  // YOLO 감지 중 + 바운딩박스 없음 → 가장 가까운 건물 라벨 포커스 중앙에 표시
-  const fallbackBuilding = useMemo(() => {
-    if (sheetOpen) return null;
-    if (!yoloHasBuilding) return null;
-    if (hasDetection) return null; // 바운딩박스 매칭 성공 → 폴백 불필요
-    // detect API에서 가장 가까운 건물 선택
-    if (!detectedBuildings || detectedBuildings.length === 0) return null;
-    const closest = detectedBuildings[0]; // 이미 거리순 정렬됨
-    return closest;
-  }, [sheetOpen, yoloHasBuilding, hasDetection, detectedBuildings]);
-
   // 포커스 영역 내 안내 메시지
   const focusMessage = useMemo(() => {
     if (sheetOpen) return null;
     if (!geoPose) return null;
-    if (hasDetection) return null; // 바운딩박스 매칭 성공
-    if (fallbackBuilding) return null; // 폴백 라벨 표시 중
-    return '포커스 영역에 건물을 맞춰주세요';
-  }, [geoPose, hasDetection, fallbackBuilding, sheetOpen]);
+    if (yoloHasBuilding) return null; // YOLO 건물 감지 중
+    return '건물을 카메라에 비춰주세요';
+  }, [geoPose, yoloHasBuilding, sheetOpen]);
 
   return (
     <GestureHandlerRootView style={styles.container}>
@@ -525,31 +508,11 @@ const ScanCameraScreen = ({ route, navigation }) => {
           {/* Layer 0.5: 포커스 영역 오버레이 */}
           <FocusOverlay visible={!sheetOpen} message={focusMessage} />
 
-          {/* Layer 0.7: 폴백 건물명 라벨 (YOLO 감지 중 + 바운딩박스 없음) */}
-          {fallbackBuilding && !sheetOpen && (
-            <View style={styles.fallbackLabelWrap} pointerEvents="box-none">
-              <TouchableOpacity
-                style={styles.fallbackLabel}
-                activeOpacity={0.7}
-                onPress={() => handleLabelSelect(fallbackBuilding)}
-              >
-                <Text style={styles.fallbackLabelName} numberOfLines={1}>
-                  {fallbackBuilding.name || fallbackBuilding.roadAddress || fallbackBuilding.jibun || `${fallbackBuilding.lat?.toFixed(5)}, ${fallbackBuilding.lng?.toFixed(5)}`}
-                </Text>
-                {fallbackBuilding.distance != null && (
-                  <Text style={styles.fallbackLabelDist}>
-                    {fallbackBuilding.distance < 1000 ? `${Math.round(fallbackBuilding.distance)}m` : `${(fallbackBuilding.distance / 1000).toFixed(1)}km`}
-                  </Text>
-                )}
-              </TouchableOpacity>
-            </View>
-          )}
-
-          {/* Layer 1: 건물 바운딩박스 + 라벨 + 컵 바운딩박스 */}
+          {/* Layer 1: YOLO 바운딩박스 + 건물명 라벨 */}
           <DetectedBuildingOverlay
-            matchedBuildings={matchedBuildings}
-            unmatchedRegions={unmatchedRegions}
-            cupRegions={cupRegions}
+            detections={objectDetections}
+            identifiedBuilding={identifiedBuilding}
+            primaryIndex={primaryIndex}
             onSelect={handleLabelSelect}
             visible={!sheetOpen}
           />
@@ -567,15 +530,12 @@ const ScanCameraScreen = ({ route, navigation }) => {
       <CameraHUD
         gpsStatus={gpsStatus}
         onBack={() => navigation.goBack()}
-        accuracyInfo={accuracyInfo}
-        detectStatus={detectStatus}
         persona={persona}
         onPersonaTap={handlePersonaTap}
         debugInfo={{
           hAcc: geoPose?.horizontalAccuracy ?? null,
-          hdAcc: geoPose?.headingAccuracy ?? null,
-          buildingCount: detectedBuildings.length,
           yoloConf: objectDetections.filter(d => d.type === 'building').reduce((max, d) => Math.max(max, d.confidence || 0), 0) || null,
+          hitDistance: identifiedBuilding?.hitDistance ?? null,
         }}
       />
 
@@ -673,8 +633,8 @@ const styles = StyleSheet.create({
   },
   hudBackBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center' },
   hudBackText: { fontSize: 22, color: '#FFF', marginTop: -2 },
-  hudModeBadge: { backgroundColor: 'rgba(0,0,0,0.4)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14, justifyContent: 'center', alignItems: 'center' },
-  hudModeText: { fontSize: 11, fontWeight: '900', color: '#FFF' },
+  hudGpsBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.4)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14, gap: 5 },
+  hudGpsLabel: { fontSize: 11, fontWeight: '900', color: '#FFF' },
   hudInfoPill: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.4)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14, gap: 2 },
   hudInfoText: { fontSize: 11, fontWeight: '600', color: 'rgba(255,255,255,0.8)' },
   hudInfoSep: { fontSize: 11, color: 'rgba(255,255,255,0.3)' },
@@ -688,42 +648,11 @@ const styles = StyleSheet.create({
   hudPersonaEmoji: { fontSize: 12 },
   hudPersonaName: { fontSize: 11, fontWeight: '700', color: '#F1F5F9' },
   hudPersonaArrow: { fontSize: 8, color: 'rgba(255,255,255,0.4)' },
-  hudGps: { marginLeft: 'auto' },
   hudGpsDot: { width: 8, height: 8, borderRadius: 4 },
 
   // 안내 텍스트
   guideTextWrap: { position: 'absolute', bottom: SH * 0.14, left: 0, right: 0, alignItems: 'center', zIndex: 5 },
   guideText: { fontSize: 14, fontWeight: '500', color: 'rgba(255,255,255,0.9)', backgroundColor: 'rgba(0,0,0,0.5)', paddingHorizontal: SPACING.xl, paddingVertical: SPACING.sm, borderRadius: 20, overflow: 'hidden' },
-
-  // ===== 폴백 건물명 라벨 (포커스 중앙) =====
-  fallbackLabelWrap: {
-    position: 'absolute',
-    top: FOCUS_TOP + FOCUS_H / 2 - 20,
-    left: FOCUS_LEFT,
-    width: FOCUS_W,
-    alignItems: 'center',
-    zIndex: 15,
-  },
-  fallbackLabel: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 230, 118, 0.85)',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 8,
-    gap: 8,
-  },
-  fallbackLabelName: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#000',
-    maxWidth: 200,
-  },
-  fallbackLabelDist: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: 'rgba(0, 0, 0, 0.6)',
-  },
 
   // ===== 바텀시트 =====
   bsBackground: { backgroundColor: '#141428', borderTopLeftRadius: 20, borderTopRightRadius: 20 },
