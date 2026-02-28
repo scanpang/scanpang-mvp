@@ -310,6 +310,7 @@ export const getDemoAiSummary = (persona, building) => {
       return `2001년 준공 강남 금융 랜드마크 · 32층 스카이라운지 · 테헤란로 IT벨리의 상징`;
     case PersonaType.ANALYST:
       return `역삼동 상권 A등급 · 일 유동인구 45,200명 · 직장인 78% · F&B 포화도 72%`;
+    case PersonaType.UNDECIDED:
     default:
       return `2001년 준공 강남 금융 랜드마크 · 32층 스카이라운지`;
   }
@@ -366,6 +367,7 @@ export const getDemoQuickChips = (persona) => {
         { icon: '💰', label: '평당8.2~12만', key: 'rent' },
         { icon: '👔', label: '직장인 78%', key: 'workers' },
       ];
+    case PersonaType.UNDECIDED:
     default:
       return [
         { icon: '🏗️', label: '2001년', key: 'builtYear' },

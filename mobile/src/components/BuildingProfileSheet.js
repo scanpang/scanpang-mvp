@@ -13,10 +13,8 @@ import {
   TouchableOpacity,
   Animated,
   Dimensions,
-  LayoutAnimation,
-  Platform,
-  UIManager,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ScrollView as GHScrollView } from 'react-native-gesture-handler';
 import { BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { SPACING, TOUCH } from '../constants/theme';
@@ -32,10 +30,6 @@ import {
 } from '../data/demoBottomSheet';
 import { PersonaType, PERSONA_CONFIGS } from '../data/persona';
 
-// Android LayoutAnimation 활성화
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
 
 const { width: SW } = Dimensions.get('window');
 
@@ -158,7 +152,7 @@ const CategoryFilter = ({ filters, activeFilter, onSelect }) => (
 );
 
 // ===== L3: 인사이트 카드 (접힘/펼침) =====
-const InsightCard = ({ card, isExpanded, onToggle }) => {
+const InsightCard = React.forwardRef(({ card, isExpanded, onToggle, onCtaPress }, ref) => {
   const rotateAnim = useRef(new Animated.Value(isExpanded ? 1 : 0)).current;
 
   useEffect(() => {
@@ -178,7 +172,7 @@ const InsightCard = ({ card, isExpanded, onToggle }) => {
   const cardStyle = getCardStyle(card.tier, isExpanded);
 
   return (
-    <View style={[s.card, cardStyle]}>
+    <View ref={ref} style={[s.card, cardStyle]}>
       {/* 접힌 헤더 — 터치로 펼침 */}
       <TouchableOpacity
         style={s.cardHeader}
@@ -226,7 +220,7 @@ const InsightCard = ({ card, isExpanded, onToggle }) => {
           ))}
           {/* CTA 버튼 (AD, REWARD) */}
           {card.ctaText && (
-            <TouchableOpacity style={[s.ctaBtn, { backgroundColor: `${card.colorAccent}25`, borderColor: `${card.colorAccent}40` }]} activeOpacity={0.7}>
+            <TouchableOpacity style={[s.ctaBtn, { backgroundColor: `${card.colorAccent}25`, borderColor: `${card.colorAccent}40` }]} activeOpacity={0.7} onPress={() => onCtaPress?.(card)}>
               <Text style={[s.ctaText, { color: card.colorAccent }]}>{card.ctaText}</Text>
             </TouchableOpacity>
           )}
@@ -235,13 +229,13 @@ const InsightCard = ({ card, isExpanded, onToggle }) => {
 
       {/* 접힌 상태에서도 CTA 표시 (REWARD 카드) */}
       {!isExpanded && card.tier === CardTier.REWARD && card.ctaText && (
-        <TouchableOpacity style={[s.ctaBtn, { marginTop: 8, marginHorizontal: 12, backgroundColor: `${card.colorAccent}25`, borderColor: `${card.colorAccent}40` }]} activeOpacity={0.7}>
+        <TouchableOpacity style={[s.ctaBtn, { marginTop: 8, marginHorizontal: 12, backgroundColor: `${card.colorAccent}25`, borderColor: `${card.colorAccent}40` }]} activeOpacity={0.7} onPress={() => onCtaPress?.(card)}>
           <Text style={[s.ctaText, { color: card.colorAccent }]}>{card.ctaText}</Text>
         </TouchableOpacity>
       )}
     </View>
   );
-};
+});
 
 // 카드 배경/보더 스타일 (tier별)
 const getCardStyle = (tier, isExpanded) => {
@@ -281,6 +275,30 @@ const getCardStyle = (tier, isExpanded) => {
   };
 };
 
+// ===== 스크롤 하단 유도 인디케이터 =====
+const POINTS_KEY = '@scanpang_ad_points';
+
+const ScrollHint = ({ visible }) => {
+  const anim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (!visible) return;
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(anim, { toValue: 8, duration: 600, useNativeDriver: true }),
+        Animated.timing(anim, { toValue: 0, duration: 600, useNativeDriver: true }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [visible]);
+  if (!visible) return null;
+  return (
+    <Animated.View style={[s.scrollHint, { transform: [{ translateY: anim }] }]}>
+      <Text style={s.scrollHintText}>▼ 스크롤</Text>
+    </Animated.View>
+  );
+};
+
 // ===== 메인 컴포넌트 =====
 const BuildingProfileSheet = ({
   buildingProfile,
@@ -296,6 +314,10 @@ const BuildingProfileSheet = ({
 }) => {
   const [activeFilter, setActiveFilter] = useState('ALL');
   const [expandedCardId, setExpandedCardId] = useState(null);
+  const [showScrollHint, setShowScrollHint] = useState(true);
+  const scrollRef = useRef(null);
+  const cardRefs = useRef({});
+  const scrollOffsetRef = useRef(0);
 
   const currentPersona = persona || PersonaType.EXPLORER;
 
@@ -305,17 +327,66 @@ const BuildingProfileSheet = ({
   const quickChips = buildingProfile?.quickChips || getDemoQuickChips(currentPersona);
   const cards = buildingProfile?.cards || getDemoCards(currentPersona);
 
-  // 프로필 바뀌면 상태 리셋
+  // 프로필 또는 페르소나 바뀌면 상태 리셋
   useEffect(() => {
     setActiveFilter('ALL');
     setExpandedCardId(null);
-  }, [building?.id]);
+    setShowScrollHint(true);
+    scrollOffsetRef.current = 0;
+    if (scrollRef.current) {
+      scrollRef.current.scrollTo({ y: 0, animated: false });
+    }
+  }, [building?.id, currentPersona]);
 
-  // 카드 펼침/접힘 토글
+  // 카드 펼침/접힘 토글 + 자동 스크롤
   const handleToggleCard = useCallback((cardId) => {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setExpandedCardId(prev => prev === cardId ? null : cardId);
+    setExpandedCardId(prev => {
+      const willExpand = prev !== cardId;
+      // 펼칠 때 해당 카드 위치로 자동 스크롤
+      if (willExpand) {
+        setTimeout(() => {
+          const node = cardRefs.current[cardId];
+          if (node) {
+            node.measureInWindow((_x, y, _w, h) => {
+              // 카드 하단이 화면 아래로 넘어가면 스크롤
+              const screenH = Dimensions.get('window').height;
+              const overflow = (y + h) - screenH + 40;
+              if (overflow > 0 && scrollRef.current) {
+                scrollRef.current.scrollTo({
+                  y: scrollOffsetRef.current + overflow,
+                  animated: true,
+                });
+              }
+            });
+          }
+        }, 200);
+      }
+      return willExpand ? cardId : null;
+    });
   }, []);
+
+  // CTA 포인트 적립 핸들러 (AD/REWARD → AsyncStorage에 포인트 저장)
+  const handleCtaPress = useCallback(async (card) => {
+    let points = 0;
+    if (card.tier === CardTier.AD) points = 50;
+    else if (card.tier === CardTier.REWARD) points = 50;
+    if (points <= 0) return;
+
+    try {
+      const raw = await AsyncStorage.getItem(POINTS_KEY);
+      const current = raw ? parseInt(raw, 10) : 0;
+      await AsyncStorage.setItem(POINTS_KEY, String(current + points));
+    } catch {}
+  }, []);
+
+  // 스크롤 오프셋 추적 + 힌트 숨기기
+  const handleScroll = useCallback((e) => {
+    const offsetY = e.nativeEvent.contentOffset.y;
+    scrollOffsetRef.current = offsetY;
+    if (offsetY > 20 && showScrollHint) {
+      setShowScrollHint(false);
+    }
+  }, [showScrollHint]);
 
   // 필터 적용된 카드 목록 (AD/REWARD는 필터 무관하게 항상 표시)
   const filteredCards = useMemo(() => {
@@ -331,7 +402,7 @@ const BuildingProfileSheet = ({
   if (loading && !buildingProfile) {
     return (
       <View style={s.outerWrap}>
-        <View style={s.fixedHeader}>
+        <View style={s.headerSection}>
           <BuildingDNA building={{ name: '로딩 중...' }} aiSummary={null} onClose={onClose} />
         </View>
         <FeedSkeleton />
@@ -356,8 +427,8 @@ const BuildingProfileSheet = ({
 
   return (
     <View style={s.outerWrap}>
-      {/* 고정 영역: L1 + L2 */}
-      <View style={s.fixedHeader}>
+      {/* 고정 영역: L1 + L2 (스크롤 안 됨, 바텀시트와 함께 이동) */}
+      <View style={s.headerSection}>
         <BuildingDNA building={building} aiSummary={aiSummary} onClose={onClose} />
         <QuickChips chips={quickChips} />
         <CategoryFilter
@@ -367,21 +438,30 @@ const BuildingProfileSheet = ({
         />
       </View>
 
-      {/* 스크롤 영역: L3 카드 피드 */}
+      {/* 스크롤 영역: L3 카드 피드 (남은 공간 전부 사용) */}
       <BottomSheetScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={s.scrollContent}
+        key={`feed_${currentPersona}`}
+        ref={scrollRef}
+        style={s.feedScroll}
+        showsVerticalScrollIndicator={true}
+        contentContainerStyle={s.feedContent}
+        onScroll={handleScroll}
+        scrollEventThrottle={100}
+        nestedScrollEnabled={true}
       >
         {filteredCards.map(card => (
           <InsightCard
+            ref={(el) => { cardRefs.current[card.id] = el; }}
             key={card.id}
             card={card}
             isExpanded={expandedCardId === card.id}
             onToggle={handleToggleCard}
+            onCtaPress={handleCtaPress}
           />
         ))}
-        <View style={{ height: 120 }} />
+        <View style={s.bottomSpacer} />
       </BottomSheetScrollView>
+      <ScrollHint visible={showScrollHint} />
     </View>
   );
 };
@@ -389,8 +469,10 @@ const BuildingProfileSheet = ({
 // ===== 스타일 =====
 const s = StyleSheet.create({
   outerWrap: { flex: 1 },
-  fixedHeader: { paddingHorizontal: SPACING.lg },
-  scrollContent: { paddingHorizontal: SPACING.lg, paddingTop: 4 },
+  headerSection: { paddingHorizontal: SPACING.lg, marginBottom: SPACING.sm },
+  feedScroll: { flex: 1 },
+  feedContent: { paddingHorizontal: SPACING.lg, paddingTop: 4, paddingBottom: 120 },
+  bottomSpacer: { height: 160 },
 
   // 스켈레톤
   skeletonWrap: { paddingHorizontal: SPACING.lg, paddingTop: SPACING.md },
@@ -508,6 +590,22 @@ const s = StyleSheet.create({
     alignItems: 'center',
   },
   ctaText: { fontSize: 13, fontWeight: '700' },
+
+  // 스크롤 힌트
+  scrollHint: {
+    position: 'absolute',
+    bottom: 12,
+    alignSelf: 'center',
+    backgroundColor: 'rgba(139,92,246,0.25)',
+    paddingHorizontal: 14,
+    paddingVertical: 5,
+    borderRadius: 12,
+  },
+  scrollHintText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#A78BFA',
+  },
 
   // 에러
   errorWrap: { alignItems: 'center', paddingVertical: SPACING.xxl, paddingHorizontal: SPACING.lg },

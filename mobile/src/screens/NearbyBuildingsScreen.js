@@ -14,7 +14,7 @@ import {
   StatusBar,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import BottomSheet, { BottomSheetView } from '@gorhom/bottom-sheet';
+import BottomSheet from '@gorhom/bottom-sheet';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { Colors, SPACING, CardShadow } from '../constants/theme';
@@ -157,7 +157,7 @@ const NearbyBuildingsScreen = ({ route, navigation }) => {
           if (index === -1) setSelectedId(null);
         }}
       >
-        <BottomSheetView style={{ flex: 1 }}>
+        <View style={{ flex: 1 }}>
           {selectedId ? (
             <BuildingProfileSheet
               buildingProfile={buildingDetail}
@@ -172,7 +172,7 @@ const NearbyBuildingsScreen = ({ route, navigation }) => {
               <Text style={styles.bsEmptyText}>건물을 선택해주세요</Text>
             </View>
           )}
-        </BottomSheetView>
+        </View>
       </BottomSheet>
     </GestureHandlerRootView>
   );

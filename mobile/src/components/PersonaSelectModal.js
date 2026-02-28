@@ -26,8 +26,8 @@ const PersonaSelectModal = ({ visible, onSelect, onClose, isOnboarding = false }
   };
 
   const handleSkip = async () => {
-    await savePersona(PersonaType.EXPLORER);
-    onSelect(PersonaType.EXPLORER);
+    await savePersona(PersonaType.UNDECIDED);
+    onSelect(PersonaType.UNDECIDED);
     setSelected(null);
   };
 

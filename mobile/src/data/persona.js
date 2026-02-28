@@ -13,6 +13,7 @@ export const PersonaType = {
   ENTREPRENEUR: 'ENTREPRENEUR',
   EXPLORER: 'EXPLORER',
   ANALYST: 'ANALYST',
+  UNDECIDED: 'UNDECIDED',
 };
 
 // ===== 모듈 타입 (바텀시트 카드용) =====
@@ -33,6 +34,15 @@ export const ModuleType = {
 
 // ===== 6개 페르소나 설정 =====
 export const PERSONA_CONFIGS = {
+  [PersonaType.UNDECIDED]: {
+    type: PersonaType.UNDECIDED,
+    emoji: '❓',
+    nameKo: '미정',
+    nameEn: 'Undecided',
+    cardOrder: [],
+    chipPriority: [],
+    aiTone: 'default',
+  },
   [PersonaType.TOURIST]: {
     type: PersonaType.TOURIST,
     emoji: '🌏',
@@ -45,7 +55,7 @@ export const PERSONA_CONFIGS = {
   [PersonaType.FOODIE]: {
     type: PersonaType.FOODIE,
     emoji: '🍔',
-    nameKo: '맛집 탐색러',
+    nameKo: '맛집',
     nameEn: 'Foodie',
     cardOrder: [ModuleType.FOOD, ModuleType.XRAY, ModuleType.BLOG, ModuleType.OVERVIEW],
     chipPriority: ['open', 'rating', 'coupon', 'parking'],
@@ -54,7 +64,7 @@ export const PERSONA_CONFIGS = {
   [PersonaType.INVESTOR]: {
     type: PersonaType.INVESTOR,
     emoji: '💰',
-    nameKo: '부동산 탐색자',
+    nameKo: '부동산',
     nameEn: 'Investor',
     cardOrder: [ModuleType.REAL_ESTATE, ModuleType.REGISTRY, ModuleType.OVERVIEW, ModuleType.XRAY],
     chipPriority: ['yield', 'listing', 'builtYear', 'registry'],
@@ -63,7 +73,7 @@ export const PERSONA_CONFIGS = {
   [PersonaType.ENTREPRENEUR]: {
     type: PersonaType.ENTREPRENEUR,
     emoji: '🏪',
-    nameKo: '자영업자·예비창업',
+    nameKo: '자영업·창업',
     nameEn: 'Entrepreneur',
     cardOrder: [ModuleType.COMMERCE, ModuleType.REAL_ESTATE, ModuleType.XRAY, ModuleType.SAFETY],
     chipPriority: ['commerce', 'footTraffic', 'competition', 'rent'],
@@ -72,7 +82,7 @@ export const PERSONA_CONFIGS = {
   [PersonaType.EXPLORER]: {
     type: PersonaType.EXPLORER,
     emoji: '📸',
-    nameKo: '도시 탐험가',
+    nameKo: '건물 정보',
     nameEn: 'Explorer',
     cardOrder: [ModuleType.STORY, ModuleType.TOURISM, ModuleType.BLOG, ModuleType.XRAY],
     chipPriority: ['builtYear', 'area', 'tenantCount', 'blogCount'],
@@ -81,7 +91,7 @@ export const PERSONA_CONFIGS = {
   [PersonaType.ANALYST]: {
     type: PersonaType.ANALYST,
     emoji: '📊',
-    nameKo: '상권 분석가',
+    nameKo: '상권',
     nameEn: 'Analyst',
     cardOrder: [ModuleType.COMMERCE, ModuleType.XRAY, ModuleType.REAL_ESTATE, ModuleType.SAFETY],
     chipPriority: ['commerce', 'footTraffic', 'saturation', 'rentPerPyeong'],

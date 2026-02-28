@@ -30,6 +30,7 @@ import RecentActivity from '../components/home/RecentActivity';
 
 const RECENT_SCANS_KEY_HOME = '@scanpang_recent_scans';
 const GPS_CACHE_KEY = '@scanpang_last_gps';
+const AD_POINTS_KEY = '@scanpang_ad_points';
 const POINTS_PER_SCAN = 50;
 const DAILY_LIMIT = 500;
 
@@ -134,14 +135,20 @@ const HomeScreen = ({ navigation }) => {
     })();
   }, []);
 
-  // 최근 스캔 기록 로드 + 오늘 통계 계산
+  // 최근 스캔 기록 로드 + 오늘 통계 계산 + 광고 포인트 합산
   const loadScanData = async () => {
     try {
       const raw = await AsyncStorage.getItem(RECENT_SCANS_KEY_HOME);
+      const adRaw = await AsyncStorage.getItem(AD_POINTS_KEY);
+      const adPoints = adRaw ? parseInt(adRaw, 10) : 0;
       if (raw) {
         const scans = JSON.parse(raw);
         setRecentActivities(scans.slice(0, 3));
-        setTodayStats(getTodayStats(scans));
+        const stats = getTodayStats(scans);
+        stats.totalPoints += adPoints;
+        setTodayStats(stats);
+      } else {
+        setTodayStats(prev => ({ ...prev, totalPoints: adPoints }));
       }
     } catch {}
   };
@@ -202,11 +209,10 @@ const HomeScreen = ({ navigation }) => {
         <View style={styles.navBar}>
           <View style={styles.logoWrap}>
             <Text style={styles.logo}>ScanPang</Text>
-            <Text style={styles.versionText}>v1.033</Text>
+            <Text style={styles.versionText}>v1.039</Text>
           </View>
           <View style={styles.navRight}>
             <TouchableOpacity style={styles.pointsPill}>
-              <Text style={styles.pointsIcon}>P</Text>
               <Text style={styles.pointsText}>{todayStats.totalPoints.toLocaleString()} P</Text>
             </TouchableOpacity>
             {persona && PERSONA_CONFIGS[persona] && (
@@ -312,11 +318,6 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.xs + 2,
     borderRadius: 20,
     gap: SPACING.xs,
-  },
-  pointsIcon: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: Colors.primaryBlue,
   },
   pointsText: {
     fontSize: 14,

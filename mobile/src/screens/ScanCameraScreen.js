@@ -21,7 +21,7 @@ import {
 import { useCameraPermissions } from 'expo-camera';
 import * as Haptics from 'expo-haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import BottomSheet, { BottomSheetView } from '@gorhom/bottom-sheet';
+import BottomSheet from '@gorhom/bottom-sheet';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { Colors, SPACING, TOUCH } from '../constants/theme';
@@ -607,7 +607,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
           }
         }}
       >
-        <BottomSheetView style={{ flex: 1 }}>
+        <View style={{ flex: 1 }}>
           {selectedBuildingId ? (
             <BuildingProfileSheet
               buildingProfile={buildingDetail}
@@ -628,7 +628,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
               <Text style={styles.bsEmptyText}>건물 라벨을 터치해 정보를 확인하세요</Text>
             </View>
           )}
-        </BottomSheetView>
+        </View>
       </BottomSheet>
 
       {/* 페르소나 선택 모달 */}
