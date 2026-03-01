@@ -41,7 +41,6 @@ async function testConnection() {
   try {
     const client = await pool.connect();
     const result = await client.query('SELECT NOW() as now');
-    console.log('[DB] PostgreSQL 연결 성공:', result.rows[0].now);
     client.release();
     return true;
   } catch (err) {
