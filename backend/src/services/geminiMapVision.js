@@ -74,8 +74,10 @@ async function analyzeWithGemini(imageBuffer, heading) {
 
 규칙:
 1. 지도에 표시된 텍스트를 정확히 읽을 것
-2. 건물명이 여러 개면 heading 방향에서 가장 가까운 하나만
-3. 찾을 수 없으면 buildingName을 null로
+2. 도로명/길 이름(예: ○○로, ○○길, ○○번길)은 건물이 아니므로 무시
+3. 아파트 동 이름(예: 나동, B동, 101동)은 건물명이 아니므로 무시
+4. 건물명이 여러 개면 heading 방향에서 가장 가까운 하나만
+5. 찾을 수 없으면 buildingName을 null로
 
 JSON으로만 응답: {"buildingName": "건물명 또는 null"}`;
 
