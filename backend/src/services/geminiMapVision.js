@@ -140,6 +140,7 @@ JSON으로만 응답: {"buildingName": "건물명 또는 null"}`;
  */
 async function identifyBuilding(lat, lng, heading) {
   const startTime = Date.now();
+  console.log(`[GeminiVision] 요청: lat=${lat}, lng=${lng}, heading=${heading}°`);
 
   // 1. Static Map 이미지 가져오기
   const imageBuffer = await fetchStaticMap(lat, lng);
