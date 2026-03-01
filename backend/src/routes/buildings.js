@@ -19,6 +19,7 @@ const kakaoLocal = require('../services/kakaoLocal');
 const publicData = require('../services/publicData');
 const naverSearch = require('../services/naverSearch');
 const naverGeocode = require('../services/naverGeocode');
+const geminiMapVision = require('../services/geminiMapVision');
 const googlePlaces = require('../services/googlePlaces');
 
 /**
@@ -292,7 +293,7 @@ router.post('/identify', async (req, res, next) => {
 
 /**
  * POST /api/buildings/detect
- * 네이버 역지오코딩 전방 스캔: heading 방향 부채꼴 12포인트 탐색
+ * Static Map + Gemini Vision 건물명 판독 → 카카오 검색으로 좌표/주소 확보
  * Body: { lat, lng, heading, horizontalAccuracy }
  */
 router.post('/detect', async (req, res, next) => {
@@ -318,7 +319,72 @@ router.post('/detect', async (req, res, next) => {
       });
     }
 
-    const buildings = await naverGeocode.scanForward(parsedLat, parsedLng, parsedHeading);
+    const startTime = Date.now();
+
+    // 1. Gemini Vision으로 건물명 판독
+    const visionResult = await geminiMapVision.identifyBuilding(parsedLat, parsedLng, parsedHeading);
+    const buildingName = visionResult?.buildingName;
+
+    if (!buildingName) {
+      return res.json({
+        success: true,
+        data: [],
+        meta: {
+          count: 0,
+          heading: parsedHeading,
+          horizontalAccuracy: parsedHAcc,
+          source: 'gemini_vision',
+          elapsed: Date.now() - startTime,
+        },
+      });
+    }
+
+    // 2. 카카오 키워드 검색으로 좌표/주소 확보
+    let kakaoResults = [];
+    try {
+      kakaoResults = await kakaoLocal.searchByKeyword(buildingName, parsedLat, parsedLng, 200);
+    } catch (e) {
+      console.warn('[detect] 카카오 키워드 검색 실패:', e.message);
+    }
+
+    // 3. 카카오 검색 실패 시 coordToAddress로 주소 확보
+    let address = '';
+    let roadAddress = '';
+    let buildingLat = parsedLat;
+    let buildingLng = parsedLng;
+    let distance = 0;
+
+    if (kakaoResults.length > 0) {
+      const best = kakaoResults[0];
+      address = best.address || '';
+      roadAddress = best.roadAddress || '';
+      buildingLat = best.lat || parsedLat;
+      buildingLng = best.lng || parsedLng;
+      distance = best.distance || best.distanceMeters || 0;
+    } else {
+      try {
+        const addrResult = await kakaoLocal.coordToAddress(parsedLat, parsedLng);
+        if (addrResult) {
+          address = addrResult.address || '';
+          roadAddress = addrResult.roadAddress || '';
+        }
+      } catch (e) {
+        console.warn('[detect] 카카오 주소변환 실패:', e.message);
+      }
+    }
+
+    // 4. 기존 호환 buildings[] 형식으로 응답 구성
+    const buildings = [{
+      id: `gemini_${parsedLat.toFixed(4)}_${parsedLng.toFixed(4)}_${Date.now()}`,
+      name: buildingName,
+      lat: buildingLat,
+      lng: buildingLng,
+      distance: Math.round(distance),
+      bearing: Math.round(parsedHeading),
+      address,
+      roadAddress,
+      nameSource: 'gemini',
+    }];
 
     res.json({
       success: true,
@@ -327,7 +393,8 @@ router.post('/detect', async (req, res, next) => {
         count: buildings.length,
         heading: parsedHeading,
         horizontalAccuracy: parsedHAcc,
-        source: 'naver_forward',
+        source: 'gemini_vision',
+        elapsed: Date.now() - startTime,
       },
     });
   } catch (err) {
@@ -387,6 +454,48 @@ router.get('/:id/profile', async (req, res, next) => {
       };
 
       const profile = buildingProfile.buildProfile_Phase1(geoData, null, inBuildingPlaces);
+
+      if (regionCode) {
+        profile.meta.regionCode = regionCode;
+      }
+
+      return res.json({ success: true, data: profile });
+    }
+
+    // Gemini Vision 건물 처리
+    if (rawId.startsWith('gemini_')) {
+      const lat = parseFloat(req.query.lat);
+      const lng = parseFloat(req.query.lng);
+      const name = req.query.name || '건물';
+
+      let regionCode = null;
+      if (!isNaN(lat) && !isNaN(lng)) {
+        regionCode = await kakaoLocal.coordToAddress(lat, lng);
+      }
+
+      let inBuildingPlaces = [];
+      if (!isNaN(lat) && !isNaN(lng) && name) {
+        try {
+          inBuildingPlaces = await kakaoLocal.searchByKeyword(name, lat, lng, 100);
+          if (regionCode?.roadAddress) {
+            inBuildingPlaces = kakaoLocal.filterByAddress(inBuildingPlaces, regionCode.roadAddress);
+          }
+        } catch (e) {
+          // 무시
+        }
+      }
+
+      const geminiData = {
+        id: rawId,
+        name,
+        address: req.query.address || regionCode?.address || '',
+        roadAddress: req.query.roadAddress || regionCode?.roadAddress || '',
+        lat, lng,
+        category: '',
+        categoryDetail: '',
+      };
+
+      const profile = buildingProfile.buildProfile_Phase1(geminiData, null, inBuildingPlaces);
 
       if (regionCode) {
         profile.meta.regionCode = regionCode;
@@ -910,7 +1019,7 @@ router.get('/:id/floors', async (req, res, next) => {
     const rawId = req.params.id;
 
     // VWORLD/OSM/카카오/geo 건물 처리
-    if (rawId.startsWith('naver_') || rawId.startsWith('vworld_') || rawId.startsWith('osm_') || rawId.startsWith('kakao_') || rawId.startsWith('geo_')) {
+    if (rawId.startsWith('gemini_') || rawId.startsWith('naver_') || rawId.startsWith('vworld_') || rawId.startsWith('osm_') || rawId.startsWith('kakao_') || rawId.startsWith('geo_')) {
       // 층별 정보 없음 → 빈 배열
       return res.json({
         success: true,
@@ -953,7 +1062,7 @@ router.post('/:id/scan-complete', async (req, res, next) => {
     const { confidence, sensorData, cameraFrame } = req.body;
 
     // 카카오/VWORLD/OSM/geo 건물은 프로필만 반환
-    if (rawId.startsWith('naver_') || rawId.startsWith('kakao_') || rawId.startsWith('vworld_') || rawId.startsWith('osm_') || rawId.startsWith('geo_')) {
+    if (rawId.startsWith('gemini_') || rawId.startsWith('naver_') || rawId.startsWith('kakao_') || rawId.startsWith('vworld_') || rawId.startsWith('osm_') || rawId.startsWith('geo_')) {
       // scan-complete에서도 프로필 반환
       if (rawId.startsWith('vworld_')) {
         const vwData = vworldBuildings.getVworldBuildingData(rawId);

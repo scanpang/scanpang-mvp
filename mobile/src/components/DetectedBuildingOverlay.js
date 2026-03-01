@@ -15,6 +15,7 @@ const DetectedBuildingOverlay = ({
   primaryIndex = null,
   onSelect,
   visible = true,
+  loading = false,
 }) => {
   if (!visible) return null;
   if (detections.length === 0) return null;
@@ -43,20 +44,25 @@ const DetectedBuildingOverlay = ({
         const isPrimary = idx === primaryIndex;
 
         if (isPrimary) {
-          // 주 건물: 초록 테두리 + "건물상세보기" 라벨
+          // 주 건물: 초록 테두리 + "건물상세보기" 라벨 (로딩 시 dim + 연속클릭 방지)
+          const borderColor = loading ? 'rgba(0, 230, 118, 0.4)' : 'rgba(0, 230, 118, 0.8)';
+          const labelBg = loading ? 'rgba(0, 230, 118, 0.5)' : 'rgba(0, 230, 118, 0.85)';
           return (
             <TouchableOpacity
               key={`building_${idx}`}
               style={[styles.boundingBox, {
                 left, top, width, height,
-                borderColor: 'rgba(0, 230, 118, 0.8)',
+                borderColor,
               }]}
               activeOpacity={0.7}
+              disabled={loading}
               onPress={() => onSelect?.()}
             >
               <View style={styles.centerLabelWrap}>
-                <View style={styles.detailLabel}>
-                  <Text style={styles.detailLabelText}>건물상세보기</Text>
+                <View style={[styles.detailLabel, { backgroundColor: labelBg }]}>
+                  <Text style={styles.detailLabelText}>
+                    {loading ? '분석 중...' : '건물상세보기'}
+                  </Text>
                 </View>
               </View>
             </TouchableOpacity>

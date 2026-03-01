@@ -383,8 +383,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
     } catch {}
   }, [userLocation, heading]);
 
-  // "건물상세보기" 탭 → 바운딩박스 위치로 heading 보정 → API 호출 → 바텀시트 열기
-  const CAMERA_FOV = 70; // 카메라 수평 FOV (도)
+  // "건물상세보기" 탭 → 센서 heading 그대로 전송 (Gemini Vision이 방향 판단)
   const handleDetailTap = useCallback(async () => {
     const gp = geoPoseRef.current;
     if (!gp || gp.latitude == null) return;
@@ -392,20 +391,12 @@ const ScanCameraScreen = ({ route, navigation }) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setProfileError(null);
 
-    // 바운딩박스 x좌표로 heading 보정
-    let correctedHeading = gp.heading ?? 0;
-    if (primaryIndex != null && objectDetections[primaryIndex]) {
-      const det = objectDetections[primaryIndex];
-      const boxCenterX = (det.left + det.right) / 2;
-      // 화면 중앙(0.5) 기준으로 FOV만큼 보정
-      correctedHeading = (correctedHeading + (boxCenterX - 0.5) * CAMERA_FOV + 360) % 360;
-    }
+    const sensorHeading = gp.heading ?? 0;
 
-    // 보정된 heading으로 API 호출
     const results = await fetchDetect({
       lat: gp.latitude,
       lng: gp.longitude,
-      heading: correctedHeading,
+      heading: sensorHeading,
       horizontalAccuracy: gp.horizontalAccuracy,
     });
 
@@ -416,12 +407,12 @@ const ScanCameraScreen = ({ route, navigation }) => {
     setTimeout(() => bottomSheetRef.current?.snapToIndex(1), 50);
 
     // 로깅
-    postScanLog({ sessionId: sessionIdRef.current, buildingId: building.id, eventType: 'detail_tap', userLat: gp.latitude, userLng: gp.longitude, deviceHeading: correctedHeading, metadata: { rawHeading: gp.heading } }).catch(() => {});
-    behaviorTracker.trackEvent('detail_tap', { buildingId: building.id, buildingName: building.name, metadata: { hAcc: gp.horizontalAccuracy, correctedHeading } });
+    postScanLog({ sessionId: sessionIdRef.current, buildingId: building.id, eventType: 'detail_tap', userLat: gp.latitude, userLng: gp.longitude, deviceHeading: sensorHeading }).catch(() => {});
+    behaviorTracker.trackEvent('detail_tap', { buildingId: building.id, buildingName: building.name, metadata: { hAcc: gp.horizontalAccuracy } });
 
     saveRecentScan(building);
     triggerGeminiAnalysis(building);
-  }, [fetchDetect, saveRecentScan, triggerGeminiAnalysis, primaryIndex, objectDetections]);
+  }, [fetchDetect, saveRecentScan, triggerGeminiAnalysis]);
 
   // 페르소나 선택 완료 (HUD에서 변경)
   const handlePersonaSelect = useCallback((type) => {
@@ -520,6 +511,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
             primaryIndex={primaryIndex}
             onSelect={handleDetailTap}
             visible={!sheetOpen}
+            loading={detectLoading}
           />
         </>
       )}
