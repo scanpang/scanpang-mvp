@@ -462,9 +462,8 @@ const ScanCameraScreen = ({ route, navigation }) => {
   const guideMessage = useMemo(() => {
     if (sheetOpen) return null;
     if (!geoPose) return 'GPS 위치를 잡는 중...';
-    if (detectLoading) return '건물 조회 중...';
     return null;
-  }, [geoPose, detectLoading, sheetOpen]);
+  }, [geoPose, sheetOpen]);
 
   // 포커스 영역 내 안내 메시지
   const focusMessage = useMemo(() => {
@@ -509,17 +508,17 @@ const ScanCameraScreen = ({ route, navigation }) => {
           {/* Layer 0.5: 포커스 영역 오버레이 */}
           <FocusOverlay visible={!sheetOpen} message={focusMessage} />
 
-          {/* Layer 1: YOLO 바운딩박스 (테두리만) */}
+          {/* Layer 1: YOLO 바운딩박스 (GPS 연결 시만 표시) */}
           <DetectedBuildingOverlay
             detections={objectDetections}
             primaryIndex={primaryIndex}
-            visible={!sheetOpen}
+            visible={!sheetOpen && !!geoPose}
           />
         </>
       )}
 
-      {/* 하단 고정 건물상세보기 버튼 */}
-      {(primaryIndex != null && !sheetOpen || detectLoading) && (
+      {/* 하단 고정 건물상세보기 버튼 (GPS 연결 시만) */}
+      {(primaryIndex != null && !sheetOpen && !!geoPose || detectLoading) && (
         <TouchableOpacity
           style={[styles.detailButton, detectLoading && styles.detailButtonLoading]}
           activeOpacity={0.7}
