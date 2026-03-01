@@ -108,7 +108,7 @@ export const identifyBuilding = async (params) => {
 };
 
 export const detectBuildings = async (params) => {
-  return withRetry(() => apiClient.post('/buildings/detect', params));
+  return withRetry(() => apiClient.post('/buildings/detect', params, { timeout: TIMEOUTS.geminiVision }));
 };
 
 export const postScanComplete = async (id, { confidence, sensorData, cameraFrame } = {}) => {
