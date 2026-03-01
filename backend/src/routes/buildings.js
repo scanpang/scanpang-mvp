@@ -323,7 +323,32 @@ router.post('/detect', async (req, res, next) => {
 
     // 1. Gemini Vision으로 건물명 판독
     const visionResult = await geminiMapVision.identifyBuilding(parsedLat, parsedLng, parsedHeading);
-    const buildingName = visionResult?.buildingName;
+    let buildingName = visionResult?.buildingName;
+    const clue = visionResult?.clue;
+
+    // 2. buildingName 없고 clue 있으면 → 카카오 2단계 폴백
+    if (!buildingName && clue) {
+      console.log(`[detect] buildingName null, clue="${clue}" → 카카오 폴백`);
+      try {
+        // 2-1. clue + 좌표로 카카오 키워드 검색
+        const clueResults = await kakaoLocal.searchByKeyword(clue, parsedLat, parsedLng, 200);
+        if (clueResults.length > 0) {
+          const best = clueResults[0];
+          // 2-2. 검색 결과 좌표로 역지오코딩 → 건물명 확보
+          const addrResult = await kakaoLocal.coordToAddress(best.lat || parsedLat, best.lng || parsedLng);
+          if (addrResult?.buildingName) {
+            buildingName = addrResult.buildingName;
+            console.log(`[detect] clue 폴백 성공: "${clue}" → "${buildingName}"`);
+          } else {
+            // 역지오코딩에 건물명 없으면 상호명 사용
+            buildingName = best.name;
+            console.log(`[detect] clue 폴백 (상호명): "${clue}" → "${buildingName}"`);
+          }
+        }
+      } catch (e) {
+        console.warn('[detect] clue 폴백 실패:', e.message);
+      }
+    }
 
     if (!buildingName) {
       return res.json({
@@ -334,12 +359,13 @@ router.post('/detect', async (req, res, next) => {
           heading: parsedHeading,
           horizontalAccuracy: parsedHAcc,
           source: 'gemini_vision',
+          clue: clue || null,
           elapsed: Date.now() - startTime,
         },
       });
     }
 
-    // 2. 카카오 키워드 검색으로 좌표/주소 확보
+    // 3. 카카오 키워드 검색으로 좌표/주소 확보
     let kakaoResults = [];
     try {
       kakaoResults = await kakaoLocal.searchByKeyword(buildingName, parsedLat, parsedLng, 200);
@@ -347,7 +373,7 @@ router.post('/detect', async (req, res, next) => {
       console.warn('[detect] 카카오 키워드 검색 실패:', e.message);
     }
 
-    // 3. 카카오 검색 실패 시 coordToAddress로 주소 확보
+    // 4. 카카오 검색 실패 시 coordToAddress로 주소 확보
     let address = '';
     let roadAddress = '';
     let buildingLat = parsedLat;
@@ -373,7 +399,7 @@ router.post('/detect', async (req, res, next) => {
       }
     }
 
-    // 4. 기존 호환 buildings[] 형식으로 응답 구성
+    // 5. 기존 호환 buildings[] 형식으로 응답 구성
     const buildings = [{
       id: `gemini_${parsedLat.toFixed(4)}_${parsedLng.toFixed(4)}_${Date.now()}`,
       name: buildingName,

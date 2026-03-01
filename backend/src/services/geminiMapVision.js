@@ -56,12 +56,12 @@ async function fetchStaticMap(lat, lng) {
  * Gemini Vision AI로 지도 이미지에서 건물명 판독
  * @param {Buffer} imageBuffer - PNG 이미지 Buffer
  * @param {number} heading - 방위각 (0~360)
- * @returns {{ buildingName: string|null }} 판독 결과
+ * @returns {{ buildingName: string|null, clue: string|null }} 판독 결과
  */
 async function analyzeWithGemini(imageBuffer, heading) {
   if (!GEMINI_API_KEY) {
     console.warn('[GeminiVision] Gemini API 키 미설정');
-    return { buildingName: null };
+    return { buildingName: null, clue: null };
   }
 
   const base64Image = imageBuffer.toString('base64');
@@ -75,11 +75,11 @@ async function analyzeWithGemini(imageBuffer, heading) {
 규칙:
 1. 지도에 표시된 텍스트를 정확히 읽을 것
 2. 도로명/길 이름(예: ○○로, ○○길, ○○번길)은 건물이 아니므로 무시
-3. 아파트 동 이름(예: 나동, B동, 101동)은 건물명이 아니므로 무시
-4. 건물명이 여러 개면 heading 방향에서 가장 가까운 하나만
-5. 찾을 수 없으면 buildingName을 null로
+3. 건물명이 여러 개면 heading 방향에서 가장 가까운 하나만
+4. 건물명을 찾을 수 없으면 buildingName을 null로 하되, 해당 방향에 보이는 상호명(가게/은행/식당 등)이나 아파트 동 번호(예: 104동, B동)를 clue에 넣을 것
+5. 아무것도 없으면 둘 다 null
 
-JSON으로만 응답: {"buildingName": "건물명 또는 null"}`;
+JSON으로만 응답: {"buildingName": "건물명 또는 null", "clue": "상호명/동번호 또는 null"}`;
 
   try {
     const res = await axios.post(
@@ -115,6 +115,7 @@ JSON으로만 응답: {"buildingName": "건물명 또는 null"}`;
         const parsed = JSON.parse(jsonMatch[0]);
         return {
           buildingName: parsed.buildingName === 'null' ? null : (parsed.buildingName || null),
+          clue: parsed.clue === 'null' ? null : (parsed.clue || null),
         };
       }
     } catch (parseErr) {
@@ -122,14 +123,14 @@ JSON으로만 응답: {"buildingName": "건물명 또는 null"}`;
       console.warn('[GeminiVision] JSON 파싱 실패, 정규식 시도:', parseErr.message);
       const koreanMatch = text.match(/["']([가-힣a-zA-Z0-9\s·\-]+)["']/);
       if (koreanMatch) {
-        return { buildingName: koreanMatch[1].trim() };
+        return { buildingName: koreanMatch[1].trim(), clue: null };
       }
     }
 
-    return { buildingName: null };
+    return { buildingName: null, clue: null };
   } catch (err) {
     console.warn('[GeminiVision] Gemini 호출 실패:', err.message);
-    return { buildingName: null };
+    return { buildingName: null, clue: null };
   }
 }
 
@@ -138,7 +139,7 @@ JSON으로만 응답: {"buildingName": "건물명 또는 null"}`;
  * @param {number} lat - 위도
  * @param {number} lng - 경도
  * @param {number} heading - 방위각 (0~360)
- * @returns {{ buildingName: string|null }}
+ * @returns {{ buildingName: string|null, clue: string|null }}
  */
 async function identifyBuilding(lat, lng, heading) {
   const startTime = Date.now();
@@ -147,7 +148,7 @@ async function identifyBuilding(lat, lng, heading) {
   // 1. Static Map 이미지 가져오기
   const imageBuffer = await fetchStaticMap(lat, lng);
   if (!imageBuffer) {
-    return { buildingName: null };
+    return { buildingName: null, clue: null };
   }
 
   const mapTime = Date.now() - startTime;
@@ -156,7 +157,7 @@ async function identifyBuilding(lat, lng, heading) {
   const result = await analyzeWithGemini(imageBuffer, heading);
 
   const totalTime = Date.now() - startTime;
-  console.log(`[GeminiVision] 완료: ${result.buildingName || 'null'} (map: ${mapTime}ms, total: ${totalTime}ms)`);
+  console.log(`[GeminiVision] 완료: ${result.buildingName || 'null'}, clue: ${result.clue || 'null'} (map: ${mapTime}ms, total: ${totalTime}ms)`);
 
   return result;
 }
