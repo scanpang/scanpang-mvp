@@ -1,8 +1,7 @@
 /**
- * DetectedBuildingOverlay - YOLO 바운딩박스 + 건물상세보기 라벨 + 컵 바운딩박스
+ * DetectedBuildingOverlay - YOLO 바운딩박스 오버레이
  *
- * - 화면 중앙에 가장 가까운 건물 박스: 초록 테두리 + "건물상세보기" 라벨
- * - 나머지 건물 박스: 반투명 점선 테두리
+ * - 포커스 영역에 가장 가까운 주 건물만 초록 테두리 표시
  * - 컵: 노란 테두리 + 라벨
  */
 import React from 'react';
@@ -33,40 +32,20 @@ const DetectedBuildingOverlay = ({
 
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
-      {/* 건물 바운딩박스 */}
-      {buildings.map(({ detection, idx }) => {
+      {/* 주 건물 바운딩박스만 표시 (초록 테두리) */}
+      {buildings.filter(({ idx }) => idx === primaryIndex).map(({ detection, idx }) => {
         const left = detection.left * SW;
         const top = detection.top * SH;
         const width = (detection.right - detection.left) * SW;
         const height = (detection.bottom - detection.top) * SH;
-        const isPrimary = idx === primaryIndex;
 
-        if (isPrimary) {
-          // 주 건물: 초록 테두리만 표시
-          return (
-            <View
-              key={`building_${idx}`}
-              style={[styles.boundingBox, {
-                left, top, width, height,
-                borderColor: 'rgba(0, 230, 118, 0.8)',
-              }]}
-              pointerEvents="none"
-            />
-          );
-        }
-
-        // 비주 건물: 점선 테두리만
         return (
           <View
             key={`building_${idx}`}
-            style={[
-              styles.boundingBox,
-              {
-                left, top, width, height,
-                borderColor: 'rgba(255, 255, 255, 0.25)',
-                borderStyle: 'dashed',
-              },
-            ]}
+            style={[styles.boundingBox, {
+              left, top, width, height,
+              borderColor: 'rgba(0, 230, 118, 0.8)',
+            }]}
             pointerEvents="none"
           />
         );
