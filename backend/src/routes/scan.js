@@ -8,6 +8,7 @@ const db = require('../db');
 
 // 허용되는 이벤트 타입 목록
 const VALID_EVENT_TYPES = [
+  'detail_tap',      // 건물상세보기 탭
   'pin_shown',       // AR 핀이 화면에 표시됨
   'pin_tapped',      // AR 핀을 탭함
   'card_viewed',     // 건물 카드 조회
