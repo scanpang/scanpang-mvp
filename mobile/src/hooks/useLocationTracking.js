@@ -10,7 +10,7 @@
  */
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import * as Location from 'expo-location';
-import { startWatching, stopWatching, addHeadingListener } from 'scanpang-heading';
+import { startWatching, stopWatching, addHeadingListener, setLocation } from 'scanpang-heading';
 
 // heading 변화 임계값 (3° 미만 변화 무시)
 const HEADING_CHANGE_THRESHOLD = 3;
@@ -46,6 +46,9 @@ const useLocationTracking = ({ enabled = true } = {}) => {
   const handleLocationUpdate = useCallback((location) => {
     if (!isMountedRef.current) return;
     const { latitude, longitude, altitude, accuracy } = location.coords;
+
+    // 네이티브 모듈에 GPS 좌표 전달 → 자기편차(declination) 계산
+    setLocation(latitude, longitude, altitude ?? 0);
 
     setGeoPose(prev => ({
       latitude,
