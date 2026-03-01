@@ -103,20 +103,8 @@ export const getBuildingFloors = async (id) => {
   return withRetry(() => apiClient.get(`/buildings/${id}/floors`));
 };
 
-export const identifyBuilding = async (params) => {
-  return withRetry(() => apiClient.post('/buildings/identify', params));
-};
-
 export const detectBuildings = async (params) => {
   return withRetry(() => apiClient.post('/buildings/detect', params, { timeout: TIMEOUTS.geminiVision }));
-};
-
-export const postScanComplete = async (id, { confidence, sensorData, cameraFrame } = {}) => {
-  return apiClient.post(`/buildings/${id}/scan-complete`, {
-    confidence,
-    sensorData,
-    cameraFrame,
-  });
 };
 
 // ===== 스캔 로그: 오프라인 큐 지원 =====
@@ -170,16 +158,6 @@ export const postScanLog = async (data) => {
   }
 };
 
-export const getLiveFeeds = async (buildingId) => {
-  return withRetry(() => apiClient.get(`/live/${buildingId}`));
-};
-
-// ===== Server Time API =====
-
-export const getServerTime = async () => {
-  return apiClient.get('/time');
-};
-
 export const getServerTimeContext = async (lat, lng) => {
   return apiClient.get('/time/context', { params: { lat, lng } });
 };
@@ -188,10 +166,6 @@ export const getServerTimeContext = async (lat, lng) => {
 
 export const getBehaviorReport = async (buildingId) => {
   return withRetry(() => apiClient.get(`/behavior/report/${buildingId}`));
-};
-
-export const getAreaBehaviorReport = async (lat, lng, radius = 500) => {
-  return withRetry(() => apiClient.get('/behavior/report/area', { params: { lat, lng, radius } }));
 };
 
 // ===== Gemini Proxy API =====
@@ -209,34 +183,6 @@ export const analyzeFrame = async (imageBase64, options = {}) => {
   }, { timeout: TIMEOUTS.geminiVision });
 };
 
-export const analyzeMinimapFrame = async (imageBase64, options = {}) => {
-  return apiClient.post('/gemini/analyze-minimap', {
-    imageBase64,
-    lat: options.lat || null,
-    lng: options.lng || null,
-    heading: options.heading || null,
-  }, { timeout: 12000 });
-};
-
-export const startGeminiLive = async (options = {}) => {
-  return apiClient.post('/gemini/live/start', {
-    buildingId: options.buildingId || null,
-    buildingName: options.buildingName || null,
-    buildingInfo: options.buildingInfo || null,
-    lat: options.lat || null,
-    lng: options.lng || null,
-  });
-};
-
-export const sendGeminiMessage = async (sessionId, message) => {
-  return apiClient.post('/gemini/live/audio', { sessionId, message }, { timeout: TIMEOUTS.geminiChat });
-};
-
-export const getGeminiStreamUrl = (sessionId, message) => {
-  const params = new URLSearchParams({ sessionId, message });
-  return `${API_BASE_URL}/gemini/live/stream?${params.toString()}`;
-};
-
 // ===== Flywheel Stats API =====
 
 export const getFlywheelStats = async () => {
@@ -251,26 +197,17 @@ export { apiClient };
 
 export default {
   getNearbyBuildings,
-  identifyBuilding,
   detectBuildings,
   getBuildingProfile,
   getBuildingEnrich,
   getBuildingLazy,
   getBuildingFloors,
-  postScanComplete,
   postScanLog,
-  getLiveFeeds,
-  getServerTime,
   getServerTimeContext,
   getBehaviorReport,
-  getAreaBehaviorReport,
   getUserFriendlyError,
   flushPendingLogs,
   analyzeFrame,
-  analyzeMinimapFrame,
-  startGeminiLive,
-  sendGeminiMessage,
-  getGeminiStreamUrl,
   getFlywheelStats,
   getFlywheelPending,
 };

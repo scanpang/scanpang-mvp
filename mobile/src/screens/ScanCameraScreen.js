@@ -25,7 +25,7 @@ import BottomSheet from '@gorhom/bottom-sheet';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { Colors, SPACING, TOUCH } from '../constants/theme';
-import { postScanLog, postScanComplete, getServerTimeContext, analyzeFrame } from '../services/api';
+import { postScanLog, getServerTimeContext, analyzeFrame } from '../services/api';
 import useBuildingDetect from '../hooks/useBuildingDetect';
 import useBuildingDetail from '../hooks/useBuildingDetail';
 import useSensorData from '../hooks/useSensorData';
