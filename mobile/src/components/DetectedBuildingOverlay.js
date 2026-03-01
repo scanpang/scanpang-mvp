@@ -6,16 +6,14 @@
  * - 컵: 노란 테두리 + 라벨
  */
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, Dimensions } from 'react-native';
 
 const { width: SW, height: SH } = Dimensions.get('window');
 
 const DetectedBuildingOverlay = ({
   detections = [],
   primaryIndex = null,
-  onSelect,
   visible = true,
-  loading = false,
 }) => {
   if (!visible) return null;
   if (detections.length === 0) return null;
@@ -44,28 +42,16 @@ const DetectedBuildingOverlay = ({
         const isPrimary = idx === primaryIndex;
 
         if (isPrimary) {
-          // 주 건물: 초록 테두리 + "건물상세보기" 라벨 (로딩 시 dim + 연속클릭 방지)
-          const borderColor = loading ? 'rgba(0, 230, 118, 0.4)' : 'rgba(0, 230, 118, 0.8)';
-          const labelBg = loading ? 'rgba(0, 230, 118, 0.5)' : 'rgba(0, 230, 118, 0.85)';
+          // 주 건물: 초록 테두리만 표시
           return (
-            <TouchableOpacity
+            <View
               key={`building_${idx}`}
               style={[styles.boundingBox, {
                 left, top, width, height,
-                borderColor,
+                borderColor: 'rgba(0, 230, 118, 0.8)',
               }]}
-              activeOpacity={0.7}
-              disabled={loading}
-              onPress={() => onSelect?.()}
-            >
-              <View style={styles.centerLabelWrap}>
-                <View style={[styles.detailLabel, { backgroundColor: labelBg }]}>
-                  <Text style={styles.detailLabelText}>
-                    {loading ? '분석 중...' : '건물상세보기'}
-                  </Text>
-                </View>
-              </View>
-            </TouchableOpacity>
+              pointerEvents="none"
+            />
           );
         }
 
@@ -118,22 +104,6 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderRadius: 4,
     zIndex: 10,
-  },
-  centerLabelWrap: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  detailLabel: {
-    backgroundColor: 'rgba(0, 230, 118, 0.85)',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 8,
-  },
-  detailLabelText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#000',
   },
   cupLabel: {
     position: 'absolute',

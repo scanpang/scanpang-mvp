@@ -509,15 +509,27 @@ const ScanCameraScreen = ({ route, navigation }) => {
           {/* Layer 0.5: 포커스 영역 오버레이 */}
           <FocusOverlay visible={!sheetOpen} message={focusMessage} />
 
-          {/* Layer 1: YOLO 바운딩박스 + 건물명 라벨 */}
+          {/* Layer 1: YOLO 바운딩박스 (테두리만) */}
           <DetectedBuildingOverlay
             detections={objectDetections}
             primaryIndex={primaryIndex}
-            onSelect={handleDetailTap}
             visible={!sheetOpen}
-            loading={detectLoading}
           />
         </>
+      )}
+
+      {/* 하단 고정 건물상세보기 버튼 */}
+      {(primaryIndex != null && !sheetOpen || detectLoading) && (
+        <TouchableOpacity
+          style={[styles.detailButton, detectLoading && styles.detailButtonLoading]}
+          activeOpacity={0.7}
+          disabled={detectLoading}
+          onPress={handleDetailTap}
+        >
+          <Text style={styles.detailButtonText}>
+            {detectLoading ? '분석 중...' : '건물상세보기'}
+          </Text>
+        </TouchableOpacity>
       )}
 
       {/* GPS 에러 배너 */}
@@ -651,6 +663,29 @@ const styles = StyleSheet.create({
   hudPersonaName: { fontSize: 11, fontWeight: '700', color: '#F1F5F9' },
   hudPersonaArrow: { fontSize: 8, color: 'rgba(255,255,255,0.4)' },
   hudGpsDot: { width: 8, height: 8, borderRadius: 4 },
+
+  // 하단 고정 건물상세보기 버튼
+  detailButton: {
+    position: 'absolute',
+    bottom: 120,
+    alignSelf: 'center',
+    left: '50%',
+    transform: [{ translateX: -80 }],
+    width: 160,
+    backgroundColor: 'rgba(0, 230, 118, 0.9)',
+    paddingVertical: 14,
+    borderRadius: 30,
+    alignItems: 'center',
+    zIndex: 50,
+  },
+  detailButtonLoading: {
+    backgroundColor: 'rgba(0, 230, 118, 0.5)',
+  },
+  detailButtonText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#000',
+  },
 
   // 안내 텍스트
   guideTextWrap: { position: 'absolute', bottom: SH * 0.14, left: 0, right: 0, alignItems: 'center', zIndex: 5 },
