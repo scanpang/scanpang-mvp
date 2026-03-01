@@ -1,14 +1,16 @@
 /**
- * useLocationTracking - GPS + 나침반 위치 추적 훅
+ * useLocationTracking - GPS + 커스텀 네이티브 heading 위치 추적 훅
  *
  * - GPS: BestForNavigation, 1초 간격
- * - 나침반: Location.watchHeadingAsync (OS 센서 퓨전 heading)
+ * - heading: ScanPangHeading 네이티브 모듈 (TYPE_ROTATION_VECTOR + remapCoordinateSystem)
+ *   → 세로 들기(카메라 자세) 보정 포함
  * - GPS 정확도 30m 초과 시 isLocalized = false
  *
  * @returns {Object} { geoPose, isLocalized, accuracyInfo, gpsError }
  */
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import * as Location from 'expo-location';
+import { startWatching, stopWatching, addHeadingListener } from 'scanpang-heading';
 
 // heading 변화 임계값 (3° 미만 변화 무시)
 const HEADING_CHANGE_THRESHOLD = 3;
@@ -20,7 +22,6 @@ const useLocationTracking = ({ enabled = true } = {}) => {
   const [gpsError, setGpsError] = useState(null);
 
   const locationSubRef = useRef(null);
-  const headingSubRef = useRef(null);
   const headingRef = useRef(null);       // 최신 heading
   const lastHeadingRef = useRef(null);   // 마지막 geoPose에 반영된 heading
   const isMountedRef = useRef(true);
@@ -58,15 +59,11 @@ const useLocationTracking = ({ enabled = true } = {}) => {
     setGpsError(null);
   }, []);
 
-  // OS heading 업데이트 (센서 퓨전: 자이로+가속도+자기장)
-  const handleHeadingUpdate = useCallback((headingData) => {
-    if (!isMountedRef.current || !headingData) return;
+  // 네이티브 heading 업데이트 (TYPE_ROTATION_VECTOR + remapCoordinateSystem)
+  const handleHeadingUpdate = useCallback((event) => {
+    if (!isMountedRef.current || !event) return;
 
-    // trueHeading = 진북 기준 (GPS 보정), magHeading = 자북 기준
-    const newHeading = headingData.trueHeading >= 0
-      ? headingData.trueHeading
-      : headingData.magHeading;
-
+    const newHeading = event.heading;
     if (newHeading == null || newHeading < 0) return;
 
     headingRef.current = newHeading;
@@ -83,7 +80,7 @@ const useLocationTracking = ({ enabled = true } = {}) => {
         return {
           ...prev,
           heading: newHeading,
-          headingAccuracy: headingData.accuracy ?? 15,
+          headingAccuracy: 5, // 네이티브 ROTATION_VECTOR는 고정밀
         };
       });
     }
@@ -125,24 +122,16 @@ const useLocationTracking = ({ enabled = true } = {}) => {
     };
   }, [enabled, handleLocationUpdate]);
 
-  // OS Heading 구독 (센서 퓨전)
+  // 네이티브 Heading 구독 (ScanPangHeading: ROTATION_VECTOR + remapCoordinateSystem)
   useEffect(() => {
     if (!enabled) return;
 
-    let sub = null;
-    (async () => {
-      try {
-        sub = await Location.watchHeadingAsync(handleHeadingUpdate);
-        headingSubRef.current = sub;
-      } catch (e) {
-        console.warn('[useLocationTracking] heading 구독 실패:', e.message);
-      }
-    })();
+    const subscription = addHeadingListener(handleHeadingUpdate);
+    startWatching();
 
     return () => {
-      sub?.remove();
-      headingSubRef.current?.remove();
-      headingSubRef.current = null;
+      stopWatching();
+      subscription.remove();
     };
   }, [enabled, handleHeadingUpdate]);
 

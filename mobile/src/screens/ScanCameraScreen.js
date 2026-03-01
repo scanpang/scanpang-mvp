@@ -55,28 +55,32 @@ const CameraHUD = ({ gpsStatus, onBack, debugInfo, persona, onPersonaTap }) => {
   const gpsColor = gpsStatus === 'active' ? Colors.successGreen : gpsStatus === 'error' ? Colors.liveRed : Colors.accentAmber;
   const hAcc = debugInfo?.hAcc != null ? `${debugInfo.hAcc.toFixed(0)}m` : '-';
   const yoloConf = debugInfo?.yoloConf != null ? `${Math.round(debugInfo.yoloConf * 100)}%` : '-';
+  const heading = debugInfo?.heading != null ? `${debugInfo.heading.toFixed(0)}°` : '-';
 
   return (
     <View style={styles.hud}>
-      {/* 뒤로가기 */}
-      <TouchableOpacity style={styles.hudBackBtn} onPress={onBack} hitSlop={TOUCH.hitSlop}>
-        <Text style={styles.hudBackText}>{'\u2039'}</Text>
-      </TouchableOpacity>
+      {/* 좌측 그룹: 뒤로가기 + GPS + 정보 */}
+      <View style={styles.hudLeftGroup}>
+        <TouchableOpacity style={styles.hudBackBtn} onPress={onBack} hitSlop={TOUCH.hitSlop}>
+          <Text style={styles.hudBackText}>{'\u2039'}</Text>
+        </TouchableOpacity>
 
-      {/* GPS + 상태 점 */}
-      <View style={styles.hudGpsBadge}>
-        <Text style={styles.hudGpsLabel}>GPS</Text>
-        <View style={[styles.hudGpsDot, { backgroundColor: gpsColor }]} />
+        <View style={styles.hudGpsBadge}>
+          <Text style={styles.hudGpsLabel}>GPS</Text>
+          <View style={[styles.hudGpsDot, { backgroundColor: gpsColor }]} />
+        </View>
+
+        {/* 정확도 · YOLO · heading (고정 너비) */}
+        <View style={styles.hudInfoPill}>
+          <Text style={styles.hudInfoFixed30}>{hAcc}</Text>
+          <Text style={styles.hudInfoSep}>·</Text>
+          <Text style={styles.hudInfoFixed30}>{yoloConf}</Text>
+          <Text style={styles.hudInfoSep}>·</Text>
+          <Text style={styles.hudInfoFixed36}>{heading}</Text>
+        </View>
       </View>
 
-      {/* 정확도 · YOLO · 역지오코딩 횟수 */}
-      <View style={styles.hudInfoPill}>
-        <Text style={[styles.hudInfoText, { minWidth: 26, textAlign: 'right' }]}>{hAcc}</Text>
-        <Text style={styles.hudInfoSep}>·</Text>
-        <Text style={[styles.hudInfoText, { minWidth: 28, textAlign: 'right' }]}>{yoloConf}</Text>
-      </View>
-
-      {/* 페르소나 칩 */}
+      {/* 우측 고정: 페르소나 칩 */}
       {persona && PERSONA_CONFIGS[persona] && (
         <TouchableOpacity style={styles.hudPersonaChip} onPress={onPersonaTap} activeOpacity={0.7}>
           <Text style={styles.hudPersonaEmoji}>{PERSONA_CONFIGS[persona].emoji}</Text>
@@ -532,6 +536,7 @@ const ScanCameraScreen = ({ route, navigation }) => {
         debugInfo={{
           hAcc: geoPose?.horizontalAccuracy ?? null,
           yoloConf: objectDetections.filter(d => d.type === 'building').reduce((max, d) => Math.max(max, d.confidence || 0), 0) || null,
+          heading: geoPose?.heading ?? null,
         }}
       />
 
@@ -622,17 +627,18 @@ const styles = StyleSheet.create({
   // ===== HUD =====
   hud: {
     position: 'absolute', top: 0, left: 0, right: 0,
-    flexDirection: 'row', alignItems: 'center',
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingTop: 50, paddingBottom: SPACING.md, paddingHorizontal: SPACING.lg,
     backgroundColor: 'rgba(0,0,0,0.35)',
-    gap: SPACING.sm,
   },
+  hudLeftGroup: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
   hudBackBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center' },
   hudBackText: { fontSize: 22, color: '#FFF', marginTop: -2 },
   hudGpsBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.4)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14, gap: 5 },
   hudGpsLabel: { fontSize: 11, fontWeight: '900', color: '#FFF' },
   hudInfoPill: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.4)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14, gap: 2 },
-  hudInfoText: { fontSize: 11, fontWeight: '600', color: 'rgba(255,255,255,0.8)' },
+  hudInfoFixed30: { width: 30, fontSize: 11, fontWeight: '600', color: 'rgba(255,255,255,0.8)', textAlign: 'right' },
+  hudInfoFixed36: { width: 36, fontSize: 11, fontWeight: '600', color: 'rgba(255,255,255,0.8)', textAlign: 'right' },
   hudInfoSep: { fontSize: 11, color: 'rgba(255,255,255,0.3)' },
   hudPersonaChip: {
     flexDirection: 'row', alignItems: 'center',
