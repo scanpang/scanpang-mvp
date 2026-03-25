@@ -8,8 +8,6 @@
 const express = require('express');
 const router = express.Router();
 const { GoogleGenerativeAI } = require('@google/generative-ai');
-const db = require('../db');
-
 // Gemini 클라이언트 초기화
 const genAI = process.env.GEMINI_API_KEY
   ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
@@ -86,23 +84,9 @@ Only return valid JSON, no markdown or explanation.`;
       analysis = { raw: responseText, confidence: 0.3, parseError: true };
     }
 
-    // Flywheel 자동 소싱 (buildingId가 있을 때, OSM 건물은 스킵)
-    const isOsmBuilding = buildingId && String(buildingId).startsWith('osm_');
-    if (buildingId && !isOsmBuilding && analysis.confidence >= 0.5) {
-      db.query(`
-        INSERT INTO sourced_info (building_id, source_type, raw_data, extracted_info, confidence, session_id, verified, verified_by)
-        VALUES ($1, 'gemini_vision', $2, $3, $4, $5, $6, $7)
-      `, [
-        buildingId,
-        JSON.stringify({ prompt: 'analyze-frame', responseText }),
-        JSON.stringify(analysis),
-        analysis.confidence,
-        sessionId || null,
-        analysis.confidence >= 0.8,
-        analysis.confidence >= 0.8 ? 'auto' : null,
-      ]).then(() => {
-        console.log(`[Gemini→Flywheel] 소싱 성공: building ${buildingId}, confidence ${analysis.confidence}`);
-      }).catch(err => console.warn('[Gemini→Flywheel] 소싱 실패:', err.message));
+    // 로그만 남김 (DB 제거됨)
+    if (buildingId && analysis.confidence >= 0.5) {
+      console.log(`[Gemini] 분석 완료: building=${buildingId}, confidence=${analysis.confidence}`);
     }
 
     res.json({

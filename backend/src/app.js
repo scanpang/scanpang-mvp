@@ -7,15 +7,10 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
-const db = require('./db');
-
 // 라우터 임포트
 const buildingsRouter = require('./routes/buildings');
 const scanRouter = require('./routes/scan');
-const liveRouter = require('./routes/live');
-const behaviorRouter = require('./routes/behavior');
 const timeRouter = require('./routes/time');
-const flywheelRouter = require('./routes/flywheel');
 const geminiRouter = require('./routes/gemini');
 
 // 미들웨어 임포트
@@ -48,14 +43,12 @@ if (process.env.NODE_ENV === 'development') {
 }
 
 // ===== 헬스체크 (인증 불필요) =====
-app.get('/health', async (req, res) => {
-  const dbOk = await db.testConnection();
+app.get('/health', (req, res) => {
   res.json({
-    status: dbOk ? 'ok' : 'degraded',
+    status: 'ok',
     service: 'scanpang-backend',
-    version: '0.1.0',
+    version: '0.2.0',
     timestamp: new Date().toISOString(),
-    database: dbOk ? 'connected' : 'disconnected',
   });
 });
 
@@ -63,10 +56,7 @@ app.get('/health', async (req, res) => {
 // API 키 인증 미들웨어 적용
 app.use('/api/buildings', apiKeyAuth, buildingsRouter);
 app.use('/api/scan', apiKeyAuth, scanRouter);
-app.use('/api/live', apiKeyAuth, liveRouter);
-app.use('/api/behavior', apiKeyAuth, behaviorRouter);
 app.use('/api/time', apiKeyAuth, timeRouter);
-app.use('/api/flywheel', apiKeyAuth, flywheelRouter);
 app.use('/api/gemini', apiKeyAuth, geminiRouter);
 
 // ===== 404 핸들러 =====
@@ -86,23 +76,6 @@ app.use((err, req, res, _next) => {
     method: req.method,
   });
 
-  // PostgreSQL 에러 코드별 처리
-  if (err.code === '23505') {
-    // unique_violation
-    return res.status(409).json({
-      success: false,
-      error: '중복된 데이터가 이미 존재합니다.',
-    });
-  }
-
-  if (err.code === '23503') {
-    // foreign_key_violation
-    return res.status(400).json({
-      success: false,
-      error: '참조하는 데이터가 존재하지 않습니다.',
-    });
-  }
-
   // 기본 에러 응답
   const statusCode = err.statusCode || 500;
   res.status(statusCode).json({
@@ -121,22 +94,14 @@ const server = app.listen(PORT, async () => {
   console.log(`  포트: ${PORT}`);
   console.log('========================================');
 
-  // DB 연결 테스트
-  const dbConnected = await db.testConnection();
-  if (!dbConnected) {
-    console.warn('[경고] DB 연결에 실패했습니다. DATABASE_URL을 확인해주세요.');
-  }
+  console.log('  DB: 없음 (Stateless 모드)');
 });
 
 // ===== Graceful Shutdown =====
 const gracefulShutdown = (signal) => {
   console.log(`[${signal}] Graceful shutdown 시작...`);
-  server.close(async () => {
+  server.close(() => {
     console.log('[Server] HTTP 서버 종료 완료');
-    try {
-      await db.pool.end();
-      console.log('[DB] 풀 종료 완료');
-    } catch {}
     process.exit(0);
   });
   // 10초 내 종료 안 되면 강제 종료

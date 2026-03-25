@@ -1,13 +1,4 @@
-# ScanPang MVP - Render.com Blueprint
-# https://render.com/docs/blueprint-spec
-
-databases:
-  - name: scanpang-db
-    plan: free
-    databaseName: scanpang_mvp
-    user: scanpang
-    postgresMajorVersion: "16"
-    ipAllowList: []  # Render 내부 서비스만 접근
+# ScanPang Backend - Render.com Blueprint (DB 제거, Stateless)
 
 services:
   - type: web
@@ -16,35 +7,11 @@ services:
     plan: free
     rootDir: backend
     buildCommand: npm install
-    startCommand: node src/db/migrations/001_init.js ; node src/db/migrations/002_extend_schema.js ; node src/db/migrations/003_building_profiles_v2.js ; node src/db/seeds/001_gangnam_buildings.js ; node src/db/seeds/002_hapdong_building.js ; node src/db/seeds/003_gangnam_extended.js ; npm start
+    startCommand: npm start
     healthCheckPath: /health
     envVars:
       - key: NODE_ENV
         value: production
-      - key: DATABASE_URL
-        fromDatabase:
-          name: scanpang-db
-          property: connectionString
-      - key: DB_HOST
-        fromDatabase:
-          name: scanpang-db
-          property: host
-      - key: DB_PORT
-        fromDatabase:
-          name: scanpang-db
-          property: port
-      - key: DB_NAME
-        fromDatabase:
-          name: scanpang-db
-          property: database
-      - key: DB_USER
-        fromDatabase:
-          name: scanpang-db
-          property: user
-      - key: DB_PASSWORD
-        fromDatabase:
-          name: scanpang-db
-          property: password
       - key: API_KEY
         value: scanpang-dev-key-2024
       - key: CORS_ORIGIN
