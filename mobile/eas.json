@@ -19,7 +19,7 @@
         "gradleCommand": ":app:assembleRelease"
       },
       "env": {
-        "API_BASE_URL": "https://scanpang-backend.onrender.com/api"
+        "API_BASE_URL": "https://scanpang-backend.vercel.app/api"
       }
     },
     "production": {
@@ -27,7 +27,7 @@
         "buildType": "app-bundle"
       },
       "env": {
-        "API_BASE_URL": "https://scanpang-backend.onrender.com/api"
+        "API_BASE_URL": "https://scanpang-backend.vercel.app/api"
       }
     }
   },

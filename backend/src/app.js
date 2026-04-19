@@ -86,29 +86,29 @@ app.use((err, req, res, _next) => {
   });
 });
 
-// ===== 서버 시작 =====
-const server = app.listen(PORT, async () => {
-  console.log('========================================');
-  console.log('  ScanPang Backend v0.1.0');
-  console.log(`  환경: ${process.env.NODE_ENV || 'production'}`);
-  console.log(`  포트: ${PORT}`);
-  console.log('========================================');
+// ===== 서버 시작 (Vercel 환경에서는 listen하지 않음) =====
+if (!process.env.VERCEL) {
+  const server = app.listen(PORT, async () => {
+    console.log('========================================');
+    console.log('  ScanPang Backend v0.1.0');
+    console.log(`  환경: ${process.env.NODE_ENV || 'production'}`);
+    console.log(`  포트: ${PORT}`);
+    console.log('========================================');
 
-  console.log('  DB: 없음 (Stateless 모드)');
-});
-
-// ===== Graceful Shutdown =====
-const gracefulShutdown = (signal) => {
-  console.log(`[${signal}] Graceful shutdown 시작...`);
-  server.close(() => {
-    console.log('[Server] HTTP 서버 종료 완료');
-    process.exit(0);
+    console.log('  DB: 없음 (Stateless 모드)');
   });
-  // 10초 내 종료 안 되면 강제 종료
-  setTimeout(() => { process.exit(1); }, 10000);
-};
 
-process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
-process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+  const gracefulShutdown = (signal) => {
+    console.log(`[${signal}] Graceful shutdown 시작...`);
+    server.close(() => {
+      console.log('[Server] HTTP 서버 종료 완료');
+      process.exit(0);
+    });
+    setTimeout(() => { process.exit(1); }, 10000);
+  };
+
+  process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+  process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+}
 
 module.exports = app;

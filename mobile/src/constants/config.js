@@ -3,7 +3,7 @@
  * - API 설정, 타임아웃, 키 등 중앙 관리
  */
 
-export const API_BASE_URL = 'https://scanpang-backend.onrender.com/api';
+export const API_BASE_URL = 'https://scanpang-backend.vercel.app/api';
 export const API_KEY = 'scanpang-dev-key-2024';
 
 // BHDB (행동 데이터 수집 대시보드) 연결
