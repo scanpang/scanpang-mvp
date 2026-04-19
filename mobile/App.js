@@ -7,8 +7,9 @@
 // react-native-gesture-handler는 반드시 최상단에서 import
 import 'react-native-gesture-handler';
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { StatusBar, View, Text, ScrollView, StyleSheet } from 'react-native';
+import { API_BASE_URL } from './src/constants/config';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -77,6 +78,12 @@ const navigationTheme = {
 };
 
 export default function App() {
+  // Vercel 람다 워밍 핑 — 첫 detect 클릭 전에 cold start 비용 흡수
+  useEffect(() => {
+    const rootUrl = API_BASE_URL.replace(/\/api$/, '');
+    fetch(`${rootUrl}/health`).catch(() => {});
+  }, []);
+
   return (
     <ErrorBoundary>
       <SafeAreaProvider>
